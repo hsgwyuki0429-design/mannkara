@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>STAIR MANCALA</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2310131c'/%3E%3Crect x='4' y='18' width='8' height='8' fill='%234ad4ee'/%3E%3Crect x='14' y='10' width='8' height='16' fill='%23ffd34d'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="./src/ui/styles.css" />
+</head>
+<body>
+<div id="app">
+  <header class="hud">
+    <div class="hud-item"><span class="label">SCORE</span><span id="score" class="value">0</span></div>
+    <div class="hud-item"><span class="label">CHAIN</span><span id="chain" class="value">0</span></div>
+    <div class="hud-item"><span class="label">BEST</span><span id="best" class="value">0</span></div>
+  </header>
+
+  <div class="stage">
+    <div id="playfield" class="playfield">
+      <div id="floorLayer" class="layer"></div>
+      <div id="gridLayer" class="layer"></div>
+      <div id="blockLayer" class="layer"></div>
+      <div id="ghostLayer" class="layer"></div>
+      <div id="overLine" class="over-line"></div>
+      <div id="lane" class="lane"></div>
+      <div id="goal" class="goal"><span>GOAL</span></div>
+      <div id="chainPop" class="chain-pop"></div>
+    </div>
+  </div>
+
+  <div class="candidates" id="candidates"></div>
+
+  <div class="controls">
+    <button id="btnLeft" class="ctrl">◀</button>
+    <button id="btnRotate" class="ctrl wide">⟳ 回転</button>
+    <button id="btnRight" class="ctrl">▶</button>
+    <button id="btnDrop" class="ctrl drop">落とす</button>
+  </div>
+
+  <div class="footer">
+    <button id="btnDebug" class="link">debug</button>
+    <button id="btnRestart" class="link">restart</button>
+  </div>
+
+  <section id="debugPanel" class="debug hidden">
+    <pre id="debugText"></pre>
+    <div class="debug-row">
+      <input id="debugHeights" value="0,0,0,0,0,0,0,0" />
+      <button id="btnApplyHeights">set</button>
+      <button id="btnRunChain">chain</button>
+    </div>
+    <p class="hint">columnHeights[0]=列1(右端) … [7]=列8(左端)</p>
+  </section>
+
+  <div id="gameOver" class="overlay hidden">
+    <div class="overlay-box">
+      <h1>GAME OVER</h1>
+      <p><span id="finalScore">0</span> pts</p>
+      <button id="btnRetry" class="ctrl drop">もう一度</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="./src/ui/main.js"></script>
+</body>
+</html>
