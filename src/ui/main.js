@@ -1,29 +1,28 @@
 import { Game } from '../core/game.js';
 import { Board } from '../core/board.js';
-import { Piece } from '../core/pieces.js';
 import { resolveChains, columnMoves } from '../core/mancala.js';
-import { COLUMN_COUNT, screenXToColIndex, ANIM } from '../core/constants.js';
+import { COLUMN_COUNT, ROW_COUNT, screenXToColIndex, ANIM } from '../core/constants.js';
 import { Renderer, delay } from './renderer.js';
+import { Sfx } from './sfx.js';
 
 const $ = (id) => document.getElementById(id);
-const renderer = new Renderer();
+const sfx = new Sfx();
+const renderer = new Renderer(sfx);
 
 let originX = 3;
-let rotation = 0;
-let selected = 0;
+let active = -1;        // ゴースト表示中の候補（-1 = なし）
+let dragging = false;   // 指でつかんでいる最中か
+let overBoard = false;
 
 const game = new Game({
   hooks: {
     async onPlaced() {
-      renderer.syncBoard(game.board, ANIM.drop);
-      await delay(ANIM.drop + 40);
+      sfx.land();
+      renderer.syncBoard(game.board, ANIM.drop, 'cubic-bezier(.3,1.4,.5,1)');
+      await delay(ANIM.drop + 60);
     },
-    async onSuck(column, blocks) {
-      await renderer.suck(column, blocks);
-    },
-    async onMove(ev) {
-      if (ev.to === 'goal') await renderer.toGoal(ev.block, ev.from);
-      else await renderer.deal(ev.block, ev.from, ev.to, game.board);
+    async onColumnResolve(step) {
+      await renderer.conveyColumn(step.column, step.stack, game.board, step.chain);
     },
     async onChainStep(step, gained) {
       renderer.showChain(step.chain, gained);
@@ -32,10 +31,11 @@ const game = new Game({
       await delay(ANIM.betweenChains);
     },
     async onChainEnd() {
-      renderer.syncBoard(game.board, ANIM.insert);
+      renderer.syncBoard(game.board, ANIM.drop);
       updateDebug();
     },
     async onGameOver() {
+      sfx.over();
       $('finalScore').textContent = game.score.score;
       $('gameOver').classList.remove('hidden');
     },
@@ -54,7 +54,8 @@ function renderCandidates() {
   wrap.innerHTML = '';
   game.candidates.forEach((piece, idx) => {
     const box = document.createElement('div');
-    box.className = 'cand' + (idx === selected ? ' selected' : '');
+    box.className = 'cand';
+    box.dataset.idx = idx;
     const tag = document.createElement('span');
     tag.className = 'idx';
     tag.textContent = idx + 1;
@@ -62,40 +63,28 @@ function renderCandidates() {
     const cells = piece.normalizedCells();
     const w = Math.max(...cells.map((c) => c.x)) + 1;
     const h = Math.max(...cells.map((c) => c.y)) + 1;
-    const s = 12;
+    const s = 13;
     for (const c of cells) {
       const d = document.createElement('div');
       d.className = `mini b-${piece.color}`;
-      d.style.width = d.style.height = s - 1 + 'px';
+      d.style.width = d.style.height = s - 2 + 'px';
       d.style.left = `calc(50% + ${(c.x - w / 2) * s}px)`;
       d.style.top = `calc(50% + ${(c.y - h / 2) * s}px)`;
       box.appendChild(d);
     }
-    box.addEventListener('pointerdown', () => selectCandidate(idx));
     wrap.appendChild(box);
   });
 }
 
-function selectCandidate(idx) {
-  if (game.busy || game.gameOver) return;
-  selected = idx;
-  rotation = 0;
-  clampOrigin();
-  renderCandidates();
-  updateGhost();
-}
+/* ---------- ゴースト / 落下位置 ---------- */
+function currentPiece() { return active >= 0 ? game.candidates[active] : null; }
 
-/* ---------- ゴースト ---------- */
-function currentPiece() {
-  const p = game.candidates[selected];
-  return p ? new Piece(p.type, rotation) : null;
-}
 function clampOrigin() {
   const p = currentPiece();
   if (!p) return;
   originX = Math.max(0, Math.min(COLUMN_COUNT - p.width, originX));
 }
-function landingCells() {
+function landingInfo() {
   const p = currentPiece();
   if (!p) return { cells: [], landing: [] };
   const cells = p.cellsAt(originX);
@@ -108,66 +97,111 @@ function landingCells() {
   }
   return { cells, landing };
 }
-function updateGhost() {
-  if (game.busy || game.gameOver) { renderer.clearGhost(); return; }
-  const { cells, landing } = landingCells();
+function updateGhost(pointerY) {
+  const p = currentPiece();
+  if (!p || game.busy || game.gameOver) { renderer.clearGhost(); return; }
+  const { cells, landing } = landingInfo();
   renderer.showGhost(cells, landing);
+  const topLanding = Math.min(...landing.map((l) => renderer.blockPos(l.colIndex, l.stackIndex).y));
+  const h = Math.max(...p.normalizedCells().map((c) => c.y)) + 1;
+  const maxY = topLanding - (h - 1) * renderer.cell - renderer.cell * 0.6;
+  const y = Math.max(0, Math.min(maxY, (pointerY ?? 0) - renderer.cell * 1.6));
+  renderer.showFloating(p, originX, y);
 }
 
-/* ---------- 操作 ---------- */
-function move(d) { originX += d; clampOrigin(); updateGhost(); }
-function rotate() {
+/* ---------- 入力：候補をつかんで盤面へ運ぶ ---------- */
+const pf = $('playfield');
+
+function pointerToOrigin(e) {
   const p = currentPiece();
   if (!p) return;
-  rotation = p.rotated(1).rotation;
-  clampOrigin();
-  updateGhost();
+  const rect = pf.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left) / renderer.cell - p.width / 2);
+  originX = Math.max(0, Math.min(COLUMN_COUNT - p.width, x));
+  const y = e.clientY - rect.top;
+  overBoard = e.clientY < rect.bottom;
+  updateGhost(y);
 }
-async function drop() {
-  if (game.busy || game.gameOver) return;
-  const ok = await game.placePiece(selected, originX, rotation);
-  if (!ok) return;
-  selected = 0;
-  rotation = 0;
+
+$('candidates').addEventListener('pointerdown', (e) => {
+  const box = e.target.closest('.cand');
+  if (!box || game.busy || game.gameOver) return;
+  sfx.unlock();
+  active = Number(box.dataset.idx);
+  dragging = true;
+  overBoard = false;
+  sfx.pick();
+  markCandidates();
   clampOrigin();
+  pointerToOrigin(e);
+  e.preventDefault();
+});
+
+window.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  pointerToOrigin(e);
+  e.preventDefault();
+}, { passive: false });
+
+window.addEventListener('pointerup', async () => {
+  if (!dragging) return;
+  const idx = active;
+  const x = originX;
+  const canDrop = overBoard;
+  dragging = false;
+  active = -1;
+  renderer.clearGhost();
+  markCandidates();
+  if (canDrop) await drop(idx, x);
+});
+window.addEventListener('pointercancel', () => {
+  dragging = false;
+  active = -1;
+  renderer.clearGhost();
+  markCandidates();
+});
+
+function markCandidates() {
+  document.querySelectorAll('.cand').forEach((el, i) => {
+    el.classList.toggle('active', i === active);
+    el.classList.toggle('taken', dragging && i === active);
+  });
+}
+
+async function drop(idx, x) {
+  if (game.busy || game.gameOver) return;
+  const ok = await game.placePiece(idx, x);
+  if (!ok) return;
   renderCandidates();
   updateHud();
   updateDebug();
-  updateGhost();
 }
 
-$('btnLeft').addEventListener('click', () => move(-1));
-$('btnRight').addEventListener('click', () => move(1));
-$('btnRotate').addEventListener('click', rotate);
-$('btnDrop').addEventListener('click', drop);
-$('btnRestart').addEventListener('click', restart);
-$('btnRetry').addEventListener('click', restart);
-
-// 盤面を指でなぞって横位置指定（タップでもその位置へ）
-const pf = $('playfield');
-let dragging = false;
-function pointerToOrigin(e) {
-  const rect = pf.getBoundingClientRect();
-  const x = Math.floor((e.clientX - rect.left) / renderer.cell);
-  const p = currentPiece();
-  if (!p) return;
-  originX = Math.max(0, Math.min(COLUMN_COUNT - p.width, x - Math.floor((p.width - 1) / 2)));
-  updateGhost();
-}
-pf.addEventListener('pointerdown', (e) => {
-  if (game.busy || game.gameOver) return;
-  dragging = true; pf.setPointerCapture(e.pointerId); pointerToOrigin(e);
-});
-pf.addEventListener('pointermove', (e) => { if (dragging) pointerToOrigin(e); });
-pf.addEventListener('pointerup', () => { dragging = false; });
-pf.addEventListener('pointercancel', () => { dragging = false; });
-
+// PC 用のキーボード補助（1/2/3 選択 + ←→ + Enter/Space で落とす）
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowLeft') move(-1);
-  else if (e.key === 'ArrowRight') move(1);
-  else if (e.key === 'ArrowUp' || e.key === 'z' || e.key === 'x') rotate();
-  else if (e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); drop(); }
-  else if (['1', '2', '3'].includes(e.key)) selectCandidate(Number(e.key) - 1);
+  if (game.busy || game.gameOver) return;
+  if (['1','2','3'].includes(e.key)) active = Number(e.key) - 1;
+  else if (e.key === 'ArrowLeft') { if (active < 0) active = 0; originX--; }
+  else if (e.key === 'ArrowRight') { if (active < 0) active = 0; originX++; }
+  else if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (active < 0) return;
+    const idx = active;
+    active = -1; renderer.clearGhost(); markCandidates();
+    drop(idx, originX);
+    return;
+  } else return;
+  sfx.unlock();
+  clampOrigin();
+  markCandidates();
+  updateGhost(0);
+});
+
+/* ---------- サウンド切替 ---------- */
+$('btnSound').addEventListener('click', () => {
+  sfx.unlock();
+  sfx.enabled = !sfx.enabled;
+  $('btnSound').classList.toggle('off', !sfx.enabled);
 });
 
 /* ---------- デバッグ ---------- */
@@ -176,8 +210,7 @@ $('btnDebug').addEventListener('click', () => {
   updateDebug();
 });
 function updateDebug() {
-  const panel = $('debugPanel');
-  if (panel.classList.contains('hidden')) return;
+  if ($('debugPanel').classList.contains('hidden')) return;
   $('debugText').textContent =
     game.debugStatus().join('\n') +
     `\nheights(列1→列8) = [${game.board.heights.join(', ')}]`;
@@ -188,22 +221,19 @@ $('btnApplyHeights').addEventListener('click', () => {
   renderer.reset();
   renderer.bindBoard(game.board);
   updateDebug();
-  updateGhost();
 });
 $('btnRunChain').addEventListener('click', async () => {
   if (game.busy) return;
   game.busy = true;
   const trace = resolveChains(game.board.clone()).map((s) => s.column);
-  // 実盤面はアニメーション付きで解決
-  const hooks = game.hooks;
   for (;;) {
     const c = game.board.findExactColumns();
     if (!c.length) break;
     const column = Math.min(...c);
-    for (const ev of columnMoves(game.board, column)) {
-      if (ev.type === 'suck') await hooks.onSuck(column, ev.blocks);
-      else await hooks.onMove(ev);
-    }
+    let stack = [];
+    for (const ev of columnMoves(game.board, column)) if (ev.type === 'suck') stack = ev.blocks;
+    await renderer.conveyColumn(column, stack, game.board, 1);
+    await delay(ANIM.betweenChains);
   }
   game.busy = false;
   updateDebug();
@@ -213,14 +243,15 @@ $('btnRunChain').addEventListener('click', async () => {
 /* ---------- 初期化 ---------- */
 function restart() {
   game.reset();
-  selected = 0; rotation = 0; originX = 3;
+  active = -1; dragging = false; originX = 3;
   renderer.reset();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
   renderCandidates();
   updateHud();
   updateDebug();
-  updateGhost();
 }
+$('btnRestart').addEventListener('click', restart);
+$('btnRetry').addEventListener('click', () => { sfx.unlock(); restart(); });
 restart();
-window.__game = game; // デバッグ用
+window.__game = game;

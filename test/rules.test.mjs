@@ -119,6 +119,16 @@ console.log('Extra: 完全一致判定は height === required のみ');
   pass++; console.log('  ok   超過列は発動しない');
 }
 
+console.log('Extra: 配布は上のブロックから＝一番下のブロックがゴールへ');
+{
+  const b = Board.fromHeights([0,0,0,4,0,0,0,0]);
+  const stack = b.columns[3].map(x => x.id); // 下から順
+  const step = resolveColumn(b, 4);
+  eq(step.moves.map(m => m.to), [3,2,1,'goal'], '配り先の順は仕様どおり');
+  eq(step.moves[step.moves.length-1].block.id, stack[0], 'ゴールへ行くのは一番下のブロック');
+  eq(step.moves[0].block.id, stack[stack.length-1], '最初に配られるのは一番上のブロック');
+}
+
 console.log('Extra: 通常のライン消去は存在しない');
 {
   const b = Board.fromHeights([9,9,9,9,9,9,9,9]);

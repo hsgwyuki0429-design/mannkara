@@ -8,8 +8,10 @@ import { Board } from './board.js';
  * 各 yield 時点で盤面はその move ぶんだけ進んでいる。
  */
 export function* columnMoves(board, columnNumber) {
-  const blocks = board.takeAll(columnNumber - 1);
-  yield { type: 'suck', column: columnNumber, blocks };
+  const stack = board.takeAll(columnNumber - 1); // 下から順
+  yield { type: 'suck', column: columnNumber, blocks: stack };
+  // 配る順は「上のブロックから」。結果として一番下のブロックがゴールまで運ばれる
+  const blocks = [...stack].reverse();
   for (let k = 0; k < blocks.length; k++) {
     const targetNumber = columnNumber - 1 - k; // 0 ならゴール
     const block = blocks[k];

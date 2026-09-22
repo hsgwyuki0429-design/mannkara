@@ -3,8 +3,9 @@
 // 配列 index は columnHeights[0] = 列1, columnHeights[7] = 列8 とする（仕様 21）。
 // 画面上の x 座標(screenX) は 0 = 一番左 = 列8, 7 = 一番右 = 列1。
 export const COLUMN_COUNT = 8;
-export const ROW_COUNT = 16;          // グリッド縦マス数（床を含む）
-export const GAME_OVER_HEIGHT = 14;   // 床底からの高さがこれを超えたらゲームオーバー
+export const ROW_COUNT = 10;          // グリッド縦マス数（床を含む）
+export const GAME_OVER_HEIGHT = 9;    // 床底からの高さがこれを超えたらゲームオーバー
+                                      // （全列が揃う基準高さ8 の1マス上）
 
 // 列 index -> 固定床の高さ（床マス数）。列1が最も高く、列8が0。
 export function floorHeight(colIndex) {
@@ -28,10 +29,9 @@ export function chainMultiplier(chain) {
 
 // ===== アニメーション時間（ms・調整用） =====
 export const ANIM = {
-  drop: 90,        // 着地・重力
-  suck: 190,       // 発動列が下へ吸い込まれる
-  travel: 120,     // 下の通路を1列ぶん右へ移動
-  insert: 170,     // 下から押し込む
-  goal: 240,       // ゴール
-  betweenChains: 180,
+  drop: 110,       // 着地・重力
+  step: 85,        // ベルトコンベア1コマぶん（下がる/右へ1つ）
+  goal: 260,       // ゴール吸収
+  push: 230,       // 各列へ下から押し上げ
+  betweenChains: 140,
 };

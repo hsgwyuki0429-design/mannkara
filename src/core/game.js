@@ -1,5 +1,5 @@
 import { Board } from './board.js';
-import { PieceGenerator, Piece } from './pieces.js';
+import { PieceGenerator } from './pieces.js';
 import { ScoreManager } from './score.js';
 import { columnMoves } from './mancala.js';
 import { COLUMN_COUNT, screenXToColIndex } from './constants.js';
@@ -24,11 +24,10 @@ export class Game {
   }
 
   /** 候補 index のピースを screenX（左端）に落とす。連鎖まで完全に処理する。 */
-  async placePiece(candidateIndex, screenX, rotation) {
+  async placePiece(candidateIndex, screenX) {
     if (this.busy || this.gameOver) return false;
-    const piece = this.candidates[candidateIndex];
-    if (!piece) return false;
-    const p = rotation === undefined ? piece : new Piece(piece.type, rotation);
+    const p = this.candidates[candidateIndex];
+    if (!p) return false;
     const cells = p.cellsAt(screenX);
     if (!this.board.canPlaceCells(cells)) return false;
 
@@ -45,15 +44,13 @@ export class Game {
       const chain = steps.length + 1;
       const step = { column, chain, moves: [], goalCount: 1 };
       steps.push(step);
-      await this.hooks.onChainStart?.(step);
+      let stack = [];
       for (const ev of columnMoves(this.board, column)) {
-        if (ev.type === 'suck') {
-          await this.hooks.onSuck?.(column, ev.blocks, chain);
-        } else {
-          step.moves.push({ block: ev.block, from: ev.from, to: ev.to });
-          await this.hooks.onMove?.(ev, chain);
-        }
+        if (ev.type === 'suck') stack = ev.blocks; // 下から順のブロック列
+        else step.moves.push({ block: ev.block, from: ev.from, to: ev.to });
       }
+      step.stack = stack;
+      await this.hooks.onColumnResolve?.(step);
       const gained = this.score.addStep(chain, 1);
       await this.hooks.onChainStep?.(step, gained);
     }
@@ -73,13 +70,10 @@ export class Game {
   }
 
   hasLegalPlacement() {
-    for (const piece of this.candidates) {
-      for (let r = 0; r < 4; r++) {
-        const p = new Piece(piece.type, r);
-        const w = p.width;
-        for (let x = 0; x + w <= COLUMN_COUNT; x++) {
-          if (this.board.canPlaceCells(p.cellsAt(x))) return true;
-        }
+    for (const p of this.candidates) {
+      const w = p.width;
+      for (let x = 0; x + w <= COLUMN_COUNT; x++) {
+        if (this.board.canPlaceCells(p.cellsAt(x))) return true;
       }
     }
     return false;
