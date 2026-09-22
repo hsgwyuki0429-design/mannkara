@@ -1,7 +1,7 @@
 name: Deploy to GitHub Pages
 on:
   push:
-    branches: [main, claude/puzzle-game-prototype-3ak2tq]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
