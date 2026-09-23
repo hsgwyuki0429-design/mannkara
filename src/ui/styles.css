@@ -12,7 +12,7 @@
   --cell:35px;
   --bg:#163ba4; --bg-hi:#1741ad;
   --line:rgba(150,192,255,.78);           /* ピル・丸ボタン・トレイ枠の線 */
-  --plate:#112c88; --well:#0b163f; --well-rim:#4b71cf;
+  --plate:#102d92; --well:#0b163f; --well-rim:#4b71cf;
   --text:#fff; --dim:rgba(255,255,255,.62);
   --gold:#ffd54a; --goal:#22d3d6; --goal-text:#72f3fa;
   /* 宝石の色: --col 本体 / --hi 上面の明るい面 / --lo 下側の濃い色 / --rim 上側のふち */
@@ -64,11 +64,14 @@ button{font-family:inherit;cursor:pointer;}
 .layer{position:absolute;inset:0;pointer-events:none;}
 #wellLayer{filter:drop-shadow(0 0 1px rgba(80,130,255,.9)) drop-shadow(0 0 5px rgba(0,8,50,.35));}
 .cell{position:absolute;left:0;top:0;width:var(--cell);height:var(--cell);}
-.well{background:var(--plate);}
+.well{background:none;}
+/* 土台（マス同士の継ぎ目が見えないよう、少しだけはみ出させる） */
+.well::before{content:'';position:absolute;inset:-.6px;background:var(--plate);border-radius:inherit;}
 /* 盤面は 225° 回転して表示するので、ローカルの 右・下 = 画面の上側、左・上 = 画面の下側 */
-.well::after{content:'';position:absolute;inset:8.5%;border-radius:15%;
-  background:linear-gradient(to bottom right,#12225e,#0c1848 45%,#050d33);
-  box-shadow:inset -3px -3px 5px rgba(0,2,20,.75),inset 1.2px 1.2px 0 var(--well-rim),0 0 0 1.2px rgba(52,100,232,.8);}
+.well::after{content:'';position:absolute;inset:6%;border-radius:14%;
+  background:#12215f;
+  box-shadow:inset -3px -3px 7px 1px rgba(0,3,26,.9),inset .8px .8px 0 rgba(0,2,24,.6),
+             0 0 0 .7px rgba(70,112,226,.75),-.9px -.9px 0 .2px rgba(128,164,246,.9);}
 .well.tl{border-top-left-radius:22%;} .well.tr{border-top-right-radius:22%;}
 .well.bl{border-bottom-left-radius:22%;} .well.edge-r{border-bottom-right-radius:22%;}
 .lane{position:absolute;pointer-events:none;}
