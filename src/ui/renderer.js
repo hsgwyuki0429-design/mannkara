@@ -1,5 +1,5 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230505';
+import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230513';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -77,7 +77,7 @@ export class Renderer {
     Object.assign(this.pf.style, {
       width: W + 'px', height: W + 'px',
       left: wrapW / 2 - W / 2 + 'px', top: this.topY - W / 2 + 'px',
-      transform: `scaleY(${STRETCH_Y}) rotate(${ROTATION}deg)`,
+      transform: this.boardTransform(),
     });
     Object.assign(this.lane.style, { left: 0, top: W + 'px', width: W + 'px', height: cell + 'px' });
     Object.assign(this.laneRow.style, { left: W + 'px', top: 0, width: cell + 'px', height: W + 'px' });
@@ -89,6 +89,9 @@ export class Renderer {
     this.drawStatic();
     if (this._board) this.syncBoard(this._board, 0);
   }
+
+  /** 盤面と同じ見え方にする transform（ドラッグ中のピースにも使う） */
+  boardTransform() { return `scaleY(${STRETCH_Y}) rotate(${ROTATION}deg)`; }
 
   /** 画面上の座標 -> 盤面（回転前）のローカル px 座標 */
   clientToLocal(cx, cy) {
@@ -198,15 +201,44 @@ export class Renderer {
     for (const id of [...this.els.keys()]) if (!alive.has(id) && !this.manual.has(id)) this.removeEl(id);
   }
 
-  /** 置いた直後のポップ */
+  /** 置いた直後の着地演出: ブロックが弾んで光り、マスに光の輪、細かい光の粒が散る */
   popIn(placed) {
-    for (const { block, x, r } of placed) {
+    const c = this.cell;
+    placed.forEach(({ block, x, r }, i) => {
       const el = this.ensureEl(block);
       this.setPos(el, this.pos(x, r), 0);
       el.classList.remove('pop-in');
       void el.offsetWidth;
+      el.style.setProperty('--d', i * 18 + 'ms');
       el.classList.add('pop-in');
+      clearTimeout(el.__landT);
+      el.__landT = setTimeout(() => el.classList.remove('pop-in'), 420 + i * 18);
+      const ring = document.createElement('div');
+      ring.className = `cell land-ring c-${block.color}`;
+      ring.style.transform = `translate(${x * c}px,${r * c}px)`;
+      ring.style.animationDelay = i * 18 + 'ms';
+      this.fxLayer.appendChild(ring);
+      setTimeout(() => ring.remove(), 520);
+    });
+    // 光の粒（ピースの中心から）
+    if (placed.length) {
+      const mx = placed.reduce((a, p) => a + p.x, 0) / placed.length;
+      const my = placed.reduce((a, p) => a + p.r, 0) / placed.length;
+      const color = placed[0].block.color;
+      for (let k = 0; k < 10; k++) {
+        const d = document.createElement('div');
+        d.className = `spark c-${color}`;
+        const a = (Math.PI * 2 * k) / 10 + Math.random() * 0.5;
+        const dist = c * (0.9 + Math.random() * 0.9);
+        d.style.setProperty('--dx', Math.cos(a) * dist + 'px');
+        d.style.setProperty('--dy', Math.sin(a) * dist + 'px');
+        d.style.left = (mx + 0.5) * c + 'px';
+        d.style.top = (my + 0.5) * c + 'px';
+        this.fxLayer.appendChild(d);
+        setTimeout(() => d.remove(), 560);
+      }
     }
+    this.pf.classList.remove('land'); void this.pf.offsetWidth; this.pf.classList.add('land');
   }
 
   /* ---------- ドラッグ中のプレビュー ---------- */

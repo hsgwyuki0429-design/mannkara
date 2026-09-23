@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609230505';
-import { Board } from '../core/board.js?v=202609230505';
-import { resolveChains } from '../core/mancala.js?v=202609230505';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_UP, CHAIN_SPEED_MAX } from '../core/constants.js?v=202609230505';
-import { Renderer, delay } from './renderer.js?v=202609230505';
-import { Sfx } from './sfx.js?v=202609230505';
+import { Game } from '../core/game.js?v=202609230513';
+import { Board } from '../core/board.js?v=202609230513';
+import { resolveChains } from '../core/mancala.js?v=202609230513';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_UP, CHAIN_SPEED_MAX } from '../core/constants.js?v=202609230513';
+import { Renderer, delay } from './renderer.js?v=202609230513';
+import { Sfx } from './sfx.js?v=202609230513';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -162,6 +162,7 @@ function renderDragPiece(fx, fy) {
   const c = renderer.cell;
   const layer = $('dragLayer');
   if (!layer.childElementCount) {
+    layer.style.transform = renderer.boardTransform();
     for (const cc of piece.cells) {
       const d = document.createElement('div');
       d.className = `drag-cell c-${piece.color}`;
@@ -176,17 +177,36 @@ function renderDragPiece(fx, fy) {
   return renderer.clientToLocal(cx, cy);
 }
 
+/**
+ * 指の位置に一番近い「置ける場所」を探す。ぴったりでなくても、ずれが SNAP_RANGE マス以内なら吸い付く。
+ */
+const SNAP_RANGE = 1.6;
+function nearestPlacement(slot, piece, fx, fy) {
+  let best = null;
+  for (let oy = Math.floor(fy) - 2; oy <= Math.ceil(fy) + 2; oy++) {
+    for (let ox = Math.floor(fx) - 2; ox <= Math.ceil(fx) + 2; ox++) {
+      const d = Math.hypot(ox - fx, oy - fy);
+      if (d > SNAP_RANGE || (best && d >= best.d)) continue;
+      if (game.canPlace(slot, ox, oy)) best = { ox, oy, d };
+    }
+  }
+  return best;
+}
+
 function updateDrag(e) {
   const center = renderDragPiece(e.clientX, e.clientY);
   const c = renderer.cell;
-  const ox = Math.round(center.x / c - drag.piece.width / 2);
-  const oy = Math.round(center.y / c - drag.piece.height / 2);
-  if (ox === drag.ox && oy === drag.oy) return;
-  drag.ox = ox; drag.oy = oy;
-  drag.valid = game.canPlace(drag.slot, ox, oy);
-  if (drag.valid) {
+  const fx = center.x / c - drag.piece.width / 2;
+  const fy = center.y / c - drag.piece.height / 2;
+  const hit = nearestPlacement(drag.slot, drag.piece, fx, fy);
+  const ox = hit ? hit.ox : Math.round(fx), oy = hit ? hit.oy : Math.round(fy);
+  const valid = !!hit;
+  if (ox === drag.ox && oy === drag.oy && valid === drag.valid) return;
+  drag.ox = ox; drag.oy = oy; drag.valid = valid;
+  if (valid) {
     const { cells, chain } = previewInfo(drag.piece, ox, oy);
     renderer.showPreview(drag.piece, ox, oy, cells, chain);
+    sfx.hover?.();
   } else {
     renderer.clearPreview();
   }
