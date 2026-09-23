@@ -1,8 +1,8 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609230215';
-import { resolveChains, resolveLine, nextActivation } from '../src/core/mancala.js?v=202609230215';
-import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230215';
-import { Game } from '../src/core/game.js?v=202609230215';
-import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230215';
+import { Board, createBlock } from '../src/core/board.js?v=202609230401';
+import { resolveChains, resolveLine, nextActivation } from '../src/core/mancala.js?v=202609230401';
+import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230401';
+import { Game } from '../src/core/game.js?v=202609230401';
+import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230401';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -30,9 +30,9 @@ console.log('盤面形状とライン');
 console.log('重力なし');
 {
   const b = new Board();
-  b.place(new Piece('1'), 0, 0);
-  eq(b.get(0, 0) != null && b.totalBlocks() === 1, true, '置いた場所に残る');
-  eq(b.canPlace(new Piece('2h'), 6, 1), false, '三角形の外には置けない');
+  b.place(new Piece('O0'), 0, 0);
+  eq(b.get(0, 0) != null && b.get(1, 1) != null && b.totalBlocks() === 4, true, '置いた場所に残る');
+  eq(b.canPlace(new Piece('I0'), 5, 1), false, '三角形の外には置けない');
 }
 
 console.log('縦列: A〜C');
@@ -84,12 +84,18 @@ console.log('押し上げ（縦）: 一番下の空欄までだけが上がる')
   eq(b.line('col', 4)[2].id, ids[2], '空欄より上は動かない');
 }
 
-console.log('優先順位: 縦横まとめて最小番号、同番号なら縦が先');
+console.log('優先順位: 縦横まとめて番号が大きい方が先、同番号なら縦が先');
 {
   const b = new Board();
   setLine(b, 'col', 3, [1,1,1]);
   setLine(b, 'row', 2, [1,1]);
-  eq(nextActivation(b), { kind: 'row', n: 2 }, '縦3 より 横2 が先');
+  eq(nextActivation(b), { kind: 'col', n: 3 }, '縦3 と 横2 なら縦3 が先');
+}
+{
+  const b = new Board();
+  setLine(b, 'row', 4, [1,1,1,1]);
+  setLine(b, 'col', 2, [1,1]);
+  eq(nextActivation(b), { kind: 'row', n: 4 }, '横4 と 縦2 なら横4 が先');
 }
 {
   const b = new Board();
@@ -99,7 +105,15 @@ console.log('優先順位: 縦横まとめて最小番号、同番号なら縦�
 }
 {
   const b = Board.fromHeights([0,2,3,0,0,0,0,0]);
-  eq(seq(resolveChains(b)).startsWith('c2 c1 c3'), true, '縦2 -> 縦1 -> 縦3 …（再判定しながら）');
+  const steps = resolveChains(b);
+  eq(seq(steps), 'c3 c2 c1', '縦3 -> 縦2 -> 縦1（大きい方から）');
+  eq(steps[0].goals, 2, '縦3 の配布先の縦2 は満杯なので、その1個はゴールへ（計2個）');
+  eq(b.totalBlocks(), 0, '全部ゴールへ');
+}
+{
+  const b = new Board();
+  setLine(b, 'col', 8, [1,1,1,1,1,1,1,1]);
+  eq(nextActivation(b), { kind: 'col', n: 8 }, '縦8 と角の横1 が満杯なら縦8 が先（縦8 も発動できる）');
 }
 
 console.log('長い連鎖（穴あきラインを押し込みで埋めていく）');
@@ -110,7 +124,8 @@ console.log('長い連鎖（穴あきラインを押し込みで埋めていく�
   setLine(b, 'col', 3, [0,1,1]);
   setLine(b, 'col', 2, [0,1]);
   const steps = resolveChains(b);
-  eq(steps.length >= 8, true, `連鎖数 ${steps.length}: ${seq(steps)}`);
+  eq(steps[0].n === 5 && steps[1].n === 4, true, `押し込みで埋まった縦4 が次に発動: ${seq(steps)}`);
+  eq(b.totalBlocks(), 0, '全部ゴールへ');
 }
 {
   // ランダム盤面: 各ステップが「その時点の最優先」と一致し、最後は発動なし
@@ -149,23 +164,61 @@ console.log('長い連鎖（穴あきラインを押し込みで埋めていく�
   eq(ok && checked > 50, true, `縦横入れ替えで対称な連鎖になる（${checked}盤面）`);
 }
 
-console.log('一番長いライン（縦8・横8）について');
+console.log('手駒: テトロミノのみ');
 {
-  const b = new Board();
-  setLine(b, 'col', 8, [1,1,1,1,1,1,1,1]);
-  eq(nextActivation(b), { kind: 'row', n: 1 }, '縦8 が満杯なら角の横1 も満杯なので横1 が先に発動する');
+  eq(SHAPES.length, 19, 'テトロミノの全向き 19 種');
+  eq(SHAPES.every((s) => s.cells.length === 4), true, 'すべて4マス');
+  eq([...new Set(SHAPES.map((s) => s.type))].sort().join(''), 'IJLOSTZ', '7種類');
+  const gen = new PieceGenerator(() => 0);
+  eq(gen.spawnTray(3).map((p) => p.name), ['I0','I0','I0'], 'J: 同じ形が複数出てもよい');
+  let seed = 3; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g2 = new PieceGenerator(rnd), cnt = {};
+  for (let i = 0; i < 14000; i++) { const t = g2.next().type; cnt[t] = (cnt[t] || 0) + 1; }
+  eq(Object.values(cnt).every((v) => v > 1700 && v < 2300), true, `7種類がほぼ均等 ${JSON.stringify(cnt)}`);
 }
 
-console.log('トレイ・ゲームオーバー');
+console.log('連鎖ピース: 約10% の確率で、置けば発動が起きるテトロミノ');
 {
-  const gen = new PieceGenerator(() => 0);
-  eq(gen.spawnTray(3).map((p) => p.name), ['1','1','1'], 'J: 同じ形が複数出てもよい');
-  eq(SHAPES.every((s) => s.cells.length >= 1), true, '全形状が有効');
-  const g = new Game({ random: () => 0 });
-  await g.placePiece(0, 0, 0);
+  let seed = 9; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game({ random: rnd });
+  // 何も発動しない盤面を作る：縦1 以外のいくつかを埋める
+  setLine(g.board, 'col', 3, [1,1,0]);
+  setLine(g.board, 'row', 5, [0,1,1,1,0]);
+  const chainers = g.chainPieces();
+  eq(chainers.length > 0, true, `発動を起こせる向きが見つかる (${chainers.length}種)`);
+  // その向きは実際にどこかへ置けば発動する
+  const ok = chainers.every(({ name }) => {
+    const p = new Piece(name);
+    for (let oy = 0; oy < 8; oy++) for (let ox = 0; ox < 8; ox++) {
+      if (!g.board.canPlace(p, ox, oy)) continue;
+      const b = g.board.clone(); b.place(p, ox, oy);
+      if (nextActivation(b)) return true;
+    }
+    return false;
+  });
+  eq(ok, true, '選ばれる向きは必ず発動を起こせる');
+  // 確率: spawnTray で通常抽選(next)を通らなかった枠 = 連鎖ピースとして選ばれた枠
+  let total = 0;
+  const g3 = new Game({ random: rnd }); g3.board = g.board.clone();
+  const origNext = g3.generator.next.bind(g3.generator);
+  let naturalCount = 0;
+  g3.generator.next = () => { naturalCount++; return origNext(); };
+  for (let i = 0; i < 4000; i++) { g3.spawnTray(); total += 3; }
+  const rate = (total - naturalCount) / total;
+  eq(rate > 0.085 && rate < 0.115, true, `連鎖ピースの割合 ${(rate * 100).toFixed(1)}%`);
+}
+
+console.log('ゲーム進行');
+{
+  const g = new Game({ random: () => 0.5 });
+  const placeAny = async (slot) => {
+    for (let oy = 0; oy < 8; oy++) for (let ox = 0; ox < 8; ox++) if (g.canPlace(slot, ox, oy)) return g.placePiece(slot, ox, oy);
+    return false;
+  };
+  eq(g.tray.length, 3, 'トレイは3つ');
+  await placeAny(0);
   eq(g.tray.filter(Boolean).length, 2, '1つ使うと残り2');
-  await g.placePiece(1, 1, 0);
-  await g.placePiece(2, 2, 0);
+  await placeAny(1); await placeAny(2);
   eq(g.tray.filter(Boolean).length, 3, '使い切ったら3つ補充');
   eq(g.score.score > 0, true, 'スコアが入る');
 }

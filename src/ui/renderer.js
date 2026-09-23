@@ -1,5 +1,5 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230215';
+import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230401';
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -265,6 +265,19 @@ export class Renderer {
       } else if (!this.manual.has(block.id)) {
         this.setPos(el, this.pos(x, r), ANIM.step, 'linear');   // 押されて1マスずれる
       }
+    }
+    // 配布先が満杯で押し込めなかったブロックはゴールへ流れる
+    const onBoard = new Set([...board.entries()].map((e) => e.block.id));
+    for (const b of stack.slice(1)) {
+      if (onBoard.has(b.id)) continue;
+      const el = this.ensureEl(b);
+      const from = el.__pos ?? this.goalPos();
+      const g = this.goalPos();
+      const t = T(Math.round((Math.abs(g.x - from.x) + Math.abs(g.y - from.y)) / this.cell));
+      longest = Math.max(longest, t);
+      this.setPos(el, g, t, 'linear');
+      setTimeout(() => { el.classList.add('fly'); this.burst(g, b.color); this.hitGoal(chain); }, t);
+      setTimeout(() => this.removeEl(b.id), t + 200);
     }
     this.sfx?.push(chain);
     await delay(longest);

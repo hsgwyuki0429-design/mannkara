@@ -1,5 +1,5 @@
-import { Board } from './board.js?v=202609230215';
-import { KIND_PRIORITY } from './constants.js?v=202609230215';
+import { Board } from './board.js?v=202609230401';
+import { KIND_PRIORITY } from './constants.js?v=202609230401';
 
 /**
  * ライン(kind, n) の発動を1move ずつ進めるジェネレータ。縦列・横列で完全に同じ処理。
@@ -7,6 +7,7 @@ import { KIND_PRIORITY } from './constants.js?v=202609230215';
  *  - 奥（斜辺から遠い側）のブロックから順に 同じ種類の n-1, n-2, …, 1 番ラインへ1個ずつ、
  *    最後の1個（斜辺側の端）はゴールへ
  *  - 配られたブロックは斜辺側の端から入り、一番近い空欄までを押し込む
+ *  - 配布先が満杯（空欄なし）なら、そのブロックは押し込めずにゴールへ流れる
  */
 export function* lineMoves(board, kind, n) {
   const stack = board.takeLine(kind, n);
@@ -37,12 +38,12 @@ export const resolveColumn = (board, n) => resolveLine(board, 'col', n);
 
 /**
  * 次に発動するラインを1つ決める（優先順位はここだけで決まる）。
- * 満杯のライン（縦・横）のうち番号が最小のもの。同じ番号なら縦列が先。
+ * 満杯のライン（縦・横）のうち番号が最大のもの。同じ番号なら縦列が先。
  */
 export function nextActivation(board) {
   const lines = board.fullLines();
   if (!lines.length) return null;
-  lines.sort((a, b) => a.n - b.n || KIND_PRIORITY[a.kind] - KIND_PRIORITY[b.kind]);
+  lines.sort((a, b) => b.n - a.n || KIND_PRIORITY[a.kind] - KIND_PRIORITY[b.kind]);
   return lines[0];
 }
 

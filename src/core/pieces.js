@@ -6,49 +6,28 @@ const S = (name, weight, rows) => {
   return { name, weight, cells };
 };
 
+// テトロミノ7種の全向き（回転操作は無いので、向きごとに別の手駒として扱う）。
+// 種類ごとの出現率が等しくなるよう、weight = 1 / その種類の向きの数。
+const T = (type, list) => list.map((rows, i) => ({ ...S(`${type}${i}`, 1 / list.length, rows), type }));
 export const SHAPES = [
-  S('1', 3, ['#']),
-  S('2h', 3, ['##']),
-  S('2v', 3, ['#', '#']),
-  S('3h', 2, ['###']),
-  S('3v', 2, ['#', '#', '#']),
-  S('c1', 1.5, ['##', '#.']),
-  S('c2', 1.5, ['##', '.#']),
-  S('c3', 1.5, ['#.', '##']),
-  S('c4', 1.5, ['.#', '##']),
-  S('d1', 1, ['#.', '.#']),
-  S('d2', 1, ['.#', '#.']),
-  S('O', 1.5, ['##', '##']),
-  S('4h', 1, ['####']),
-  S('4v', 1, ['#', '#', '#', '#']),
-  S('T1', 0.6, ['###', '.#.']),
-  S('T2', 0.6, ['.#.', '###']),
-  S('T3', 0.6, ['#.', '##', '#.']),
-  S('T4', 0.6, ['.#', '##', '.#']),
-  S('S1', 0.5, ['.##', '##.']),
-  S('Z1', 0.5, ['##.', '.##']),
-  S('S2', 0.5, ['#.', '##', '.#']),
-  S('Z2', 0.5, ['.#', '##', '#.']),
-  S('L1', 0.5, ['#.', '#.', '##']),
-  S('J1', 0.5, ['.#', '.#', '##']),
-  S('L2', 0.5, ['###', '#..']),
-  S('J2', 0.5, ['###', '..#']),
-  S('L3', 0.5, ['##', '.#', '.#']),
-  S('J3', 0.5, ['##', '#.', '#.']),
-  S('L4', 0.5, ['..#', '###']),
-  S('J4', 0.5, ['#..', '###']),
-  S('5h', 0.4, ['#####']),
-  S('5v', 0.4, ['#', '#', '#', '#', '#']),
-  S('V1', 0.3, ['###', '#..', '#..']),
-  S('V2', 0.3, ['###', '..#', '..#']),
+  ...T('I', [['####'], ['#', '#', '#', '#']]),
+  ...T('O', [['##', '##']]),
+  ...T('T', [['###', '.#.'], ['#.', '##', '#.'], ['.#.', '###'], ['.#', '##', '.#']]),
+  ...T('S', [['.##', '##.'], ['#.', '##', '.#']]),
+  ...T('Z', [['##.', '.##'], ['.#', '##', '#.']]),
+  ...T('J', [['#..', '###'], ['##', '#.', '#.'], ['###', '..#'], ['.#', '.#', '##']]),
+  ...T('L', [['..#', '###'], ['#.', '#.', '##'], ['###', '#..'], ['##', '.#', '.#']]),
 ];
+// 種類ごとの色（テトリス準拠）
+export const TYPE_COLORS = { I: 'cyan', O: 'yellow', T: 'purple', S: 'green', Z: 'red', J: 'blue', L: 'orange' };
 export const SHAPE_BY_NAME = Object.fromEntries(SHAPES.map((s) => [s.name, s]));
 export const COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
 
 export class Piece {
   constructor(name, color) {
     this.name = name;
-    this.color = color ?? COLORS[0];
+    this.type = SHAPE_BY_NAME[name].type;
+    this.color = color ?? TYPE_COLORS[this.type] ?? COLORS[0];
     this.cells = SHAPE_BY_NAME[name].cells.map(([x, y]) => ({ x, y }));
     this.width = Math.max(...this.cells.map((c) => c.x)) + 1;
     this.height = Math.max(...this.cells.map((c) => c.y)) + 1;
@@ -67,8 +46,14 @@ export class PieceGenerator {
     let t = this.random() * this.total;
     let shape = this.shapes[this.shapes.length - 1];
     for (const s of this.shapes) { if ((t -= s.weight) < 0) { shape = s; break; } }
-    const color = COLORS[Math.floor(this.random() * COLORS.length)];
-    return new Piece(shape.name, color);
+    return new Piece(shape.name);
+  }
+  /** 候補の中から重み付きで1つ選ぶ（連鎖ピース用） */
+  pick(list) {
+    const total = list.reduce((a, x) => a + x.weight, 0);
+    let t = this.random() * total;
+    for (const x of list) if ((t -= x.weight) < 0) return x;
+    return list[list.length - 1];
   }
   /** トレイ3枠を新しく作る */
   spawnTray(count) {

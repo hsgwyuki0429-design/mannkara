@@ -26,11 +26,13 @@ export function lineCells(kind, n) {
 export const colNumberAt = (x) => SIZE - x;
 export const rowNumberAt = (r) => SIZE - r;
 
-/** 同じ番号の縦列と横列が同時に満杯なら縦列を先に処理する（タイブレーク） */
+/** 満杯のラインは番号が大きい順に処理。同じ番号の縦列と横列なら縦列が先（タイブレーク） */
 export const KIND_PRIORITY = { col: 0, row: 1 };
 
 // ===== トレイ =====
 export const TRAY_SIZE = 3;
+/** 手駒1つごとに「置けば発動が起きるテトロミノ」を選ぶ確率 */
+export const CHAIN_PIECE_RATE = 0.1;
 
 // ===== スコア（調整用） =====
 export const SCORE_PER_CELL_PLACED = 1;

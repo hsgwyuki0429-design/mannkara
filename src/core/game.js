@@ -1,8 +1,8 @@
-import { Board } from './board.js?v=202609230215';
-import { PieceGenerator } from './pieces.js?v=202609230215';
-import { ScoreManager } from './score.js?v=202609230215';
-import { nextActivation, lineMoves } from './mancala.js?v=202609230215';
-import { TRAY_SIZE } from './constants.js?v=202609230215';
+import { Board } from './board.js?v=202609230401';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609230401';
+import { ScoreManager } from './score.js?v=202609230401';
+import { nextActivation, lineMoves, resolveChains } from './mancala.js?v=202609230401';
+import { TRAY_SIZE, CHAIN_PIECE_RATE } from './constants.js?v=202609230401';
 
 /**
  * ゲーム本体（DOM 非依存）。描画側は hooks（async 可）で進行を受け取る。
@@ -19,7 +19,7 @@ export class Game {
   reset() {
     this.board = new Board();
     this.score = new ScoreManager();
-    this.tray = this.generator.spawnTray(TRAY_SIZE);
+    this.tray = this.spawnTray();
     this.gameOver = false;
     this.busy = false;
   }
@@ -44,7 +44,7 @@ export class Game {
     await this.hooks.onTurnEnd?.(steps);
 
     if (this.tray.every((p) => !p)) {
-      this.tray = this.generator.spawnTray(TRAY_SIZE);
+      this.tray = this.spawnTray();
       await this.hooks.onTrayRefill?.(this.tray);
     }
     if (!this.hasMove()) {
@@ -72,6 +72,38 @@ export class Game {
       if (steps.length > 2000) break;
     }
     return steps;
+  }
+
+  /**
+   * トレイ3枠を作る。各枠 CHAIN_PIECE_RATE の確率で「今の盤面のどこかに置けば発動が起きる」
+   * テトロミノを選ぶ（連鎖数が大きい向きほど選ばれやすい）。該当が無ければ通常の抽選。
+   */
+  spawnTray() {
+    let chainers = null;
+    return Array.from({ length: TRAY_SIZE }, () => {
+      if (this.generator.random() < CHAIN_PIECE_RATE) {
+        chainers ??= this.chainPieces();
+        if (chainers.length) return new Piece(this.generator.pick(chainers).name);
+      }
+      return this.generator.next();
+    });
+  }
+
+  /** 今の盤面で発動を起こせるテトロミノの向き一覧 [{name, chain, weight}] */
+  chainPieces() {
+    const out = [];
+    for (const shape of SHAPES) {
+      const piece = new Piece(shape.name);
+      let best = 0;
+      for (let oy = 0; oy < 8; oy++) for (let ox = 0; ox < 8; ox++) {
+        if (!this.board.canPlace(piece, ox, oy)) continue;
+        const b = this.board.clone();
+        b.place(piece, ox, oy);
+        best = Math.max(best, resolveChains(b).length);
+      }
+      if (best > 0) out.push({ name: shape.name, chain: best, weight: best });
+    }
+    return out;
   }
 
   hasMove() {
