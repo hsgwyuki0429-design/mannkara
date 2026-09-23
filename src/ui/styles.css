@@ -71,7 +71,7 @@ body{
 @keyframes popIn{0%{scale:.6}100%{scale:1}}
 .block.travel{z-index:5;filter:brightness(1.15) drop-shadow(0 0 6px var(--col));}
 .block.flash{filter:brightness(2.2) saturate(.6);}
-.block.fly{opacity:0;scale:.5;transition:transform var(--t) var(--e),opacity var(--t) ease-in,scale var(--t) ease-in;}
+.block.fly{opacity:0;scale:.4;transition:opacity 200ms ease-in,scale 200ms ease-in;}
 .ghost{opacity:.38;}
 .hi{opacity:.9;filter:brightness(1.15);animation:hiPulse 700ms ease-in-out infinite alternate;}
 @keyframes hiPulse{to{filter:brightness(1.5)}}

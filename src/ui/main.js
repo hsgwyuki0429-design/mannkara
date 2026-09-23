@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609230413';
-import { Board } from '../core/board.js?v=202609230413';
-import { resolveChains } from '../core/mancala.js?v=202609230413';
-import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202609230413';
-import { Renderer, delay } from './renderer.js?v=202609230413';
-import { Sfx } from './sfx.js?v=202609230413';
+import { Game } from '../core/game.js?v=202609230425';
+import { Board } from '../core/board.js?v=202609230425';
+import { resolveChains } from '../core/mancala.js?v=202609230425';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_UP, CHAIN_SPEED_MAX } from '../core/constants.js?v=202609230425';
+import { Renderer, delay } from './renderer.js?v=202609230425';
+import { Sfx } from './sfx.js?v=202609230425';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -23,56 +23,69 @@ function saveBest() {
 /* ---------- ゲーム ---------- */
 const PRAISE = [[8, 'Unbelievable!'], [5, 'Excellent!'], [3, 'Great!']];
 
+/**
+ * 描画キュー。ルールは placePiece の時点で即確定しているので、ここでは記録を順番に再生するだけ。
+ * 再生中もプレイヤーは次のピースを置ける（置いたピースはすぐ表示し、その連鎖は後ろに並ぶ）。
+ */
+let queue = Promise.resolve();
+let shownScore = 0;
+let generation = 0;           // restart で古い再生を打ち切るため
+const enqueue = (fn) => {
+  const gen = generation;
+  queue = queue.then(() => (gen === generation ? fn() : null)).catch((e) => console.error(e));
+  return queue;
+};
+/** 連鎖が進むほど速く（1連鎖目 1.0倍 → 最大 CHAIN_SPEED_MAX 倍） */
+const speedFor = (chain) => Math.min(CHAIN_SPEED_MAX, 1 + (chain - 1) * CHAIN_SPEED_UP);
+
 const game = new Game({
   hooks: {
-    async onPlaced(placed) {
+    onTurn(turn) {
+      // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように）
       sfx.place();
-      renderer.popIn(placed);
-      renderTray();
-      updateHud();
-      await delay(ANIM.place);
-    },
-    async onLine(step) { await renderer.conveyLine(step, game.board); },
-    async onStep(step, gained) {
-      const praise = PRAISE.find(([n]) => step.chain >= n)?.[1];
-      if (step.chain >= 2) renderer.showText(`${step.chain} CHAIN<small>${praise ?? ''} +${gained}</small>`, step.chain >= 5 ? 'big' : '');
-      else renderer.showText(`<small>+${gained}</small>`);
-      updateHud(true);
+      renderer.popIn(turn.placed);
+      renderTray(turn.refilled);
+      if (turn.refilled) sfx.refill();
       updateDebug();
-      await delay(ANIM.betweenChains);
-    },
-    async onTurnEnd(steps) {
-      renderer.syncBoard(game.board, 120);
-      const st = game.score.streak;
-      if (steps.length && st >= 2) {
-        await delay(200);
-        renderer.showText(`COMBO ×${st}`, 'big');
-        sfx.combo(st);
-      }
-      updateHud();
-      updateDebug();
-    },
-    async onTrayRefill() { sfx.refill(); renderTray(true); },
-    async onGameOver() {
-      await delay(350);
-      sfx.over();
-      const isBest = saveBest();
-      $('finalScore').textContent = game.score.score;
-      $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best}`;
-      $('gameOver').classList.remove('hidden');
+      enqueue(async () => {
+        showScore(turn.scoreAfterPlace);
+        for (const step of turn.steps) {
+          await renderer.playStep(step, speedFor(step.chain));
+          const praise = PRAISE.find(([n]) => step.chain >= n)?.[1];
+          if (step.chain >= 2) renderer.showText(`${step.chain} CHAIN<small>${praise ?? ''} +${step.gained}</small>`, step.chain >= 5 ? 'big' : '');
+          else renderer.showText(`<small>+${step.gained}</small>`);
+          showScore(step.score, true);
+          await delay(ANIM.betweenChains / speedFor(step.chain));
+        }
+        if (turn.steps.length && turn.streak >= 2) {
+          renderer.showText(`COMBO ×${turn.streak}`, 'big');
+          sfx.combo(turn.streak);
+        }
+        $('streak').textContent = turn.streak >= 2 ? `COMBO ×${turn.streak}` : '';
+        showScore(turn.score);
+        if (turn.gameOver) {
+          await delay(350);
+          sfx.over();
+          const isBest = saveBest();
+          $('finalScore').textContent = game.score.score;
+          $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best}`;
+          $('gameOver').classList.remove('hidden');
+        }
+      });
     },
   },
 });
 
 /* ---------- HUD ---------- */
-function updateHud(bump = false) {
+/** 表示上のスコア（描画の再生に合わせて増える） */
+function showScore(v, bump = false) {
+  shownScore = v;
   const s = $('score');
-  s.textContent = game.score.score;
+  s.textContent = v;
   if (bump) { s.classList.remove('bump'); void s.offsetWidth; s.classList.add('bump'); }
-  $('best').textContent = Math.max(best, game.score.score);
-  const st = game.score.streak;
-  $('streak').textContent = st >= 2 ? `COMBO ×${st}` : '';
+  $('best').textContent = Math.max(best, v);
 }
+function updateHud() { showScore(game.score.score); $('streak').textContent = ''; }
 
 /* ---------- トレイ ---------- */
 function trayCellSize() {
@@ -165,7 +178,7 @@ function endDrag() {
 
 $('tray').addEventListener('pointerdown', (e) => {
   const slotEl = e.target.closest('.slot');
-  if (!slotEl || game.busy || game.gameOver || drag) return;
+  if (!slotEl || game.gameOver || drag) return;
   const slot = Number(slotEl.dataset.slot);
   const piece = game.tray[slot];
   if (!piece) return;
@@ -184,7 +197,7 @@ window.addEventListener('pointerup', async () => {
   const { slot, ox, oy, valid } = drag;
   const overBoard = ox !== null && ox > -3 && oy > -3 && ox < SIZE + 1 && oy < SIZE + 1;
   endDrag();
-  if (valid) await game.placePiece(slot, ox, oy);
+  if (valid) game.placePiece(slot, ox, oy);
   else { if (overBoard) sfx.invalid(); renderTray(); }
 });
 window.addEventListener('pointercancel', () => { if (drag) { endDrag(); renderTray(); } });
@@ -204,7 +217,7 @@ function updateDebug() {
     `\n(■=埋まり □=空き, 左が斜辺側の端)`;
 }
 $('btnApplyHeights').addEventListener('click', () => {
-  if (game.busy) return;
+  generation++; queue = Promise.resolve();
   const hs = $('debugHeights').value.split(',').map((v) => Number(v.trim()) || 0);
   game.board = Board.fromHeights(hs.slice(0, SIZE));
   renderer.reset();
@@ -212,14 +225,16 @@ $('btnApplyHeights').addEventListener('click', () => {
   renderTray();
   updateDebug();
 });
-$('btnRunChain').addEventListener('click', async () => {
-  if (game.busy) return;
-  game.busy = true;
-  const trace = resolveChains(game.board.clone()).map((s) => (s.kind === 'col' ? '縦' : '横') + s.n);
-  await game.resolve();
-  game.busy = false;
-  renderer.syncBoard(game.board, 120);
-  updateHud();
+$('btnRunChain').addEventListener('click', () => {
+  const steps = game.resolve();
+  const trace = steps.map((s) => (s.kind === 'col' ? '縦' : '横') + s.n);
+  enqueue(async () => {
+    for (const step of steps) {
+      await renderer.playStep(step, speedFor(step.chain));
+      showScore(step.score, true);
+      await delay(ANIM.betweenChains / speedFor(step.chain));
+    }
+  });
   updateDebug();
   renderTray();
   $('debugText').textContent += `\norder: ${trace.join(' -> ') || '(none)'}`;
@@ -228,6 +243,7 @@ $('btnRunChain').addEventListener('click', async () => {
 /* ---------- 開始 ---------- */
 function restart() {
   saveBest();
+  generation++; queue = Promise.resolve();
   game.reset();
   endDrag();
   renderer.reset();

@@ -1,7 +1,9 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230413';
+import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230425';
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+const easeInOut = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
+const easeOut = (p) => 1 - Math.pow(1 - p, 2.2);
 
 /**
  * 描画とアニメーションだけを担当（ルールは持たない）。
@@ -205,113 +207,121 @@ export class Renderer {
   /* ---------- ライン発動（マンカラ） ---------- */
   goalPos() { return this.pos(SIZE, SIZE); }
 
+  /** スナップショット Map<id,{x,r,color}> の位置へ全ブロックを即座に合わせる（載っていないブロックは触らない） */
+  applySnapshot(snap) {
+    for (const [id, { x, r, color }] of snap) {
+      if (this.manual.has(id)) continue;
+      this.setPos(this.ensureEl({ id, color }), this.pos(x, r), 0);
+    }
+  }
+
+  /** requestAnimationFrame で duration ms の間 fn(t[ms]) を毎フレーム呼ぶ */
+  tween(duration, fn) {
+    return new Promise((resolve) => {
+      const t0 = performance.now();
+      const frame = (now) => {
+        const t = Math.min(duration, now - t0);
+        fn(t);
+        if (t < duration) requestAnimationFrame(frame); else resolve();
+      };
+      requestAnimationFrame(frame);
+    });
+  }
+
   /**
-   * ライン(kind, n) の発動。縦列と横列はまったく同じ動きで、横列は縦横を入れ替えて描く。
-   * 縦列の場合: 列ごと盤面の下の通路まで抜け、1コマごとに「列が1マス下がる / 通路のブロックが
-   * 1マス右へ」を同時に行う。先頭（斜辺側の端のブロック）がゴールへ入ったあと、
-   * 残りが一斉に各ラインへ押し込まれる。
+   * ライン(kind, n) の発動を再生する。縦列と横列はまったく同じ動きで、横列は縦横を入れ替えて描く。
+   * 以下は縦列の座標 (x, r) で説明（横列は x と r を入れ替える）。
+   *
+   *  1) 列全体が1本の列車のように、列の中を下へ → 盤面の下の通路を右へ、切れ目なく流れる。
+   *     どのブロックもちょうど 9 マス進むので全員同時に動き、同時に止まる。
+   *     先頭（一番下だったブロック）はゴール (8,8) に着く。
+   *  2) 残りのブロックが各ラインへ下から入る。押し込む相手がいる場合、押されるブロックの位置は
+   *     入ってくるブロックの位置から計算する（= 常に接触したまま一緒に動く、隙間ができない）。
+   *  連鎖が進むほど速く再生する。
    */
-  async conveyLine(step, board) {
-    const { kind, n: N, stack, chain } = step;
-    // 縦列の座標系 (x, r) で計算し、横列なら入れ替えて画面へ
-    const P = kind === 'col' ? (x, r) => this.pos(x, r) : (x, r) => this.pos(r, x);
-    const src = SIZE - N;       // 縦列の x（横列なら r）
-    const lane = SIZE;          // 通路の r（横列なら x）
-    stack.forEach((b) => { this.manual.add(b.id); this.ensureEl(b).classList.add('travel'); });
+  async playStep(step, speed = 1) {
+    const { kind, n: N, stack, chain, before, after } = step;
+    const cellT = ANIM.step / speed;                         // 1マスあたりの時間
+    const F = kind === 'col' ? (x, r) => ({ x, r }) : (x, r) => ({ x: r, r: x });   // 画面 <-> 縦列の座標
+    const P = (fx, fr) => { const q = F(fx, fr); return this.pos(q.x, q.r); };
+    const src = SIZE - N;
+    const els = stack.map((b) => { this.manual.add(b.id); const el = this.ensureEl(b); el.classList.add('travel'); return el; });
 
-    // 全ての動きを「1マスあたり ANIM.step」の同じ速さで動かす
-    const T = (cells) => Math.max(1, cells) * ANIM.step;
-
-    // 1) 通路まで抜ける（全員同じ距離 = SIZE+1-N マス）
-    const sinkT = T(SIZE + 1 - N);
-    stack.forEach((b, k) => this.setPos(this.ensureEl(b), P(src, lane - k), sinkT, 'linear'));
+    // 1) 列車（9マス）: 経路上の距離 s -> 位置。s<=8 は列の中を下へ、s>8 は通路を右へ
+    const along = (s) => (s <= SIZE ? P(src, s) : P(src + (s - SIZE), SIZE));
+    const start = stack.map((_, k) => N - 1 - k);           // slot k の r = N-1-k
+    const trainT = 9 * cellT;
     this.sfx?.sink();
-    await delay(sinkT);
+    let lastCell = -1;
+    await this.tween(trainT, (t) => {
+      const u = 9 * easeInOut(t / trainT);
+      els.forEach((el, k) => this.setPos(el, along(start[k] + u), 0));
+      const c = Math.floor(u);
+      if (c !== lastCell) { lastCell = c; if (c > 0 && c < 9) this.sfx?.step(c); }
+    });
 
-    // 2) ベルトコンベア（1コマ = 1マス）
-    for (let s = 1; s <= N; s++) {
-      stack.forEach((b, k) => {
-        const el = this.ensureEl(b);
-        if (k <= s) this.setPos(el, P(src + Math.min(s - k, N - k), lane), ANIM.step, 'linear');
-        else this.setPos(el, P(src, lane - (k - s)), ANIM.step, 'linear');
+    // 先頭がゴールへ
+    this.goalIn(stack[0], chain);
+
+    // 2) 各ラインへ入る
+    const lanePos = (k) => ({ fx: SIZE - k, fr: SIZE });     // ライン k の真下の通路
+    const moves = [];            // { el, from:{fx,fr}, to:{fx,fr}, dist, pushed:[{el, fromR, toR}] }
+    const goals = [];            // 満杯で入れず、ゴールへ流れるブロック
+    for (let k = 1; k < stack.length; k++) {
+      const b = stack[k], el = els[k];
+      const a = after.get(b.id);
+      if (!a) { goals.push({ b, el, k }); continue; }
+      const to = F(a.x, a.r);                                // 縦列座標での目的地
+      const from = lanePos(k);
+      // このラインで押されるブロック: 前後で位置が変わった、同じライン上のブロック
+      const pushed = [];
+      for (const [id, pb] of before) {
+        const q = F(pb.x, pb.r);
+        if (q.x !== to.x || stack.some((s) => s.id === id)) continue;
+        const qa = after.get(id);
+        if (!qa) continue;
+        const qa2 = F(qa.x, qa.r);
+        if (qa2.r !== q.r) pushed.push({ el: this.ensureEl({ id, color: pb.color }), fromR: q.r, toR: qa2.r });
+      }
+      moves.push({ el, b, from, to, dist: from.fr - to.r, pushed });
+    }
+    const longest = Math.max(1, ...moves.map((m) => m.dist), ...goals.map((g) => g.k));
+    const enterT = longest * cellT;
+    const pushedSound = new Set();
+    if (moves.length || goals.length) {
+      await this.tween(enterT, (t) => {
+        for (const m of moves) {
+          const d = m.dist * easeOut(Math.min(1, t / (m.dist * cellT)));
+          const r = m.from.fr - d;                           // 入ってくるブロックの位置（上へ進む）
+          this.setPos(m.el, P(m.to.x, r), 0);
+          // 押されるブロックは「入ってくるブロックの位置 - 最終的な相対距離」より手前には居られない
+          for (const q of m.pushed) {
+            const rr = Math.min(q.fromR, r - (m.to.r - q.toR));
+            this.setPos(q.el, P(m.to.x, rr), 0);
+            if (rr < q.fromR && !pushedSound.has(m)) { pushedSound.add(m); this.sfx?.push(chain); }
+          }
+        }
+        for (const g of goals) {                             // 通路をそのまま右へ流れてゴール
+          const d = g.k * easeOut(Math.min(1, t / (g.k * cellT)));
+          this.setPos(g.el, P(SIZE - g.k + d, SIZE), 0);
+        }
       });
-      this.sfx?.step(s);
-      await delay(ANIM.step);
     }
+    goals.forEach((g) => this.goalIn(g.b, chain));
+    for (const m of moves) { this.manual.delete(m.b.id); m.el.classList.remove('travel'); }
+    this.applySnapshot(after);
+    this.pf.classList.remove('thump'); void this.pf.offsetWidth; this.pf.classList.add('thump');
+  }
 
-    // 3) 先頭がゴールへ
-    const lead = stack[0];
-    const leadEl = this.ensureEl(lead);
-    leadEl.classList.add('fly');
-    this.burst(this.goalPos(), lead.color);
+  goalIn(block, chain) {
+    const el = this.els.get(block.id);
+    if (el) {
+      el.style.setProperty('--t', '0ms');
+      el.classList.add('fly');
+      setTimeout(() => this.removeEl(block.id), 220);
+    }
+    this.burst(this.goalPos(), block.color);
     this.hitGoal(chain);
-    await delay(ANIM.step);
-    this.removeEl(lead.id);
-
-    // 4) 残りが各ラインへ押し込まれる。
-    //    入ってくるブロックがラインの入口の1マス手前まで進み、そこで触れてから
-    //    ライン内のブロック（一番近い空欄まで）を一緒に1マス押し込む。速さは他の動きと同じ。
-    const dealt = new Set(stack.slice(1).map((b) => b.id));
-    const lineOf = (x, r) => (kind === 'col' ? SIZE - x : SIZE - r);   // そのマスを通る同種ラインの番号
-    const pushed = new Map();                                          // ライン番号 -> 押されるブロック
-    const incoming = new Map();                                        // ライン番号 -> 入ってくるブロック
-    for (const { block, x, r } of board.entries()) {
-      const el = this.ensureEl(block);
-      const to = this.pos(x, r);
-      if (dealt.has(block.id)) { incoming.set(lineOf(x, r), { block, el, to }); continue; }
-      if (this.manual.has(block.id)) continue;
-      const from = el.__pos;
-      if (from && (from.x !== to.x || from.y !== to.y)) {
-        const n = lineOf(x, r);
-        if (!pushed.has(n)) pushed.set(n, []);
-        pushed.get(n).push({ el, to });
-      } else {
-        this.setPos(el, to, 0);
-      }
-    }
-    let longest = ANIM.step;
-    for (const [n, { block, el, to }] of incoming) {
-      this.manual.delete(block.id);
-      const from = el.__pos ?? to;
-      const cells = Math.round((Math.abs(to.x - from.x) + Math.abs(to.y - from.y)) / this.cell);
-      const group = pushed.get(n) ?? [];
-      if (!group.length || cells < 1) {
-        const t = T(cells);
-        this.setPos(el, to, t, 'linear');
-        longest = Math.max(longest, t);
-        setTimeout(() => el.classList.remove('travel'), t);
-        continue;
-      }
-      // 入口の1マス手前 = 目的地から、進んできた向きへ1マス戻った位置
-      const ux = Math.sign(from.x - to.x), uy = Math.sign(from.y - to.y);
-      const contact = { x: to.x + ux * this.cell, y: to.y + uy * this.cell };
-      const tReach = T(cells - 1);
-      if (cells > 1) this.setPos(el, contact, tReach, 'linear');
-      const tPush = ANIM.step * 1.6;                                 // 押し込みは少し重たく
-      setTimeout(() => {
-        this.setPos(el, to, tPush, 'cubic-bezier(.3,.9,.4,1.25)');
-        group.forEach((g) => this.setPos(g.el, g.to, tPush, 'cubic-bezier(.3,.9,.4,1.25)'));
-        el.classList.remove('travel');
-        this.sfx?.push(chain);
-      }, cells > 1 ? tReach : 0);
-      longest = Math.max(longest, (cells > 1 ? tReach : 0) + tPush);
-    }
-    // 配布先が満杯で押し込めなかったブロックはゴールへ流れる
-    const onBoard = new Set([...board.entries()].map((e) => e.block.id));
-    for (const b of stack.slice(1)) {
-      if (onBoard.has(b.id)) continue;
-      const el = this.ensureEl(b);
-      const from = el.__pos ?? this.goalPos();
-      const g = this.goalPos();
-      const t = T(Math.round((Math.abs(g.x - from.x) + Math.abs(g.y - from.y)) / this.cell));
-      longest = Math.max(longest, t);
-      this.setPos(el, g, t, 'linear');
-      setTimeout(() => { el.classList.add('fly'); this.burst(g, b.color); this.hitGoal(chain); }, t);
-      setTimeout(() => this.removeEl(b.id), t + 200);
-    }
-    await delay(longest);
-    const cls = kind === 'col' ? 'thump' : 'thump-x';
-    this.pf.classList.remove('thump', 'thump-x'); void this.pf.offsetWidth; this.pf.classList.add(cls);
   }
 
   hitGoal(chain) {

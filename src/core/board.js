@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells, KINDS } from './constants.js?v=202609230413';
+import { SIZE, isInside, lineCells, KINDS } from './constants.js?v=202609230425';
 
 let nextBlockId = 1;
 export function createBlock(color) {
@@ -47,11 +47,19 @@ export class Board {
     return blocks;
   }
   /**
-   * 斜辺側の端から押し込む。一番近い空欄までのブロックだけが1マスずれ、空欄が1つ埋まる。
-   * それより奥のブロックは動かない。空欄が無ければ false。
+   * 斜辺側の端から押し込む。
+   *  - ラインが空なら、ブロックは一番奥まで進む
+   *  - そうでなければ、一番近い空欄までのブロックだけが1マスずれ、空欄が1つ埋まる
+   *    （それより奥のブロックは動かない）
+   * 空欄が無ければ false。
    */
   insertBottom(kind, n, block) {
     const cells = lineCells(kind, n);
+    if (cells.every(({ x, r }) => !this.get(x, r))) {
+      const far = cells[cells.length - 1];
+      this.set(far.x, far.r, block);
+      return true;
+    }
     const hole = cells.findIndex(({ x, r }) => !this.get(x, r));
     if (hole < 0) return false;
     for (let k = hole; k > 0; k--) this.set(cells[k].x, cells[k].r, this.get(cells[k - 1].x, cells[k - 1].r));
@@ -91,6 +99,13 @@ export class Board {
       if (block) yield { block, x, r };
     }
   }
+  /** 全ブロックの位置 Map<id, {x, r}>（描画の再生用スナップショット） */
+  snapshot() {
+    const m = new Map();
+    for (const { block, x, r } of this.entries()) m.set(block.id, { x, r, color: block.color });
+    return m;
+  }
+
   clone() {
     const b = new Board();
     b.grid = this.grid.map((row) => row.map((v) => (v ? { ...v } : null)));

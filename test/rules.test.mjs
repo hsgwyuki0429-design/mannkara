@@ -1,8 +1,8 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609230413';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609230413';
-import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230413';
-import { Game, isSolvable } from '../src/core/game.js?v=202609230413';
-import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230413';
+import { Board, createBlock } from '../src/core/board.js?v=202609230425';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609230425';
+import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230425';
+import { Game, isSolvable } from '../src/core/game.js?v=202609230425';
+import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230425';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -54,7 +54,7 @@ console.log('横列: 縦列と同じ挙動');
   const st = resolveLine(b, 'row', 3);
   eq(st.moves.map((m) => m.to), [2,1,'goal'], '横2, 横1, ゴールへ配る');
   eq(st.moves.at(-1).block.id, st.stack[0].id, 'ゴールへ行くのは右端のブロック');
-  eq(pat(b, 'row', 2), [1,0], '横2 の右端に入る');
+  eq(pat(b, 'row', 2), [0,1], '空の横2 には一番奥（左端）に入る');
   eq(pat(b, 'row', 1), [1], '横1 に入る');
 }
 {
@@ -71,6 +71,23 @@ console.log('横列: 縦列と同じ挙動');
   setLine(b, 'row', 2, [1,1]);
   eq(seq(resolveChains(b)), 'r2 r1', '横2 -> 横1 の連鎖');
   eq(b.totalBlocks(), 0, '空になる');
+}
+
+console.log('空のラインへ配られたブロックは一番奥まで進む');
+{
+  const b = new Board();
+  b.insertBottom('col', 5, createBlock('x'));
+  eq(pat(b, 'col', 5), [0,0,0,0,1], '空の縦5 -> 一番奥（上端）');
+  b.insertBottom('col', 5, createBlock('x'));
+  eq(pat(b, 'col', 5), [1,0,0,0,1], '空でなければ手前の端から（押す相手が無いので手前に入る）');
+  const r = new Board();
+  r.insertBottom('row', 4, createBlock('x'));
+  eq(pat(r, 'row', 4), [0,0,0,1], '空の横4 -> 一番奥（左端）');
+}
+{
+  const b = Board.fromHeights([0,0,0,0,5,0,0,0]);
+  resolveLine(b, 'col', 5);
+  eq([4,3,2,1].map((n) => pat(b, 'col', n).at(-1)), [1,1,1,1], '縦5 発動: 空の縦4〜1 には一番奥に入る');
 }
 
 console.log('押し上げ（縦）: 一番下の空欄までだけが上がる');
