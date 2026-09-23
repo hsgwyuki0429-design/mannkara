@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609230145';
-import { Board } from '../core/board.js?v=202609230145';
-import { resolveChains } from '../core/mancala.js?v=202609230145';
-import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202609230145';
-import { Renderer, delay } from './renderer.js?v=202609230145';
-import { Sfx } from './sfx.js?v=202609230145';
+import { Game } from '../core/game.js?v=202609230215';
+import { Board } from '../core/board.js?v=202609230215';
+import { resolveChains } from '../core/mancala.js?v=202609230215';
+import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202609230215';
+import { Renderer, delay } from './renderer.js?v=202609230215';
+import { Sfx } from './sfx.js?v=202609230215';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -117,31 +117,34 @@ function previewInfo(piece, ox, oy) {
   return { cells, chain };
 }
 
+/**
+ * 指の少し上にピースを浮かせて表示し、その中心がどの盤面マスに当たるかを返す。
+ * 盤面は回転して表示しているので、画面座標 -> 盤面ローカル座標へ逆回転して判定する。
+ */
 function renderDragPiece(fx, fy) {
   const { piece, lift } = drag;
   const c = renderer.cell;
-  const left = fx - (piece.width * c) / 2;
-  const top = fy - lift - piece.height * c;
   const layer = $('dragLayer');
   if (!layer.childElementCount) {
     for (const cc of piece.cells) {
       const d = document.createElement('div');
       d.className = `drag-cell c-${piece.color}`;
-      d.style.left = cc.x * c + 'px';
-      d.style.top = cc.y * c + 'px';
+      d.style.left = (cc.x - piece.width / 2) * c + 'px';
+      d.style.top = (cc.y - piece.height / 2) * c + 'px';
       layer.appendChild(d);
     }
   }
-  layer.style.transform = `translate(${left}px,${top}px)`;
-  return { left, top };
+  const cx = fx, cy = fy - lift;
+  layer.style.left = cx + 'px';
+  layer.style.top = cy + 'px';
+  return renderer.clientToLocal(cx, cy);
 }
 
 function updateDrag(e) {
-  const { left, top } = renderDragPiece(e.clientX, e.clientY);
-  const rect = renderer.pf.getBoundingClientRect();
+  const center = renderDragPiece(e.clientX, e.clientY);
   const c = renderer.cell;
-  const ox = Math.round((left - rect.left) / c);
-  const oy = Math.round((top - rect.top) / c);
+  const ox = Math.round(center.x / c - drag.piece.width / 2);
+  const oy = Math.round(center.y / c - drag.piece.height / 2);
   if (ox === drag.ox && oy === drag.oy) return;
   drag.ox = ox; drag.oy = oy;
   drag.valid = game.canPlace(drag.slot, ox, oy);
@@ -168,7 +171,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   if (!piece) return;
   sfx.unlock();
   sfx.pick();
-  const lift = e.pointerType === 'mouse' ? -(piece.height * renderer.cell) / 2 : renderer.cell * 1.3;
+  const lift = e.pointerType === 'mouse' ? 0 : renderer.cell * (1.2 + Math.max(piece.width, piece.height) * 0.5);
   drag = { slot, piece, lift, ox: null, oy: null, valid: false };
   slotEl.classList.add('dragging');
   $('dragLayer').innerHTML = '';

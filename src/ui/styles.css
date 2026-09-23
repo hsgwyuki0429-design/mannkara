@@ -35,16 +35,18 @@ body{
 
 /* ---- 盤面 ---- */
 .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;}
-.playfield{position:relative;}
+.rot-wrap{position:relative;}
+.playfield{position:absolute;rotate:225deg;}
+.upright{display:inline-block;rotate:-225deg;}
 .playfield.thump{animation:thump 220ms ease-out;}
-@keyframes thump{30%{transform:translateY(3px)}60%{transform:translateY(-1px)}}
+@keyframes thump{30%{scale:1.012}60%{scale:.997}}
 .playfield.thump-x{animation:thumpX 220ms ease-out;}
-@keyframes thumpX{30%{transform:translateX(3px)}60%{transform:translateX(-1px)}}
+@keyframes thumpX{30%{scale:1.012}60%{scale:.997}}
 .layer{position:absolute;inset:0;pointer-events:none;}
 .cell{position:absolute;left:0;top:0;width:var(--cell);height:var(--cell);}
 .well{background:var(--board);}
 .well::after{content:'';position:absolute;inset:2px;border-radius:5px;background:var(--well);
-  box-shadow:inset 0 2px 5px rgba(0,0,0,.45),0 0 0 1px var(--well-line);}
+  box-shadow:inset -2px -2px 5px rgba(0,0,0,.45),0 0 0 1px var(--well-line);}
 .well.tl{border-top-left-radius:10px;} .well.tr{border-top-right-radius:10px;}
 .well.bl{border-bottom-left-radius:10px;} .well.edge-r{border-top-right-radius:8px;border-bottom-right-radius:8px;}
 .lane{position:absolute;pointer-events:none;}
@@ -59,11 +61,12 @@ body{
 
 /* ---- ブロック（光沢ベベル） ---- */
 .block,.ghost,.hi,.tray-cell,.drag-cell{border-radius:6px;background:var(--col);
-  box-shadow:inset 0 3px 0 rgba(255,255,255,.42),inset 0 -4px 0 rgba(0,0,0,.25),
-             inset 3px 0 0 rgba(255,255,255,.12),inset -3px 0 0 rgba(0,0,0,.12);}
+  box-shadow:inset 0 -3px 0 rgba(255,255,255,.42),inset 0 4px 0 rgba(0,0,0,.25),
+             inset -3px 0 0 rgba(255,255,255,.42),inset 3px 0 0 rgba(0,0,0,.25);}
+/* 盤面・トレイ・ドラッグ中のピースはすべて 225° 回転して表示するので、光は「右下」に置く */
 .block{transition:transform var(--t,0ms) var(--e,ease),opacity 180ms,filter 160ms;will-change:transform;}
-.block::after,.drag-cell::after,.tray-cell::after{content:'';position:absolute;left:18%;top:14%;width:30%;height:18%;
-  border-radius:4px;background:rgba(255,255,255,.45);}
+.block::after,.drag-cell::after,.tray-cell::after{content:'';position:absolute;right:14%;bottom:14%;width:26%;height:26%;
+  border-radius:50%;background:rgba(255,255,255,.5);}
 .block.pop-in{animation:popIn 180ms cubic-bezier(.3,1.6,.5,1);}
 @keyframes popIn{0%{scale:.6}100%{scale:1}}
 .block.travel{z-index:5;filter:brightness(1.15) drop-shadow(0 0 6px var(--col));}
@@ -72,7 +75,7 @@ body{
 .ghost{opacity:.38;}
 .hi{opacity:.9;filter:brightness(1.15);animation:hiPulse 700ms ease-in-out infinite alternate;}
 @keyframes hiPulse{to{filter:brightness(1.5)}}
-.chain-badge{position:absolute;left:0;top:0;padding:2px 7px;border-radius:10px;font-size:13px;font-weight:900;
+.chain-badge{position:absolute;translate:-50% -50%;padding:2px 7px;border-radius:10px;font-size:13px;font-weight:900;
   background:#ffd23f;color:#402c00;box-shadow:0 3px 0 rgba(0,0,0,.25);white-space:nowrap;}
 .c-red{--col:var(--red)} .c-orange{--col:var(--orange)} .c-yellow{--col:var(--yellow)} .c-green{--col:var(--green)}
 .c-cyan{--col:var(--cyan)} .c-blue{--col:var(--blue)} .c-purple{--col:var(--purple)} .c-debug{--col:var(--debug)}
@@ -82,7 +85,7 @@ body{
 @keyframes burst{to{opacity:0;translate:var(--dx) var(--dy);rotate:200deg;scale:.4;}}
 
 /* ---- 中央テキスト ---- */
-.pop{position:absolute;left:50%;top:32%;translate:-50% 0;white-space:nowrap;pointer-events:none;
+.pop{position:absolute;left:50%;top:55%;z-index:8;translate:-50% 0;white-space:nowrap;pointer-events:none;
   font-weight:900;font-size:30px;opacity:0;color:#fff;
   text-shadow:0 3px 0 rgba(0,0,0,.3),0 0 18px rgba(255,255,255,.35);}
 .pop small{display:block;text-align:center;font-size:15px;color:#ffd23f;}
@@ -93,13 +96,13 @@ body{
 /* ---- トレイ ---- */
 .tray{width:100%;display:flex;justify-content:space-around;align-items:center;height:118px;flex-shrink:0;}
 .slot{flex:1;height:100%;position:relative;display:flex;align-items:center;justify-content:center;}
-.slot .piece{position:relative;transition:transform 160ms,opacity 160ms;}
+.slot .piece{position:relative;rotate:225deg;transition:transform 160ms,opacity 160ms;}
 .slot.dragging .piece{opacity:0;}
 .slot.nofit .piece{opacity:.35;filter:grayscale(.7);}
 .slot.enter .piece{animation:trayIn 260ms cubic-bezier(.3,1.5,.5,1) both;}
 @keyframes trayIn{from{transform:translateY(40px) scale(.4);opacity:0}}
 .tray-cell{position:absolute;border-radius:4px;}
-.drag-layer{position:fixed;left:0;top:0;pointer-events:none;z-index:20;}
+.drag-layer{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:20;rotate:225deg;}
 .drag-cell{position:absolute;width:var(--cell);height:var(--cell);filter:drop-shadow(0 8px 10px rgba(0,0,0,.35));}
 
 /* ---- その他 ---- */

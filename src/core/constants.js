@@ -41,9 +41,7 @@ export const streakMultiplier = (streak) => 1 + Math.min(streak - 1, 8) * 0.25;
 
 // ===== アニメーション時間（ms・調整用） =====
 export const ANIM = {
-  place: 140,
-  sink: 150,       // ラインが通路まで抜ける
-  step: 80,        // ベルトコンベア1コマ
-  push: 240,       // 各ラインへ押し込み
-  betweenChains: 120,
+  place: 110,      // 置いた時のポップ
+  step: 62,        // 1マスぶん動く時間（抜ける・流れる・押し込むすべて共通）
+  betweenChains: 90,
 };

@@ -1,8 +1,8 @@
-import { Board } from './board.js?v=202609230145';
-import { PieceGenerator } from './pieces.js?v=202609230145';
-import { ScoreManager } from './score.js?v=202609230145';
-import { nextActivation, lineMoves } from './mancala.js?v=202609230145';
-import { TRAY_SIZE } from './constants.js?v=202609230145';
+import { Board } from './board.js?v=202609230215';
+import { PieceGenerator } from './pieces.js?v=202609230215';
+import { ScoreManager } from './score.js?v=202609230215';
+import { nextActivation, lineMoves } from './mancala.js?v=202609230215';
+import { TRAY_SIZE } from './constants.js?v=202609230215';
 
 /**
  * ゲーム本体（DOM 非依存）。描画側は hooks（async 可）で進行を受け取る。

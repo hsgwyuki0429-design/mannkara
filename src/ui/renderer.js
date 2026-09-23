@@ -1,4 +1,5 @@
-import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230145';
+export const ROTATION = 225; // deg。左上の直角が真下に来る
+import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230215';
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -29,6 +30,19 @@ export class Renderer {
     this.laneRow = document.getElementById('laneRow');
     this.goal = document.getElementById('goal');
     this.pop = document.getElementById('pop');
+    // 盤面は直角が下に来るよう 225° 回転して表示する。回転しない外枠 wrap に入れ、
+    // 文字（連鎖表示）は wrap 側に置いて回転させない
+    this.wrap = document.getElementById('rotWrap');
+    if (!this.wrap) {
+      this.wrap = document.createElement('div');
+      this.wrap.id = 'rotWrap';
+      this.wrap.className = 'rot-wrap';
+      this.pf.parentNode.insertBefore(this.wrap, this.pf);
+      this.wrap.appendChild(this.pf);
+    }
+    this.wrap.appendChild(this.pop);
+    const goalText = this.goal.querySelector('span');
+    if (goalText) goalText.className = 'upright';
     this.els = new Map();     // blockId -> element
     this.manual = new Set();  // 手動制御中
     this.cell = 40;
@@ -39,14 +53,23 @@ export class Renderer {
   /* ---------- レイアウト ---------- */
   layout() {
     const vw = Math.min(window.innerWidth, 560);
-    const availW = vw - 16;
-    const availH = window.innerHeight - 250;
-    const cell = Math.max(20, Math.floor(Math.min(availW, availH) / (SIZE + 1.15)));
+    const availW = vw - 12;
+    const availH = window.innerHeight - 230;
+    // 回転後の外接サイズ = 一辺 × √2
+    const span = (SIZE + 1.15) * Math.SQRT2;
+    const cell = Math.max(16, Math.floor(Math.min(availW / span, availH / (span * 0.86))));
     this.cell = cell;
     document.documentElement.style.setProperty('--cell', cell + 'px');
     const W = SIZE * cell;
-    this.pf.style.width = W + cell * 1.15 + 'px';
-    this.pf.style.height = W + cell * 1.15 + 'px';
+    const L = W + cell * 1.15;
+    this.L = L;
+    const D = L * Math.SQRT2;
+    // 盤面の三角形とゴールが収まる高さだけ確保（左右の角の外側は空白なので少し詰める）
+    Object.assign(this.wrap.style, { width: D + 'px', height: D * 0.86 + 'px' });
+    Object.assign(this.pf.style, {
+      width: L + 'px', height: L + 'px',
+      left: (D - L) / 2 + 'px', top: (D * 0.86 - L) / 2 - D * 0.02 + 'px',
+    });
     Object.assign(this.lane.style, { left: 0, top: W + 'px', width: W + 'px', height: cell + 'px' });
     Object.assign(this.laneRow.style, { left: W + 'px', top: 0, width: cell + 'px', height: W + 'px' });
     Object.assign(this.goal.style, {
@@ -55,6 +78,19 @@ export class Renderer {
     });
     this.drawStatic();
     if (this._board) this.syncBoard(this._board, 0);
+  }
+
+  /** 画面上の座標 -> 盤面（回転前）のローカル px 座標 */
+  clientToLocal(cx, cy) {
+    const r = this.wrap.getBoundingClientRect();
+    const pr = this.pf.getBoundingClientRect();
+    const dx = cx - (pr.left + pr.width / 2);
+    const dy = cy - (pr.top + pr.height / 2);
+    const a = (-ROTATION * Math.PI) / 180;
+    return {
+      x: this.L / 2 + dx * Math.cos(a) - dy * Math.sin(a),
+      y: this.L / 2 + dx * Math.sin(a) + dy * Math.cos(a),
+    };
   }
 
   drawStatic() {
@@ -79,13 +115,13 @@ export class Renderer {
     for (let n = 1; n <= SIZE; n++) {
       const a = document.createElement('div');
       a.className = 'lane-label';
-      a.textContent = n;
-      Object.assign(a.style, { width: c + 'px', height: c + 'px', transform: `translate(${(SIZE - n) * c}px,0)` });
+      a.innerHTML = `<span class="upright">${n}</span>`;
+      Object.assign(a.style, { width: c + 'px', height: c + 'px', left: (SIZE - n) * c + 'px', top: 0 });
       this.lane.appendChild(a);
       const b = document.createElement('div');
       b.className = 'lane-label';
-      b.textContent = n;
-      Object.assign(b.style, { width: c + 'px', height: c + 'px', transform: `translate(0,${(SIZE - n) * c}px)` });
+      b.innerHTML = `<span class="upright">${n}</span>`;
+      Object.assign(b.style, { width: c + 'px', height: c + 'px', left: 0, top: (SIZE - n) * c + 'px' });
       this.laneRow.appendChild(b);
     }
   }
@@ -106,6 +142,7 @@ export class Renderer {
     el.style.setProperty('--t', dur + 'ms');
     el.style.setProperty('--e', ease || 'cubic-bezier(.2,.8,.3,1)');
     el.style.transform = `translate(${p.x}px,${p.y}px)`;
+    el.__pos = p;
   }
   removeEl(id) {
     this.els.get(id)?.remove();
@@ -157,8 +194,9 @@ export class Renderer {
     if (chainCount >= 2) {
       const b = document.createElement('div');
       b.className = 'chain-badge';
-      b.textContent = `⚡${chainCount}`;
-      b.style.transform = `translate(${(ox + piece.width) * c}px,${oy * c - c * 0.35}px)`;
+      b.innerHTML = `<span class="upright">⚡${chainCount}</span>`;
+      b.style.left = (ox + piece.width / 2) * c + 'px';
+      b.style.top = (oy + piece.height / 2) * c + 'px';
       this.ghostLayer.appendChild(b);
     }
   }
@@ -181,13 +219,16 @@ export class Renderer {
     const lane = SIZE;          // 通路の r（横列なら x）
     stack.forEach((b) => { this.manual.add(b.id); this.ensureEl(b).classList.add('travel'); });
 
-    // 1) 通路まで抜ける
-    const sinkT = ANIM.sink + 22 * (SIZE - N);
-    stack.forEach((b, k) => this.setPos(this.ensureEl(b), P(src, lane - k), sinkT, 'cubic-bezier(.5,0,.7,1)'));
+    // 全ての動きを「1マスあたり ANIM.step」の同じ速さで動かす
+    const T = (cells) => Math.max(1, cells) * ANIM.step;
+
+    // 1) 通路まで抜ける（全員同じ距離 = SIZE+1-N マス）
+    const sinkT = T(SIZE + 1 - N);
+    stack.forEach((b, k) => this.setPos(this.ensureEl(b), P(src, lane - k), sinkT, 'linear'));
     this.sfx?.sink();
     await delay(sinkT);
 
-    // 2) ベルトコンベア
+    // 2) ベルトコンベア（1コマ = 1マス）
     for (let s = 1; s <= N; s++) {
       stack.forEach((b, k) => {
         const el = this.ensureEl(b);
@@ -198,7 +239,7 @@ export class Renderer {
       await delay(ANIM.step);
     }
 
-    // 3) 先頭がゴールへ（位置 (8,8) は縦横共通）
+    // 3) 先頭がゴールへ
     const lead = stack[0];
     const leadEl = this.ensureEl(lead);
     leadEl.classList.add('fly');
@@ -207,13 +248,28 @@ export class Renderer {
     await delay(ANIM.step);
     this.removeEl(lead.id);
 
-    // 4) 残りが一斉に各ラインへ押し込まれる
-    stack.slice(1).forEach((b) => { this.manual.delete(b.id); this.els.get(b.id)?.classList.remove('travel'); });
-    this.syncBoard(board, ANIM.push, 'cubic-bezier(.25,1.55,.45,1)');
+    // 4) 残りが各ラインへ押し込まれる。移動距離に比例した時間で、他の動きと同じ速さ
+    const dealt = new Set(stack.slice(1).map((b) => b.id));
+    let longest = ANIM.step;
+    for (const { block, x, r } of board.entries()) {
+      const el = this.ensureEl(block);
+      if (dealt.has(block.id)) {
+        this.manual.delete(block.id);
+        el.classList.remove('travel');
+        const from = el.__pos ?? this.pos(x, r);
+        const to = this.pos(x, r);
+        const dist = (Math.abs(to.x - from.x) + Math.abs(to.y - from.y)) / this.cell;
+        const t = T(Math.round(dist));
+        longest = Math.max(longest, t);
+        this.setPos(el, to, t, 'linear');
+      } else if (!this.manual.has(block.id)) {
+        this.setPos(el, this.pos(x, r), ANIM.step, 'linear');   // 押されて1マスずれる
+      }
+    }
+    this.sfx?.push(chain);
+    await delay(longest);
     const cls = kind === 'col' ? 'thump' : 'thump-x';
     this.pf.classList.remove('thump', 'thump-x'); void this.pf.offsetWidth; this.pf.classList.add(cls);
-    this.sfx?.push(chain);
-    await delay(ANIM.push);
   }
 
   hitGoal(chain) {
