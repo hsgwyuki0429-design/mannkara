@@ -1,5 +1,5 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230401';
+import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230405';
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -248,23 +248,53 @@ export class Renderer {
     await delay(ANIM.step);
     this.removeEl(lead.id);
 
-    // 4) 残りが各ラインへ押し込まれる。移動距離に比例した時間で、他の動きと同じ速さ
+    // 4) 残りが各ラインへ押し込まれる。
+    //    入ってくるブロックがラインの入口の1マス手前まで進み、そこで触れてから
+    //    ライン内のブロック（一番近い空欄まで）を一緒に1マス押し込む。速さは他の動きと同じ。
     const dealt = new Set(stack.slice(1).map((b) => b.id));
-    let longest = ANIM.step;
+    const lineOf = (x, r) => (kind === 'col' ? SIZE - x : SIZE - r);   // そのマスを通る同種ラインの番号
+    const pushed = new Map();                                          // ライン番号 -> 押されるブロック
+    const incoming = new Map();                                        // ライン番号 -> 入ってくるブロック
     for (const { block, x, r } of board.entries()) {
       const el = this.ensureEl(block);
-      if (dealt.has(block.id)) {
-        this.manual.delete(block.id);
-        el.classList.remove('travel');
-        const from = el.__pos ?? this.pos(x, r);
-        const to = this.pos(x, r);
-        const dist = (Math.abs(to.x - from.x) + Math.abs(to.y - from.y)) / this.cell;
-        const t = T(Math.round(dist));
-        longest = Math.max(longest, t);
-        this.setPos(el, to, t, 'linear');
-      } else if (!this.manual.has(block.id)) {
-        this.setPos(el, this.pos(x, r), ANIM.step, 'linear');   // 押されて1マスずれる
+      const to = this.pos(x, r);
+      if (dealt.has(block.id)) { incoming.set(lineOf(x, r), { block, el, to }); continue; }
+      if (this.manual.has(block.id)) continue;
+      const from = el.__pos;
+      if (from && (from.x !== to.x || from.y !== to.y)) {
+        const n = lineOf(x, r);
+        if (!pushed.has(n)) pushed.set(n, []);
+        pushed.get(n).push({ el, to });
+      } else {
+        this.setPos(el, to, 0);
       }
+    }
+    let longest = ANIM.step;
+    for (const [n, { block, el, to }] of incoming) {
+      this.manual.delete(block.id);
+      const from = el.__pos ?? to;
+      const cells = Math.round((Math.abs(to.x - from.x) + Math.abs(to.y - from.y)) / this.cell);
+      const group = pushed.get(n) ?? [];
+      if (!group.length || cells < 1) {
+        const t = T(cells);
+        this.setPos(el, to, t, 'linear');
+        longest = Math.max(longest, t);
+        setTimeout(() => el.classList.remove('travel'), t);
+        continue;
+      }
+      // 入口の1マス手前 = 目的地から、進んできた向きへ1マス戻った位置
+      const ux = Math.sign(from.x - to.x), uy = Math.sign(from.y - to.y);
+      const contact = { x: to.x + ux * this.cell, y: to.y + uy * this.cell };
+      const tReach = T(cells - 1);
+      if (cells > 1) this.setPos(el, contact, tReach, 'linear');
+      const tPush = ANIM.step * 1.6;                                 // 押し込みは少し重たく
+      setTimeout(() => {
+        this.setPos(el, to, tPush, 'cubic-bezier(.3,.9,.4,1.25)');
+        group.forEach((g) => this.setPos(g.el, g.to, tPush, 'cubic-bezier(.3,.9,.4,1.25)'));
+        el.classList.remove('travel');
+        this.sfx?.push(chain);
+      }, cells > 1 ? tReach : 0);
+      longest = Math.max(longest, (cells > 1 ? tReach : 0) + tPush);
     }
     // 配布先が満杯で押し込めなかったブロックはゴールへ流れる
     const onBoard = new Set([...board.entries()].map((e) => e.block.id));
@@ -279,7 +309,6 @@ export class Renderer {
       setTimeout(() => { el.classList.add('fly'); this.burst(g, b.color); this.hitGoal(chain); }, t);
       setTimeout(() => this.removeEl(b.id), t + 200);
     }
-    this.sfx?.push(chain);
     await delay(longest);
     const cls = kind === 'col' ? 'thump' : 'thump-x';
     this.pf.classList.remove('thump', 'thump-x'); void this.pf.offsetWidth; this.pf.classList.add(cls);

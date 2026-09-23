@@ -33,6 +33,10 @@ export const KIND_PRIORITY = { col: 0, row: 1 };
 export const TRAY_SIZE = 3;
 /** 手駒1つごとに「置けば発動が起きるテトロミノ」を選ぶ確率 */
 export const CHAIN_PIECE_RATE = 0.1;
+/** 新しいトレイが「順番と場所を選べば3つとも置ける」組み合わせになる確率（残りは1つ以上置けるだけ保証） */
+export const SOLVABLE_TRAY_RATE = 0.9;
+/** 条件を満たすトレイを探す抽選回数の上限 */
+export const TRAY_RETRIES = 40;
 
 // ===== スコア（調整用） =====
 export const SCORE_PER_CELL_PLACED = 1;

@@ -1,8 +1,8 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609230401';
-import { resolveChains, resolveLine, nextActivation } from '../src/core/mancala.js?v=202609230401';
-import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230401';
-import { Game } from '../src/core/game.js?v=202609230401';
-import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230401';
+import { Board, createBlock } from '../src/core/board.js?v=202609230405';
+import { resolveChains, resolveLine, nextActivation } from '../src/core/mancala.js?v=202609230405';
+import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230405';
+import { Game, isSolvable } from '../src/core/game.js?v=202609230405';
+import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230405';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -206,6 +206,35 @@ console.log('連鎖ピース: 約10% の確率で、置けば発動が起きる�
   for (let i = 0; i < 4000; i++) { g3.spawnTray(); total += 3; }
   const rate = (total - naturalCount) / total;
   eq(rate > 0.085 && rate < 0.115, true, `連鎖ピースの割合 ${(rate * 100).toFixed(1)}%`);
+}
+
+console.log('トレイ保証: 必ず1つは置ける / 9割は3つとも置ける');
+{
+  // 置ける場所が限られた盤面: 右上の角まわりだけ空ける
+  const b = new Board();
+  for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r)) b.set(x, r, createBlock('x'));
+  [[4,0],[5,0],[6,0],[7,0]].forEach(([x, r]) => b.set(x, r, null));    // 横8 の右4マスだけ空き
+  eq(isSolvable(b, [new Piece('I0')]), true, 'I横 は置ける');
+  eq(isSolvable(b, [new Piece('O0')]), false, 'O は置けない');
+  // I横 を置くと横8 が揃って発動し、スペースが空くので2つ目以降も置ける可能性がある
+  eq(typeof isSolvable(b, [new Piece('I0'), new Piece('O0'), new Piece('T0')]), 'boolean', '連鎖込みで判定できる');
+}
+{
+  let seed = 21; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  let trays = 0, oneFits = 0, solvable = 0, unavoidable = 0;
+  for (let t = 0; t < 250; t++) {
+    const g = new Game({ random: rnd });
+    // ランダムに埋めた盤面（発動が起きない状態まで解決しておく）
+    for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && rnd() < 0.6) g.board.set(x, r, createBlock('x'));
+    resolveChains(g.board);
+    if (!SHAPES.some((sh) => g.board.fits(new Piece(sh.name)))) { unavoidable++; continue; }
+    const tray = g.spawnTray();
+    trays++;
+    if (tray.some((p) => g.board.fits(p))) oneFits++;
+    if (isSolvable(g.board, tray)) solvable++;
+  }
+  eq(oneFits, trays, `必ず1つ以上置ける (${oneFits}/${trays})`);
+  eq(solvable / trays >= 0.9, true, `3つとも置ける割合 ${(solvable / trays * 100).toFixed(0)}% (>= 90%)`);
 }
 
 console.log('ゲーム進行');

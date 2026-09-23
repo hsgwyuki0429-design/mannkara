@@ -1,8 +1,8 @@
-import { Board } from './board.js?v=202609230401';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609230401';
-import { ScoreManager } from './score.js?v=202609230401';
-import { nextActivation, lineMoves, resolveChains } from './mancala.js?v=202609230401';
-import { TRAY_SIZE, CHAIN_PIECE_RATE } from './constants.js?v=202609230401';
+import { Board } from './board.js?v=202609230405';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609230405';
+import { ScoreManager } from './score.js?v=202609230405';
+import { nextActivation, lineMoves, resolveChains } from './mancala.js?v=202609230405';
+import { TRAY_SIZE, CHAIN_PIECE_RATE, SOLVABLE_TRAY_RATE, TRAY_RETRIES } from './constants.js?v=202609230405';
 
 /**
  * ゲーム本体（DOM 非依存）。描画側は hooks（async 可）で進行を受け取る。
@@ -78,7 +78,33 @@ export class Game {
    * トレイ3枠を作る。各枠 CHAIN_PIECE_RATE の確率で「今の盤面のどこかに置けば発動が起きる」
    * テトロミノを選ぶ（連鎖数が大きい向きほど選ばれやすい）。該当が無ければ通常の抽選。
    */
+  /**
+   * 新しいトレイを作る（仕様）:
+   *  - 必ず1つ以上は今の盤面に置ける
+   *  - SOLVABLE_TRAY_RATE の確率で「順番と場所を選べば3つとも置ける」組み合わせにする
+   * 条件を満たすまで抽選し直す。盤面にテトロミノが1つも入らない時だけは保証できない。
+   */
   spawnTray() {
+    const wantSolvable = this.generator.random() < SOLVABLE_TRAY_RATE;
+    let fallback = null;
+    for (let tries = 0; tries < TRAY_RETRIES; tries++) {
+      const tray = this.drawTray();
+      if (!tray.some((p) => this.board.fits(p))) continue;
+      if (!wantSolvable || isSolvable(this.board, tray)) return tray;
+      fallback ??= tray;
+    }
+    // 抽選で見つからなければ、置ける形だけから組み直す
+    const placeable = SHAPES.filter((s) => this.board.fits(new Piece(s.name)));
+    if (!placeable.length) return this.drawTray();           // 何も入らない＝詰み
+    for (let tries = 0; tries < TRAY_RETRIES; tries++) {
+      const tray = Array.from({ length: TRAY_SIZE }, () => new Piece(this.generator.pick(placeable).name));
+      if (!wantSolvable || isSolvable(this.board, tray)) return tray;
+    }
+    return fallback ?? [new Piece(this.generator.pick(placeable).name), ...this.drawTray().slice(1)];
+  }
+
+  /** 条件なしの1回分の抽選（各枠 CHAIN_PIECE_RATE で連鎖ピース） */
+  drawTray() {
     let chainers = null;
     return Array.from({ length: TRAY_SIZE }, () => {
       if (this.generator.random() < CHAIN_PIECE_RATE) {
@@ -111,4 +137,29 @@ export class Game {
   }
 
   debugStatus() { return this.board.debugLines(); }
+}
+
+/**
+ * トレイのピースを全部置けるか（順番は自由、置くたびに連鎖も解決する）。
+ * 深さ優先で「残りのどれかを、どこかに置く」を試し、1通りでも最後まで置ければ true。
+ */
+export function isSolvable(board, pieces) {
+  const rest = pieces.filter(Boolean);
+  if (rest.length === 0) return true;
+  if (rest.length === 1) return board.fits(rest[0]);
+  const tried = new Set();
+  for (let i = 0; i < rest.length; i++) {
+    const p = rest[i];
+    if (tried.has(p.name)) continue;                  // 同じ形は1回試せば十分
+    tried.add(p.name);
+    const others = rest.filter((_, j) => j !== i);
+    for (let oy = 0; oy < 8; oy++) for (let ox = 0; ox < 8; ox++) {
+      if (!board.canPlace(p, ox, oy)) continue;
+      const b = board.clone();
+      b.place(p, ox, oy);
+      resolveChains(b);
+      if (isSolvable(b, others)) return true;
+    }
+  }
+  return false;
 }
