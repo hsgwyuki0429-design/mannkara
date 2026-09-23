@@ -1,5 +1,5 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609230947';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609231014';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -292,14 +292,6 @@ export class Renderer {
     }
     this.litLines(lines, piece.color);
     this.goal.classList.toggle('ready', willClear);
-    if (chainCount >= 1 && willClear) {
-      const b = document.createElement('div');
-      b.className = 'chain-badge' + (chainCount >= 3 ? ' hot' : '');
-      b.innerHTML = `<span class="upright">${chainCount >= 2 ? `⚡${chainCount} CHAIN` : 'CLEAR'}</span>`;
-      b.style.left = (ox + piece.width / 2) * c + 'px';
-      b.style.top = (oy + piece.height / 2) * c + 'px';
-      this.ghostLayer.appendChild(b);
-    }
   }
   /** 発動するラインの番号を光らせる */
   litLines(lines, color) {
