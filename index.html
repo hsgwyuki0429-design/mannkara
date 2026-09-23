@@ -3,16 +3,47 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<meta name="theme-color" content="#2b4bbf" />
+<meta name="theme-color" content="#163ba4" />
 <title>STAIR MANCALA</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232b4bbf'/%3E%3Cpath d='M6 6h20v4H22v4h-4v4h-4v4h-4v4H6z' fill='%23ffd23f'/%3E%3C/svg%3E" />
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609230425" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609230505" />
 </head>
 <body>
 <div id="app">
   <header class="top">
-    <div class="best"><span class="crown">👑</span><span id="best">0</span></div>
-    <button id="btnSound" class="round-btn" aria-label="sound">♪</button>
+    <div class="best-pill">
+      <svg class="crown" viewBox="0 0 64 54" aria-hidden="true">
+        <defs>
+          <linearGradient id="crownG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#fff0a0" /><stop offset=".45" stop-color="#ffcc2e" /><stop offset="1" stop-color="#d98800" />
+          </linearGradient>
+          <linearGradient id="crownB" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffd64a" /><stop offset="1" stop-color="#c77700" />
+          </linearGradient>
+        </defs>
+        <ellipse cx="32" cy="50" rx="26" ry="3.5" fill="rgba(0,0,0,.22)" />
+        <path d="M7 17 L16 31 L19.5 12 L27 29 L32 8 L37 29 L44.5 12 L48 31 L57 17 L53 41 H11 Z" fill="url(#crownG)" stroke="#b36b00" stroke-width="1.6" stroke-linejoin="round" />
+        <rect x="10" y="39" width="44" height="9" rx="2.5" fill="url(#crownB)" stroke="#b36b00" stroke-width="1.6" />
+        <circle cx="7" cy="15" r="3.6" fill="url(#crownG)" stroke="#b36b00" stroke-width="1.2" />
+        <circle cx="19.5" cy="10" r="3.4" fill="url(#crownG)" stroke="#b36b00" stroke-width="1.2" />
+        <circle cx="32" cy="6" r="4" fill="url(#crownG)" stroke="#b36b00" stroke-width="1.2" />
+        <circle cx="44.5" cy="10" r="3.4" fill="url(#crownG)" stroke="#b36b00" stroke-width="1.2" />
+        <circle cx="57" cy="15" r="3.6" fill="url(#crownG)" stroke="#b36b00" stroke-width="1.2" />
+        <circle cx="32" cy="32" r="3.8" fill="#e8364a" stroke="#8a1020" stroke-width="1" />
+        <circle cx="19" cy="35" r="2.4" fill="#3d8bff" stroke="#16408a" stroke-width=".8" />
+        <circle cx="45" cy="35" r="2.4" fill="#3d8bff" stroke="#16408a" stroke-width=".8" />
+        <path d="M14 42.5 H50" stroke="rgba(255,255,255,.45)" stroke-width="1.4" stroke-linecap="round" />
+      </svg>
+      <div class="best-text"><span class="best-label">ベストスコア</span><span id="best">0</span></div>
+    </div>
+    <div class="top-btns">
+      <button id="btnSound" class="round-btn" aria-label="サウンド">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.2 3.4v10.3a4 4 0 1 0 2.3 3.6V8.1h4.6V3.4z" /></svg>
+      </button>
+      <button id="btnPause" class="round-btn" aria-label="一時停止">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5.6" y="4.8" width="4.6" height="14.4" rx="2.3" /><rect x="13.8" y="4.8" width="4.6" height="14.4" rx="2.3" /></svg>
+      </button>
+    </div>
   </header>
   <div class="score-wrap">
     <div id="score" class="score">0</div>
@@ -36,8 +67,11 @@
   <div id="tray" class="tray"></div>
 
   <div class="footer">
-    <button id="btnDebug" class="link">debug</button>
-    <button id="btnRestart" class="link">restart</button>
+    <button id="btnRestart" class="restart-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 12.8a7.4 7.4 0 1 1-2.2-6.1" fill="none" stroke="#fff" stroke-width="3.1" stroke-linecap="round" /><path d="M20.8 3v6.9h-6.9z" fill="#fff" stroke="#fff" stroke-width="1.4" stroke-linejoin="round" /></svg>
+      <span>リスタート</span>
+    </button>
+    <button id="btnDebug" class="link debug-link hidden">debug</button>
   </div>
 
   <section id="debugPanel" class="debug hidden">
@@ -62,6 +96,12 @@
     <button id="btnRetry" class="primary">もう一度</button>
   </div>
 </div>
+<div id="pauseOverlay" class="overlay hidden">
+  <div class="overlay-box">
+    <p class="over-title">一時停止中</p>
+    <button id="btnResume" class="primary">つづける</button>
+  </div>
+</div>
 <div id="bootError" class="boot-error hidden"></div>
 <script>
   // 起動に失敗したら真っ白にせず、画面に理由を出す
@@ -72,6 +112,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609230425"></script>
+<script type="module" src="./src/ui/main.js?v=202609230505"></script>
 </body>
 </html>
