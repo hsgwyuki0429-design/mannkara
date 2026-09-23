@@ -1,5 +1,5 @@
 import {
-  SCORE_PER_CELL_PLACED, SCORE_PER_COLUMN_GOAL, SCORE_PER_ROW_CELL,
+  SCORE_PER_CELL_PLACED, SCORE_PER_GOAL,
   chainMultiplier, streakMultiplier,
 } from './constants.js';
 
@@ -18,7 +18,7 @@ export class ScoreManager {
     this.goals += step.goals;
     this.lastChain = step.chain;
     this.bestChain = Math.max(this.bestChain, step.chain);
-    const base = step.type === 'rows' ? step.goals * SCORE_PER_ROW_CELL : step.goals * SCORE_PER_COLUMN_GOAL;
+    const base = step.goals * SCORE_PER_GOAL;
     const gained = Math.round(base * chainMultiplier(step.chain) * streakMultiplier(Math.max(1, this.streak + 1)));
     this.score += gained;
     return gained;

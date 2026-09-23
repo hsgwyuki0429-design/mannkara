@@ -1,4 +1,4 @@
-import { SIZE, capacity, isInside, toColSlot, toScreen, rowLength } from './constants.js';
+import { SIZE, isInside, lineCells, KINDS } from './constants.js';
 
 let nextBlockId = 1;
 export function createBlock(color) {
@@ -6,147 +6,102 @@ export function createBlock(color) {
 }
 
 /**
- * 三角形の盤面。重力なし（置いた場所にそのまま残る）。
- * columns[i] = 列(i+1) のスロット配列（長さ = 列番号）。slot 0 が一番下。空きは null。
+ * 三角形の盤面。grid[r][x]。重力なし（置いた場所にそのまま残る）。
+ * 縦列・横列はどちらも lineCells(kind, n) で slot 順に参照する。
  */
 export class Board {
   constructor() {
-    this.columns = Array.from({ length: SIZE }, (_, i) => new Array(capacity(i)).fill(null));
+    this.grid = Array.from({ length: SIZE }, () => new Array(SIZE).fill(null));
   }
 
-  /** デバッグ用：各列を下から詰めて heights[i] 個置く（heights[0] = 列1） */
+  /** デバッグ用：各縦列を下から詰めて heights[i] 個置く（heights[0] = 縦1） */
   static fromHeights(heights, color = 'debug') {
     const b = new Board();
-    heights.forEach((n, i) => {
-      for (let k = 0; k < Math.min(n, capacity(i)); k++) b.columns[i][k] = createBlock(color);
+    heights.forEach((h, i) => {
+      lineCells('col', i + 1).slice(0, h).forEach(({ x, r }) => b.set(x, r, createBlock(color)));
     });
     return b;
   }
 
-  /* ---------- 参照 ---------- */
-  get(x, r) {
-    if (!isInside(x, r)) return undefined;
-    const { colIndex, slot } = toColSlot(x, r);
-    return this.columns[colIndex][slot];
+  get(x, r) { return isInside(x, r) ? this.grid[r][x] : undefined; }
+  set(x, r, block) { this.grid[r][x] = block; }
+
+  /* ---------- ライン ---------- */
+  line(kind, n) { return lineCells(kind, n).map(({ x, r }) => this.get(x, r)); }
+  count(kind, n) { return this.line(kind, n).filter(Boolean).length; }
+  isFull(kind, n) { return this.count(kind, n) === n; }
+  /** 満杯のライン一覧 [{kind, n}] */
+  fullLines() {
+    const out = [];
+    for (const kind of KINDS) for (let n = 1; n <= SIZE; n++) if (this.isFull(kind, n)) out.push({ kind, n });
+    return out;
   }
-  set(x, r, block) {
-    const { colIndex, slot } = toColSlot(x, r);
-    this.columns[colIndex][slot] = block;
+  /** ラインの全ブロックを取り出す（slot 0 = 斜辺側から順） */
+  takeLine(kind, n) {
+    const blocks = [];
+    for (const { x, r } of lineCells(kind, n)) {
+      const b = this.get(x, r);
+      if (b) blocks.push(b);
+      this.set(x, r, null);
+    }
+    return blocks;
   }
-  count(colIndex) {
-    return this.columns[colIndex].filter(Boolean).length;
-  }
-  get heights() {
-    return this.columns.map((_, i) => this.count(i));
-  }
-  totalBlocks() {
-    return this.heights.reduce((a, b) => a + b, 0);
+  /**
+   * 斜辺側の端から押し込む。一番近い空欄までのブロックだけが1マスずれ、空欄が1つ埋まる。
+   * それより奥のブロックは動かない。空欄が無ければ false。
+   */
+  insertBottom(kind, n, block) {
+    const cells = lineCells(kind, n);
+    const hole = cells.findIndex(({ x, r }) => !this.get(x, r));
+    if (hole < 0) return false;
+    for (let k = hole; k > 0; k--) this.set(cells[k].x, cells[k].r, this.get(cells[k - 1].x, cells[k - 1].r));
+    this.set(cells[0].x, cells[0].r, block);
+    return true;
   }
 
   /* ---------- 配置 ---------- */
   canPlace(piece, ox, oy) {
-    for (const c of piece.cells) {
+    return piece.cells.every((c) => {
       const x = ox + c.x, r = oy + c.y;
-      if (!isInside(x, r) || this.get(x, r)) return false;
-    }
-    return true;
+      return isInside(x, r) && !this.get(x, r);
+    });
   }
-  /** どこかに置けるか */
   fits(piece) {
-    for (let oy = 0; oy < SIZE; oy++) {
-      for (let ox = 0; ox < SIZE; ox++) if (this.canPlace(piece, ox, oy)) return true;
-    }
+    for (let oy = 0; oy < SIZE; oy++) for (let ox = 0; ox < SIZE; ox++) if (this.canPlace(piece, ox, oy)) return true;
     return false;
   }
-  /** 置く（重力なし）。戻り値: [{block, x, r}] */
   place(piece, ox, oy) {
-    const placed = [];
-    for (const c of piece.cells) {
+    return piece.cells.map((c) => {
       const block = createBlock(piece.color);
       this.set(ox + c.x, oy + c.y, block);
-      placed.push({ block, x: ox + c.x, r: oy + c.y });
-    }
-    return placed;
+      return { block, x: ox + c.x, r: oy + c.y };
+    });
   }
 
-  /* ---------- 判定 ---------- */
-  /** 満杯の列（列番号, 昇順）。列N は N マスすべて埋まった時 = ちょうど N 個 */
-  fullColumns() {
-    const out = [];
-    for (let i = 0; i < SIZE; i++) if (this.count(i) === capacity(i)) out.push(i + 1);
-    return out;
+  /* ---------- 参照・デバッグ ---------- */
+  get heights() { return Array.from({ length: SIZE }, (_, i) => this.count('col', i + 1)); }
+  totalBlocks() {
+    let n = 0;
+    for (const { block } of this.entries()) if (block) n++;
+    return n;
   }
-  /** 横ライン r のマス（画面座標） */
-  rowCells(r) {
-    const cells = [];
-    for (let x = 0; x < rowLength(r); x++) cells.push({ x, r });
-    return cells;
-  }
-  /** 満杯の横ライン（r の配列, 上から順） */
-  fullRows() {
-    const out = [];
-    for (let r = 0; r < SIZE; r++) {
-      if (this.rowCells(r).every(({ x }) => this.get(x, r))) out.push(r);
-    }
-    return out;
-  }
-
-  /* ---------- マンカラ用 ---------- */
-  /** 列の全ブロックを取り出す（下から順） */
-  takeColumn(colIndex) {
-    const col = this.columns[colIndex];
-    const blocks = col.filter(Boolean);
-    col.fill(null);
-    return blocks;
-  }
-  /**
-   * 下から押し込む。一番下の空欄までのブロックだけを1マス押し上げ、空欄が1つ埋まる。
-   * 空欄より上のブロックは動かない。空欄が無ければ false（押し込めない）。
-   */
-  insertBottom(colIndex, block) {
-    const col = this.columns[colIndex];
-    const hole = col.indexOf(null);
-    if (hole < 0) return false;
-    for (let k = hole; k > 0; k--) col[k] = col[k - 1];
-    col[0] = block;
-    return true;
-  }
-  /** 横ラインを消す。戻り値: [{block, x, r}] */
-  clearRow(r) {
-    const removed = [];
-    for (const { x } of this.rowCells(r)) {
-      const block = this.get(x, r);
-      if (block) removed.push({ block, x, r });
-      this.set(x, r, null);
-    }
-    return removed;
-  }
-
-  /** 全ブロックの画面座標（描画用） */
   *entries() {
-    for (let i = 0; i < SIZE; i++) {
-      for (let k = 0; k < this.columns[i].length; k++) {
-        const block = this.columns[i][k];
-        if (block) yield { block, ...toScreen(i, k) };
-      }
+    for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) {
+      const block = this.get(x, r);
+      if (block) yield { block, x, r };
     }
   }
-
   clone() {
     const b = new Board();
-    b.columns = this.columns.map((c) => c.map((x) => (x ? { ...x } : null)));
+    b.grid = this.grid.map((row) => row.map((v) => (v ? { ...v } : null)));
     return b;
   }
-
-  /** デバッグ表示用 */
   debugLines() {
-    const cols = this.columns.map((c, i) => {
-      const n = this.count(i);
-      const pattern = c.map((v) => (v ? '■' : '□')).join('');
-      return `Column ${i + 1}: ${n} / ${capacity(i)}${n === capacity(i) ? ' READY' : ''}  [${pattern}]`;
+    const fmt = (kind, label) => Array.from({ length: SIZE }, (_, i) => {
+      const n = i + 1, c = this.count(kind, n);
+      const pat = this.line(kind, n).map((v) => (v ? '■' : '□')).join('');
+      return `${label}${n}: ${c}/${n}${c === n ? ' READY' : ''}  [${pat}]`;
     });
-    const rows = this.fullRows();
-    if (rows.length) cols.push(`Full rows: ${rows.join(', ')}`);
-    return cols;
+    return [...fmt('col', '縦'), ...fmt('row', '横')];
   }
 }

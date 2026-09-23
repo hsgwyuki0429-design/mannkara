@@ -1,12 +1,12 @@
 import { Board } from './board.js';
 import { PieceGenerator } from './pieces.js';
 import { ScoreManager } from './score.js';
-import { nextActivation, columnMoves, resolveRows } from './mancala.js';
+import { nextActivation, lineMoves } from './mancala.js';
 import { TRAY_SIZE } from './constants.js';
 
 /**
  * ゲーム本体（DOM 非依存）。描画側は hooks（async 可）で進行を受け取る。
- * 流れ: 置く → [横ライン同時消去 / 最小番号の列を1列発動] を発動が無くなるまで繰り返す
+ * 流れ: 置く → 満杯のライン(縦/横)のうち最小番号を1本発動、を発動が無くなるまで繰り返す
  *       → スコア確定 → トレイ補充（3つ使い切ったら）→ ゲームオーバー判定
  */
 export class Game {
@@ -59,21 +59,13 @@ export class Game {
   async resolve() {
     const steps = [];
     for (let act; (act = nextActivation(this.board)); ) {
-      const chain = steps.length + 1;
-      let step;
-      if (act.type === 'rows') {
-        step = resolveRows(this.board, act.rows);
-        step.chain = chain;
-        await this.hooks.onRows?.(step);
-      } else {
-        step = { type: 'column', column: act.column, chain, moves: [], stack: [], goals: 0 };
-        for (const ev of columnMoves(this.board, act.column)) {
-          if (ev.type === 'take') { step.stack = ev.blocks; continue; }
-          step.moves.push({ block: ev.block, from: ev.from, to: ev.to });
-          if (ev.to === 'goal') step.goals++;
-        }
-        await this.hooks.onColumn?.(step);
+      const step = { kind: act.kind, n: act.n, chain: steps.length + 1, stack: [], moves: [], goals: 0 };
+      for (const ev of lineMoves(this.board, act.kind, act.n)) {
+        if (ev.type === 'take') { step.stack = ev.blocks; continue; }
+        step.moves.push({ block: ev.block, to: ev.to });
+        if (ev.to === 'goal') step.goals++;
       }
+      await this.hooks.onLine?.(step);
       steps.push(step);
       const gained = this.score.addStep(step);
       await this.hooks.onStep?.(step, gained);

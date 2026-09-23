@@ -1,52 +1,49 @@
 // ===== 盤面 =====
-// 8×8 を対角線で切った三角形。列番号は「右端 = 列1」「左端 = 列8」。
-// 列N は上端から N マスだけ使える（列1 = 1マス, 列8 = 8マス）。
+// 8×8 を対角線で切った三角形。画面座標 (x, r): x = 0(左端)…7(右端), r = 0(上端)…7(下端)。
+// 盤面は x + r <= 7 のマス（左上が直角の三角形、斜辺は右下向き）。
 //
-// 座標系は2つ:
-//   画面座標 (x, r) : x = 0(左端=列8)…7(右端=列1), r = 0(上端)…7(下端)
-//   列座標 (colIndex, slot) : colIndex 0 = 列1 … 7 = 列8,
-//                             slot 0 = その列の一番下のマス … N-1 = 一番上のマス
-// columnHeights[0] = 列1 … columnHeights[7] = 列8 とする（仕様 21）。
+// 「ライン」は2種類あり、対角線について完全に対称:
+//   縦列N (kind 'col') : x = 8-N の列。N マス。右端が縦1(1マス)、左端が縦8(8マス)。
+//   横列N (kind 'row') : r = 8-N の行。N マス。下端が横1(1マス)、上端が横8(8マス)。
+// どちらも斜辺側の端を「下(slot 0)」とする。縦列は下端、横列は右端が slot 0。
+// 縦列は下の通路を右へ、横列は右の通路を下へ流れ、右下の共通ゴールへ入る。
 export const SIZE = 8;
+export const KINDS = ['col', 'row'];
 
-export const capacity = (colIndex) => colIndex + 1;          // 列の容量 = 列番号
-export const screenXToColIndex = (x) => SIZE - 1 - x;
-export const colIndexToScreenX = (i) => SIZE - 1 - i;
-/** 画面座標が三角盤面の内側か */
 export const isInside = (x, r) => x >= 0 && r >= 0 && x < SIZE && r < SIZE && x + r <= SIZE - 1;
-/** 画面座標 -> 列座標 */
-export function toColSlot(x, r) {
-  const colIndex = screenXToColIndex(x);
-  return { colIndex, slot: colIndex - r };                    // slot = (N-1) - r
+
+/** ライン(kind, n) のマスを slot 順（0 = 斜辺側の端）で返す */
+export function lineCells(kind, n) {
+  const cells = [];
+  const fixed = SIZE - n;
+  for (let k = 0; k < n; k++) {
+    const along = n - 1 - k;
+    cells.push(kind === 'col' ? { x: fixed, r: along } : { x: along, r: fixed });
+  }
+  return cells;
 }
-/** 列座標 -> 画面座標 */
-export function toScreen(colIndex, slot) {
-  return { x: colIndexToScreenX(colIndex), r: colIndex - slot };
-}
-/** 横ライン r に含まれるマス数（r=0 は8マス, r=7 は1マス） */
-export const rowLength = (r) => SIZE - r;
+/** 画面座標 -> その座標を通る縦列/横列の番号 */
+export const colNumberAt = (x) => SIZE - x;
+export const rowNumberAt = (r) => SIZE - r;
+
+/** 同じ番号の縦列と横列が同時に満杯なら縦列を先に処理する（タイブレーク） */
+export const KIND_PRIORITY = { col: 0, row: 1 };
 
 // ===== トレイ =====
 export const TRAY_SIZE = 3;
 
 // ===== スコア（調整用） =====
 export const SCORE_PER_CELL_PLACED = 1;
-export const SCORE_PER_COLUMN_GOAL = 100;   // 列発動でゴールへ入った1個
-export const SCORE_PER_ROW_CELL = 40;       // 横ラインで消えた1個
-// 連鎖回数 -> 倍率
+export const SCORE_PER_GOAL = 100;          // ゴールへ入った1個
 export const CHAIN_MULTIPLIERS = [1, 1, 1.5, 2, 3, 4, 6, 8, 10, 13, 16, 20];
 export const chainMultiplier = (chain) => CHAIN_MULTIPLIERS[Math.min(chain, CHAIN_MULTIPLIERS.length - 1)];
-// 連続で何かを発動させた手数(streak) -> 倍率
 export const streakMultiplier = (streak) => 1 + Math.min(streak - 1, 8) * 0.25;
 
 // ===== アニメーション時間（ms・調整用） =====
 export const ANIM = {
-  place: 140,      // 置いた時のポップ
-  sink: 150,       // 発動列が通路まで沈む
+  place: 140,
+  sink: 150,       // ラインが通路まで抜ける
   step: 80,        // ベルトコンベア1コマ
-  goal: 240,       // ゴール吸収
-  push: 240,       // 各列へ下から押し上げ
-  rowFlash: 160,   // 横ラインが光る
-  rowFly: 320,     // 横ラインがゴールへ飛ぶ
+  push: 240,       // 各ラインへ押し込み
   betweenChains: 120,
 };

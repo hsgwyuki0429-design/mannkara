@@ -1,7 +1,7 @@
 import { Game } from '../core/game.js';
 import { Board } from '../core/board.js';
 import { resolveChains } from '../core/mancala.js';
-import { SIZE, ANIM } from '../core/constants.js';
+import { SIZE, ANIM, lineCells } from '../core/constants.js';
 import { Renderer, delay } from './renderer.js';
 import { Sfx } from './sfx.js';
 
@@ -32,8 +32,7 @@ const game = new Game({
       updateHud();
       await delay(ANIM.place);
     },
-    async onRows(step) { await renderer.clearRows(step); },
-    async onColumn(step) { await renderer.conveyColumn(step, game.board); },
+    async onLine(step) { await renderer.conveyLine(step, game.board); },
     async onStep(step, gained) {
       const praise = PRAISE.find(([n]) => step.chain >= n)?.[1];
       if (step.chain >= 2) renderer.showText(`${step.chain} CHAIN<small>${praise ?? ''} +${gained}</small>`, step.chain >= 5 ? 'big' : '');
@@ -113,12 +112,7 @@ let drag = null; // { slot, piece, lift, ox, oy, valid }
 function previewInfo(piece, ox, oy) {
   const b = game.board.clone();
   b.place(piece, ox, oy);
-  const cells = [];
-  for (const r of b.fullRows()) cells.push(...b.rowCells(r));
-  for (const n of b.fullColumns()) {
-    const x = SIZE - n;
-    for (let r = 0; r < n; r++) cells.push({ x, r });
-  }
+  const cells = b.fullLines().flatMap(({ kind, n }) => lineCells(kind, n));
   const chain = resolveChains(b).length;
   return { cells, chain };
 }
@@ -204,7 +198,7 @@ $('btnDebug').addEventListener('click', () => { $('debugPanel').classList.toggle
 function updateDebug() {
   if ($('debugPanel').classList.contains('hidden')) return;
   $('debugText').textContent = game.debugStatus().join('\n') +
-    `\nheights(列1→列8) = [${game.board.heights.join(', ')}]  (■=埋まり □=空き, 左が一番下)`;
+    `\n(■=埋まり □=空き, 左が斜辺側の端)`;
 }
 $('btnApplyHeights').addEventListener('click', () => {
   if (game.busy) return;
@@ -218,7 +212,7 @@ $('btnApplyHeights').addEventListener('click', () => {
 $('btnRunChain').addEventListener('click', async () => {
   if (game.busy) return;
   game.busy = true;
-  const trace = resolveChains(game.board.clone()).map((s) => (s.type === 'rows' ? `row${s.rows.join('+')}` : s.column));
+  const trace = resolveChains(game.board.clone()).map((s) => (s.kind === 'col' ? '縦' : '横') + s.n);
   await game.resolve();
   game.busy = false;
   renderer.syncBoard(game.board, 120);

@@ -1,22 +1,23 @@
-import { SIZE, isInside, colIndexToScreenX, capacity, ANIM } from '../core/constants.js';
+import { SIZE, isInside, ANIM } from '../core/constants.js';
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * 描画とアニメーションだけを担当（ルールは持たない）。
- * 画面座標 (x, r): x=0 左端(列8)…7 右端(列1), r=0 上端…7 下端。r=8 は盤面下の通路。
+ * 画面座標 (x, r): x=0 左端…7 右端, r=0 上端…7 下端。
+ * 縦列は r=8 の行（盤面の下）を右へ、横列は x=8 の列（盤面の右）を下へ流れ、(8,8) のゴールへ入る。
  */
 export class Renderer {
   constructor(sfx) {
     this.sfx = sfx;
     this.pf = document.getElementById('playfield');
     this.wellLayer = document.getElementById('wellLayer');
-    this.pipeLayer = document.getElementById('pipeLayer');
     this.hiLayer = document.getElementById('hiLayer');
     this.blockLayer = document.getElementById('blockLayer');
     this.ghostLayer = document.getElementById('ghostLayer');
     this.fxLayer = document.getElementById('fxLayer');
     this.lane = document.getElementById('lane');
+    this.laneRow = document.getElementById('laneRow');
     this.goal = document.getElementById('goal');
     this.pop = document.getElementById('pop');
     this.els = new Map();     // blockId -> element
@@ -31,16 +32,17 @@ export class Renderer {
     const vw = Math.min(window.innerWidth, 560);
     const availW = vw - 16;
     const availH = window.innerHeight - 250;
-    const cell = Math.max(20, Math.floor(Math.min(availW / (SIZE + 1.35), availH / (SIZE + 1.1))));
+    const cell = Math.max(20, Math.floor(Math.min(availW, availH) / (SIZE + 1.15)));
     this.cell = cell;
     document.documentElement.style.setProperty('--cell', cell + 'px');
     const W = SIZE * cell;
-    this.pf.style.width = W + cell * 1.35 + 'px';
-    this.pf.style.height = W + cell * 1.1 + 'px';
-    Object.assign(this.lane.style, { top: W + 'px', width: W + 'px', height: cell + 'px' });
+    this.pf.style.width = W + cell * 1.15 + 'px';
+    this.pf.style.height = W + cell * 1.15 + 'px';
+    Object.assign(this.lane.style, { left: 0, top: W + 'px', width: W + 'px', height: cell + 'px' });
+    Object.assign(this.laneRow.style, { left: W + 'px', top: 0, width: cell + 'px', height: W + 'px' });
     Object.assign(this.goal.style, {
-      left: W + cell * 0.1 + 'px', top: W - cell * 0.15 + 'px',
-      width: cell * 1.2 + 'px', height: cell * 1.3 + 'px',
+      left: W - cell * 0.05 + 'px', top: W - cell * 0.05 + 'px',
+      width: cell * 1.1 + 'px', height: cell * 1.1 + 'px',
     });
     this.drawStatic();
     if (this._board) this.syncBoard(this._board, 0);
@@ -49,7 +51,6 @@ export class Renderer {
   drawStatic() {
     const c = this.cell;
     this.wellLayer.innerHTML = '';
-    this.pipeLayer.innerHTML = '';
     this.lane.innerHTML = '';
     this.wells = new Map();
     for (let x = 0; x < SIZE; x++) {
@@ -64,26 +65,19 @@ export class Renderer {
         this.wells.set(`${x},${r}`, d);
       }
     }
-    // 各列の下から通路へ伸びるパイプ（配られたブロックの通り道）
-    for (let i = 0; i < SIZE; i++) {
-      const x = colIndexToScreenX(i);
-      const top = capacity(i);             // 列の一番下の1つ下の行
-      if (top >= SIZE) continue;
-      const p = document.createElement('div');
-      p.className = 'pipe';
-      Object.assign(p.style, {
-        left: x * c + c * 0.3 + 'px', width: c * 0.4 + 'px',
-        top: top * c + 'px', height: (SIZE - top) * c + 'px',
-      });
-      this.pipeLayer.appendChild(p);
-    }
-    for (let i = 0; i < SIZE; i++) {
-      const l = document.createElement('div');
-      l.className = 'lane-label';
-      l.textContent = i + 1;
-      l.style.width = c + 'px';
-      l.style.transform = `translate(${colIndexToScreenX(i) * c}px,0)`;
-      this.lane.appendChild(l);
+    // ライン番号（縦は盤面の下、横は盤面の右）
+    this.laneRow.innerHTML = '';
+    for (let n = 1; n <= SIZE; n++) {
+      const a = document.createElement('div');
+      a.className = 'lane-label';
+      a.textContent = n;
+      Object.assign(a.style, { width: c + 'px', height: c + 'px', transform: `translate(${(SIZE - n) * c}px,0)` });
+      this.lane.appendChild(a);
+      const b = document.createElement('div');
+      b.className = 'lane-label';
+      b.textContent = n;
+      Object.assign(b.style, { width: c + 'px', height: c + 'px', transform: `translate(0,${(SIZE - n) * c}px)` });
+      this.laneRow.appendChild(b);
     }
   }
 
@@ -161,47 +155,26 @@ export class Renderer {
   }
   clearPreview() { this.ghostLayer.innerHTML = ''; this.hiLayer.innerHTML = ''; }
 
-  /* ---------- 横ライン ---------- */
-  async clearRows(step) {
-    const els = step.removed.map(({ block, x, r }) => {
-      this.manual.add(block.id);
-      const el = this.ensureEl(block);
-      el.classList.add('flash');
-      return { el, block, x, r };
-    });
-    this.sfx?.rows(step.rows.length, step.chain);
-    await delay(ANIM.rowFlash);
-    const g = this.goalPos();
-    els.forEach(({ el, x, r }, i) => {
-      this.burst(this.pos(x, r), el.className.match(/c-(\w+)/)?.[1]);
-      setTimeout(() => {
-        el.classList.add('fly');
-        this.setPos(el, g, ANIM.rowFly, 'cubic-bezier(.5,0,.8,.4)');
-      }, i * 18);
-    });
-    await delay(ANIM.rowFly + els.length * 18);
-    this.hitGoal(step.chain);
-    els.forEach(({ block }) => this.removeEl(block.id));
-  }
-
-  /* ---------- 列（マンカラ） ---------- */
-  laneSlot(slot) { return { x: slot * this.cell, y: SIZE * this.cell }; }
-  goalPos() { return { x: SIZE * this.cell + this.cell * 0.1, y: SIZE * this.cell - this.cell * 0.1 }; }
+  /* ---------- ライン発動（マンカラ） ---------- */
+  goalPos() { return this.pos(SIZE, SIZE); }
 
   /**
-   * 列 N の発動：列全体がパイプを通って通路まで沈み、
-   * 1コマごとに「列が1マス下がる / 通路のブロックが1マス右へ」を同時に行う。
-   * 先頭（一番下のブロック）がゴールへ入ったあと、残りが一斉に各列へ押し上がる。
+   * ライン(kind, n) の発動。縦列と横列はまったく同じ動きで、横列は縦横を入れ替えて描く。
+   * 縦列の場合: 列ごと盤面の下の通路まで抜け、1コマごとに「列が1マス下がる / 通路のブロックが
+   * 1マス右へ」を同時に行う。先頭（斜辺側の端のブロック）がゴールへ入ったあと、
+   * 残りが一斉に各ラインへ押し込まれる。
    */
-  async conveyColumn(step, board) {
-    const { column: N, stack, chain } = step;
-    const src = colIndexToScreenX(N - 1);
-    const laneR = SIZE;
+  async conveyLine(step, board) {
+    const { kind, n: N, stack, chain } = step;
+    // 縦列の座標系 (x, r) で計算し、横列なら入れ替えて画面へ
+    const P = kind === 'col' ? (x, r) => this.pos(x, r) : (x, r) => this.pos(r, x);
+    const src = SIZE - N;       // 縦列の x（横列なら r）
+    const lane = SIZE;          // 通路の r（横列なら x）
     stack.forEach((b) => { this.manual.add(b.id); this.ensureEl(b).classList.add('travel'); });
 
-    // 1) 通路まで沈む
+    // 1) 通路まで抜ける
     const sinkT = ANIM.sink + 22 * (SIZE - N);
-    stack.forEach((b, k) => this.setPos(this.ensureEl(b), this.pos(src, laneR - k), sinkT, 'cubic-bezier(.5,0,.7,1)'));
+    stack.forEach((b, k) => this.setPos(this.ensureEl(b), P(src, lane - k), sinkT, 'cubic-bezier(.5,0,.7,1)'));
     this.sfx?.sink();
     await delay(sinkT);
 
@@ -209,27 +182,27 @@ export class Renderer {
     for (let s = 1; s <= N; s++) {
       stack.forEach((b, k) => {
         const el = this.ensureEl(b);
-        if (k <= s) this.setPos(el, this.laneSlot(src + Math.min(s - k, N - k)), ANIM.step, 'linear');
-        else this.setPos(el, this.pos(src, laneR - (k - s)), ANIM.step, 'linear');
+        if (k <= s) this.setPos(el, P(src + Math.min(s - k, N - k), lane), ANIM.step, 'linear');
+        else this.setPos(el, P(src, lane - (k - s)), ANIM.step, 'linear');
       });
       this.sfx?.step(s);
       await delay(ANIM.step);
     }
 
-    // 3) 先頭がゴールへ
+    // 3) 先頭がゴールへ（位置 (8,8) は縦横共通）
     const lead = stack[0];
     const leadEl = this.ensureEl(lead);
-    this.setPos(leadEl, this.goalPos(), ANIM.step);
     leadEl.classList.add('fly');
-    await delay(ANIM.step);
     this.burst(this.goalPos(), lead.color);
     this.hitGoal(chain);
+    await delay(ANIM.step);
     this.removeEl(lead.id);
 
-    // 4) 残りが一斉に各列へ押し上がる（グイン）
+    // 4) 残りが一斉に各ラインへ押し込まれる
     stack.slice(1).forEach((b) => { this.manual.delete(b.id); this.els.get(b.id)?.classList.remove('travel'); });
     this.syncBoard(board, ANIM.push, 'cubic-bezier(.25,1.55,.45,1)');
-    this.pf.classList.remove('thump'); void this.pf.offsetWidth; this.pf.classList.add('thump');
+    const cls = kind === 'col' ? 'thump' : 'thump-x';
+    this.pf.classList.remove('thump', 'thump-x'); void this.pf.offsetWidth; this.pf.classList.add(cls);
     this.sfx?.push(chain);
     await delay(ANIM.push);
   }

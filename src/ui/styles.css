@@ -38,6 +38,8 @@ body{
 .playfield{position:relative;}
 .playfield.thump{animation:thump 220ms ease-out;}
 @keyframes thump{30%{transform:translateY(3px)}60%{transform:translateY(-1px)}}
+.playfield.thump-x{animation:thumpX 220ms ease-out;}
+@keyframes thumpX{30%{transform:translateX(3px)}60%{transform:translateX(-1px)}}
 .layer{position:absolute;inset:0;pointer-events:none;}
 .cell{position:absolute;left:0;top:0;width:var(--cell);height:var(--cell);}
 .well{background:var(--board);}
@@ -45,11 +47,9 @@ body{
   box-shadow:inset 0 2px 5px rgba(0,0,0,.45),0 0 0 1px var(--well-line);}
 .well.tl{border-top-left-radius:10px;} .well.tr{border-top-right-radius:10px;}
 .well.bl{border-bottom-left-radius:10px;} .well.edge-r{border-top-right-radius:8px;border-bottom-right-radius:8px;}
-.pipe{position:absolute;border-radius:0 0 6px 6px;background:linear-gradient(90deg,rgba(0,0,0,.22),rgba(255,255,255,.05),rgba(0,0,0,.22));opacity:.8;}
-.lane{position:absolute;left:0;border-radius:10px;background:rgba(0,0,0,.22);
-  box-shadow:inset 0 2px 6px rgba(0,0,0,.35);}
-.lane-label{position:absolute;top:0;height:100%;display:flex;align-items:center;justify-content:center;
-  font-size:11px;font-weight:800;color:rgba(255,255,255,.35);}
+.lane{position:absolute;pointer-events:none;}
+.lane-label{position:absolute;left:0;top:0;display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:800;color:rgba(255,255,255,.3);}
 .goal{position:absolute;display:flex;align-items:center;justify-content:center;border-radius:12px;
   background:radial-gradient(circle at 50% 40%,rgba(79,240,188,.5),rgba(79,240,188,.12));
   border:2px solid rgba(79,240,188,.85);box-shadow:0 0 18px rgba(79,240,188,.45);
