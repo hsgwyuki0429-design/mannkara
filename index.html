@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#2b4bbf" />
 <title>STAIR MANCALA</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232b4bbf'/%3E%3Cpath d='M6 6h20v4H22v4h-4v4h-4v4h-4v4H6z' fill='%23ffd23f'/%3E%3C/svg%3E" />
-<link rel="stylesheet" href="./src/ui/styles.css" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609230145" />
 </head>
 <body>
 <div id="app">
@@ -62,6 +62,16 @@
     <button id="btnRetry" class="primary">もう一度</button>
   </div>
 </div>
-<script type="module" src="./src/ui/main.js"></script>
+<div id="bootError" class="boot-error hidden"></div>
+<script>
+  // 起動に失敗したら真っ白にせず、画面に理由を出す
+  window.addEventListener('error', (e) => {
+    const el = document.getElementById('bootError');
+    if (!el || window.__booted) return;
+    el.textContent = '読み込みに失敗しました。ページを再読み込みしてください。\n' + (e.message || '');
+    el.classList.remove('hidden');
+  });
+</script>
+<script type="module" src="./src/ui/main.js?v=202609230145"></script>
 </body>
 </html>

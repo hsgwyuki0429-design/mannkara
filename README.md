@@ -23,6 +23,7 @@
 ## 開発
 - ルールのテスト: `node test/rules.test.mjs`（DOM 不要）
 - ローカル: `python3 -m http.server` で `index.html` を開く
+- **デプロイ前に `node scripts/stamp.mjs`**：CSS/JS の参照に `?v=` を付け直し、スマホが古いファイルと新しいファイルを混ぜて読むのを防ぐ
 
 ```
 src/core/   constants.js board.js pieces.js mancala.js score.js game.js   … ルール（DOM非依存）

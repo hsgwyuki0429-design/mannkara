@@ -1,4 +1,4 @@
-import { SIZE, isInside, ANIM } from '../core/constants.js';
+import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230145';
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -10,6 +10,15 @@ export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 export class Renderer {
   constructor(sfx) {
     this.sfx = sfx;
+    // 必要な要素が HTML に無くても（古い HTML がキャッシュされている等）自前で作る
+    const need = (id, cls, parent = 'playfield') => {
+      if (document.getElementById(id)) return;
+      const d = document.createElement('div');
+      d.id = id; d.className = cls;
+      document.getElementById(parent).appendChild(d);
+    };
+    ['wellLayer', 'hiLayer', 'blockLayer', 'ghostLayer', 'fxLayer'].forEach((id) => need(id, 'layer'));
+    need('lane', 'lane'); need('laneRow', 'lane'); need('goal', 'goal'); need('pop', 'pop');
     this.pf = document.getElementById('playfield');
     this.wellLayer = document.getElementById('wellLayer');
     this.hiLayer = document.getElementById('hiLayer');

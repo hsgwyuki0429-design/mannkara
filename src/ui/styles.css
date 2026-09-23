@@ -124,3 +124,5 @@ body{
 .primary{border:none;border-radius:16px;padding:14px 40px;font-size:18px;font-weight:900;color:#fff;
   background:linear-gradient(180deg,#5ee37a,#2fb14c);box-shadow:0 5px 0 #1e7d33,0 10px 20px rgba(0,0,0,.25);}
 .primary:active{translate:0 3px;box-shadow:0 2px 0 #1e7d33;}
+.boot-error{position:fixed;left:16px;right:16px;top:40%;z-index:50;padding:16px;border-radius:14px;
+  background:rgba(10,16,50,.92);color:#fff;font-size:14px;line-height:1.5;white-space:pre-wrap;text-align:center;}

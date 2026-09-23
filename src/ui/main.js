@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js';
-import { Board } from '../core/board.js';
-import { resolveChains } from '../core/mancala.js';
-import { SIZE, ANIM, lineCells } from '../core/constants.js';
-import { Renderer, delay } from './renderer.js';
-import { Sfx } from './sfx.js';
+import { Game } from '../core/game.js?v=202609230145';
+import { Board } from '../core/board.js?v=202609230145';
+import { resolveChains } from '../core/mancala.js?v=202609230145';
+import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202609230145';
+import { Renderer, delay } from './renderer.js?v=202609230145';
+import { Sfx } from './sfx.js?v=202609230145';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -238,5 +238,6 @@ $('btnRestart').addEventListener('click', restart);
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); restart(); });
 window.addEventListener('resize', () => renderTray());
 restart();
+window.__booted = true;
 window.__game = game;
 window.__renderer = renderer;
