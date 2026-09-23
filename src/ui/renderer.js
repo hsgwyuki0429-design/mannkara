@@ -1,5 +1,5 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230405';
+import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230413';
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 

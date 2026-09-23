@@ -26,7 +26,7 @@ export function lineCells(kind, n) {
 export const colNumberAt = (x) => SIZE - x;
 export const rowNumberAt = (r) => SIZE - r;
 
-/** 満杯のラインは番号が大きい順に処理。同じ番号の縦列と横列なら縦列が先（タイブレーク） */
+/** 縦横で連鎖数が同じ時は縦を選ぶ（タイブレーク） */
 export const KIND_PRIORITY = { col: 0, row: 1 };
 
 // ===== トレイ =====

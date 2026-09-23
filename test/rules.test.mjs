@@ -1,8 +1,8 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609230405';
-import { resolveChains, resolveLine, nextActivation } from '../src/core/mancala.js?v=202609230405';
-import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230405';
-import { Game, isSolvable } from '../src/core/game.js?v=202609230405';
-import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230405';
+import { Board, createBlock } from '../src/core/board.js?v=202609230413';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609230413';
+import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230413';
+import { Game, isSolvable } from '../src/core/game.js?v=202609230413';
+import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230413';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -84,36 +84,56 @@ console.log('押し上げ（縦）: 一番下の空欄までだけが上がる')
   eq(b.line('col', 4)[2].id, ids[2], '空欄より上は動かない');
 }
 
-console.log('優先順位: 縦横まとめて番号が大きい方が先、同番号なら縦が先');
-{
-  const b = new Board();
-  setLine(b, 'col', 3, [1,1,1]);
-  setLine(b, 'row', 2, [1,1]);
-  eq(nextActivation(b), { kind: 'col', n: 3 }, '縦3 と 横2 なら縦3 が先');
+// ---- 仕様をそのまま書いた参照実装（本体とは独立したメモ）----
+const refMemo = new Map();
+const refKey = (b) => b.grid.flat().map((v) => (v ? 1 : 0)).join('');
+function refLen(b) {
+  const k = refKey(b);
+  if (refMemo.has(k)) return refMemo.get(k);
+  const bb = b.clone(); let n = 0;
+  for (let a; (a = refNext(bb)); ) { resolveLine(bb, a.kind, a.n); n++; }
+  refMemo.set(k, n);
+  return n;
 }
-{
-  const b = new Board();
-  setLine(b, 'row', 4, [1,1,1,1]);
-  setLine(b, 'col', 2, [1,1]);
-  eq(nextActivation(b), { kind: 'row', n: 4 }, '横4 と 縦2 なら横4 が先');
+function refNext(b) {
+  const lines = b.fullLines();
+  if (!lines.length) return null;
+  const minOf = (k) => { const ns = lines.filter((l) => l.kind === k).map((l) => l.n); return ns.length ? { kind: k, n: Math.min(...ns) } : null; };
+  const c = minOf('col'), r = minOf('row');
+  if (!c || !r) return c ?? r;
+  const len = (act) => { const bb = b.clone(); resolveLine(bb, act.kind, act.n); return 1 + refLen(bb); };
+  return len(r) > len(c) ? r : c;
 }
-{
-  const b = new Board();
-  setLine(b, 'col', 2, [1,1]);
-  setLine(b, 'row', 2, [1,1]);
-  eq(nextActivation(b), { kind: 'col', n: 2 }, '縦2 と 横2 なら縦2 が先');
-}
+
+console.log('優先順位: 同じ向きは小さい番号から / 縦横両方なら連鎖が大きい向きの小さい番号から');
 {
   const b = Board.fromHeights([0,2,3,0,0,0,0,0]);
-  const steps = resolveChains(b);
-  eq(seq(steps), 'c3 c2 c1', '縦3 -> 縦2 -> 縦1（大きい方から）');
-  eq(steps[0].goals, 2, '縦3 の配布先の縦2 は満杯なので、その1個はゴールへ（計2個）');
-  eq(b.totalBlocks(), 0, '全部ゴールへ');
+  eq(seq(resolveChains(b)), 'c2 c1 c3 c1', '縦2 と 縦3 なら縦2 から');
+  eq(b.heights, [0,1,0,0,0,0,0,0], '縦2 に1個残る');
+}
+{
+  const b = new Board();
+  setLine(b, 'row', 3, [1,1,1]); setLine(b, 'row', 5, [1,1,1,1,1]);
+  eq(nextActivation(b), { kind: 'row', n: 3 }, '横3 と 横5 なら横3 から');
+}
+{
+  const b = new Board();
+  b.set(7, 0, createBlock('x'));             // 縦1（連鎖1）
+  b.set(0, 6, createBlock('x')); b.set(1, 6, createBlock('x'));   // 横2（横2 -> 横1 で連鎖2以上）
+  // 縦1 から始めても 横2 から始めても、最後まで数えると3連鎖で同じ -> 縦から
+  eq(decide(b), { act: { kind: 'col', n: 1 }, tie: true }, '合計の連鎖数が同じなら縦から');
+  eq(seq(resolveChains(b)), 'c1 r2 r1', '縦1 -> 横2 -> 横1');
+}
+{
+  const b = new Board();
+  b.set(7, 0, createBlock('x')); b.set(0, 7, createBlock('x'));  // 縦1 と 横1（どちらも連鎖1）
+  const d = decide(b);
+  eq([d.act, d.tie], [{ kind: 'col', n: 1 }, true], '連鎖数が同じなら縦');
 }
 {
   const b = new Board();
   setLine(b, 'col', 8, [1,1,1,1,1,1,1,1]);
-  eq(nextActivation(b), { kind: 'col', n: 8 }, '縦8 と角の横1 が満杯なら縦8 が先（縦8 も発動できる）');
+  eq(nextActivation(b), refNext(b), '縦8 と角の横1: 参照実装と一致');
 }
 
 console.log('長い連鎖（穴あきラインを押し込みで埋めていく）');
@@ -124,8 +144,8 @@ console.log('長い連鎖（穴あきラインを押し込みで埋めていく�
   setLine(b, 'col', 3, [0,1,1]);
   setLine(b, 'col', 2, [0,1]);
   const steps = resolveChains(b);
-  eq(steps[0].n === 5 && steps[1].n === 4, true, `押し込みで埋まった縦4 が次に発動: ${seq(steps)}`);
-  eq(b.totalBlocks(), 0, '全部ゴールへ');
+  eq(seq(steps), 'c5 c1 c2 c1 c3 c1 c4 c1 c2 c1', '押し込みで埋まった列が小さい順に次々発動（10連鎖）');
+  eq(b.heights, [0,0,1,0,0,0,0,0], '縦3 に1個残る');
 }
 {
   // ランダム盤面: 各ステップが「その時点の最優先」と一致し、最後は発動なし
@@ -137,13 +157,28 @@ console.log('長い連鎖（穴あきラインを押し込みで埋めていく�
     for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && rnd() < 0.7) b.set(x, r, createBlock('x'));
     const check = b.clone();
     for (const s of resolveChains(b)) {
-      const act = nextActivation(check);
+      const act = refNext(check);
       if (!act || act.kind !== s.kind || act.n !== s.n) { ok = false; break; }
       resolveLine(check, act.kind, act.n);
     }
     if (nextActivation(b) !== null) ok = false;
   }
-  eq(ok, true, 'ランダム300盤面で優先順位どおり');
+  eq(ok, true, 'ランダム300盤面で、毎ステップ参照実装（仕様どおり）と一致');
+}
+{
+  // 「縦横両方あって、連鎖が大きいので横を選んだ」局面が実際に起きていること
+  let seed = 77, rowWins = 0, colWins = 0;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let t = 0; t < 400; t++) {
+    const b = new Board();
+    for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && rnd() < 0.7) b.set(x, r, createBlock('x'));
+    const kinds = new Set(b.fullLines().map((l) => l.kind));
+    if (kinds.size < 2) continue;
+    const d = decide(b);
+    if (d.tie) continue;
+    if (d.act.kind === 'row') rowWins++; else colWins++;
+  }
+  eq(rowWins > 0 && colWins > 0, true, `縦横両方ある局面で 横を選択 ${rowWins} / 縦を選択 ${colWins}（どちらも起きる）`);
 }
 {
   // 対称性: 縦横を入れ替えた盤面では、縦と横が入れ替わった同じ連鎖が起きる（同番号の同時満杯が無い場合）
@@ -153,8 +188,8 @@ console.log('長い連鎖（穴あきラインを押し込みで埋めていく�
     const b = new Board();
     for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && rnd() < 0.55) b.set(x, r, createBlock('x'));
     const tb = transpose(b);
-    // 同番号の縦横が同時に満杯になる局面（タイブレークで縦優先）がある盤面は対称にならないので除外
-    const hasTie = (bb) => { const c = bb.clone(); for (let a; (a = nextActivation(c)); ) { if (c.fullLines().some((l) => l.n === a.n && l.kind !== a.kind)) return true; resolveLine(c, a.kind, a.n); } return false; };
+    // 縦横の連鎖数が同じ局面（タイブレークで縦優先）がある盤面は対称にならないので除外
+    const hasTie = (bb) => { const c = bb.clone(); for (let d; (d = decide(c)).act; ) { if (d.tie) return true; resolveLine(c, d.act.kind, d.act.n); } return false; };
     if (hasTie(b) || hasTie(tb)) continue;
     const s1 = resolveChains(b), s2 = resolveChains(tb);
     const flip = seq(s1).replace(/c/g, 'X').replace(/r/g, 'c').replace(/X/g, 'r');
