@@ -47,9 +47,9 @@ export const streakMultiplier = (streak) => 1 + Math.min(streak - 1, 8) * 0.25;
 
 // ===== アニメーション時間（ms・調整用） =====
 export const ANIM = {
-  step: 62,        // 1マスぶん動く時間（流れる・押し込むすべて共通）
-  betweenChains: 90,
+  step: 40,        // 1マスぶん動く時間（流れる・押し込むすべて共通）
+  betweenChains: 55,
 };
-/** 連鎖が1つ進むごとに再生速度をこれだけ上げる（2連鎖目 1.2倍, 3連鎖目 1.4倍 …） */
-export const CHAIN_SPEED_UP = 0.2;
-export const CHAIN_SPEED_MAX = 2.6;
+/** 連鎖が1つ進むごとに再生速度をこれだけ上げる（2連鎖目 1.3倍, 3連鎖目 1.6倍 …） */
+export const CHAIN_SPEED_UP = 0.3;
+export const CHAIN_SPEED_MAX = 3.4;
