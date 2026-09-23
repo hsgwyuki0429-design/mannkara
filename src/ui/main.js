@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609230806';
-import { Board } from '../core/board.js?v=202609230806';
-import { resolveChains } from '../core/mancala.js?v=202609230806';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_UP, CHAIN_SPEED_MAX } from '../core/constants.js?v=202609230806';
-import { Renderer, delay } from './renderer.js?v=202609230806';
-import { Sfx } from './sfx.js?v=202609230806';
+import { Game } from '../core/game.js?v=202609230857';
+import { Board } from '../core/board.js?v=202609230857';
+import { resolveChains } from '../core/mancala.js?v=202609230857';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609230857';
+import { Renderer, delay } from './renderer.js?v=202609230857';
+import { Sfx } from './sfx.js?v=202609230857';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -21,7 +21,8 @@ function saveBest() {
 }
 
 /* ---------- ゲーム ---------- */
-const PRAISE = [[8, 'Unbelievable!'], [5, 'Excellent!'], [3, 'Great!']];
+/** 連鎖数ごとの褒め言葉（段階が上がるほど派手な色） */
+const PRAISE = [[8, 'Unbelievable!', 5], [6, 'Amazing!', 4], [4, 'Excellent!', 3], [3, 'Great!', 2], [2, 'Good!', 1]];
 
 /**
  * 描画キュー。ルールは placePiece の時点で即確定しているので、ここでは記録を順番に再生するだけ。
@@ -29,14 +30,28 @@ const PRAISE = [[8, 'Unbelievable!'], [5, 'Excellent!'], [3, 'Great!']];
  */
 let queue = Promise.resolve();
 let shownScore = 0;
+let pending = 0;              // 再生待ち・再生中のターン数
 let generation = 0;           // restart で古い再生を打ち切るため
+let bestCelebrated = false;   // このゲームで新記録の演出をしたか
 const enqueue = (fn) => {
   const gen = generation;
   queue = queue.then(() => (gen === generation ? fn() : null)).catch((e) => console.error(e));
   return queue;
 };
-/** 連鎖が進むほど速く（1連鎖目 1.0倍 → 最大 CHAIN_SPEED_MAX 倍） */
-const speedFor = (chain) => Math.min(CHAIN_SPEED_MAX, 1 + (chain - 1) * CHAIN_SPEED_UP);
+
+/**
+ * 1ターンぶんの各連鎖の再生速度。連鎖が進むほど指数的に速くし、
+ * それでも合計が TURN_PLAY_BUDGET を超えるなら全体をまとめて速めて収める。
+ */
+function planSpeeds(steps) {
+  const base = steps.map((s) => Math.min(CHAIN_SPEED_MAX, Math.pow(CHAIN_SPEED_GROWTH, s.chain - 1)));
+  const cost = (s) => (9 + s.stack.length) * ANIM.step + ANIM.betweenChains;
+  const total = steps.reduce((a, s, i) => a + cost(s) / base[i], 0);
+  const k = Math.max(1, total / TURN_PLAY_BUDGET);
+  return base.map((v) => v * k);
+}
+/** 再生中に次のピースが置かれて待ちが溜まっていたら、さらに速める */
+const backlog = () => (pending > 1 ? BACKLOG_SPEED : 1);
 
 const game = new Game({
   hooks: {
@@ -47,44 +62,73 @@ const game = new Game({
       renderTray(turn.refilled);
       if (turn.refilled) sfx.refill();
       updateDebug();
-      enqueue(async () => {
-        showScore(turn.scoreAfterPlace);
-        for (const step of turn.steps) {
-          await renderer.playStep(step, speedFor(step.chain));
-          const praise = PRAISE.find(([n]) => step.chain >= n)?.[1];
-          if (step.chain >= 2) renderer.showText(`${step.chain} CHAIN<small>${praise ?? ''} +${step.gained}</small>`, step.chain >= 5 ? 'big' : '');
-          else renderer.showText(`<small>+${step.gained}</small>`);
-          showScore(step.score, true);
-          await delay(ANIM.betweenChains / speedFor(step.chain));
-        }
-        if (turn.steps.length && turn.streak >= 2) {
-          renderer.showText(`COMBO ×${turn.streak}`, 'big');
-          sfx.combo(turn.streak);
-        }
-        showScore(turn.score);
-        if (turn.gameOver) {
-          await delay(350);
-          sfx.over();
-          const isBest = saveBest();
-          $('finalScore').textContent = game.score.score.toLocaleString('en-US');
-          $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best}`;
-          $('gameOver').classList.remove('hidden');
-        }
-      });
+      pending++;
+      const gen = generation;
+      enqueue(() => playTurn(turn)).finally(() => { if (gen === generation) pending = Math.max(0, pending - 1); });
     },
   },
 });
 
+async function playTurn(turn) {
+  showScore(turn.scoreAfterPlace);
+  const speeds = planSpeeds(turn.steps);
+  if (turn.steps.length) {
+    renderer.setFever((turn.streak - 1) / 5);
+    if (turn.streak >= 2) { renderer.showCombo(turn.streak); sfx.combo(turn.streak); }
+  } else renderer.setFever(0);
+  for (const [i, step] of turn.steps.entries()) {
+    const sp = speeds[i] * backlog();
+    await renderer.playStep(step, sp);
+    const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
+    if (step.chain >= 2) {
+      renderer.showText(`${step.chain} CHAIN<small>${praise}</small>`, `t${tier}`);
+      sfx.praise(tier);
+    }
+    if (step.gained) renderer.floatScore(step.gained, step.chain);
+    showScore(step.score, true);
+    await delay(ANIM.betweenChains / sp);
+  }
+  showScore(turn.score);
+  if (turn.gameOver) {
+    await delay(350);
+    renderer.setFever(0);
+    sfx.over();
+    const isBest = saveBest();
+    $('finalScore').textContent = game.score.score.toLocaleString('en-US');
+    $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best}`;
+    $('gameOver').classList.remove('hidden');
+  }
+}
+
 /* ---------- HUD ---------- */
 /** 表示上のスコア（描画の再生に合わせて増える） */
+let rollRaf = 0;
 function showScore(v, bump = false) {
+  const from = shownScore;
   shownScore = v;
   const s = $('score');
-  s.textContent = v.toLocaleString('en-US');
+  // 数字がくるくる増えていく
+  cancelAnimationFrame(rollRaf);
+  const t0 = performance.now(), dur = v - from > 0 ? Math.min(420, 120 + (v - from) * 0.8) : 0;
+  const frame = (now) => {
+    const p = dur ? Math.min(1, (now - t0) / dur) : 1;
+    const cur = Math.round(from + (v - from) * (1 - Math.pow(1 - p, 3)));
+    s.textContent = cur.toLocaleString('en-US');
+    $('best').textContent = Math.max(best, cur);
+    if (p < 1) rollRaf = requestAnimationFrame(frame);
+  };
+  frame(t0);
   if (bump) { s.classList.remove('bump'); void s.offsetWidth; s.classList.add('bump'); }
-  $('best').textContent = Math.max(best, v);
+  // ベストスコアを超えた瞬間（ゲーム中に1回だけ）
+  if (!bestCelebrated && best > 0 && v > best) {
+    bestCelebrated = true;
+    renderer.confetti();
+    renderer.showText('NEW BEST!', 't5');
+    sfx.fanfare();
+    document.querySelector('.best-pill')?.classList.add('beat');
+  }
 }
-function updateHud() { showScore(game.score.score); }
+function updateHud() { cancelAnimationFrame(rollRaf); shownScore = game.score.score; showScore(game.score.score); }
 
 /* ---------- トレイ ---------- */
 /**
@@ -280,10 +324,11 @@ $('btnRunChain').addEventListener('click', () => {
   const steps = game.resolve();
   const trace = steps.map((s) => (s.kind === 'col' ? '縦' : '横') + s.n);
   enqueue(async () => {
-    for (const step of steps) {
-      await renderer.playStep(step, speedFor(step.chain));
+    const speeds = planSpeeds(steps);
+    for (const [i, step] of steps.entries()) {
+      await renderer.playStep(step, speeds[i]);
       showScore(step.score, true);
-      await delay(ANIM.betweenChains / speedFor(step.chain));
+      await delay(ANIM.betweenChains / speeds[i]);
     }
   });
   updateDebug();
@@ -294,7 +339,9 @@ $('btnRunChain').addEventListener('click', () => {
 /* ---------- 開始 ---------- */
 function restart() {
   saveBest();
-  generation++; queue = Promise.resolve();
+  generation++; queue = Promise.resolve(); pending = 0;
+  bestCelebrated = false;
+  document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
   endDrag();
   renderer.reset();

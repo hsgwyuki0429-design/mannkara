@@ -47,8 +47,6 @@ button{font-family:inherit;cursor:pointer;}
 .score-wrap{display:flex;flex-direction:column;align-items:center;margin-top:14px;flex-shrink:0;}
 .score{font-size:64px;font-weight:900;letter-spacing:0;line-height:1;height:66px;
   text-shadow:0 3px 3px rgba(0,0,0,.18);font-variant-numeric:tabular-nums;}
-.score.bump{animation:bump 260ms ease-out;}
-@keyframes bump{40%{transform:scale(1.08)}}
 
 /* ---- 盤面 ---- */
 .stage{flex:1;min-height:0;width:calc(100% + 16px);margin:0 -8px;display:flex;align-items:center;justify-content:center;}   /* 盤面は画面の端まで使う */
@@ -147,13 +145,80 @@ button{font-family:inherit;cursor:pointer;}
 @keyframes burst{to{opacity:0;translate:var(--dx) var(--dy);rotate:200deg;scale:.4;}}
 
 /* ---- 中央テキスト ---- */
-.pop{position:absolute;left:50%;top:55%;z-index:8;translate:-50% 0;white-space:nowrap;pointer-events:none;
-  font-weight:900;font-size:30px;opacity:0;color:#fff;
-  text-shadow:0 3px 0 rgba(0,0,0,.3),0 0 18px rgba(255,255,255,.35);}
-.pop small{display:block;text-align:center;font-size:15px;color:var(--gold);}
-.pop.show{animation:popText 900ms cubic-bezier(.2,.9,.3,1);}
-.pop.big{font-size:40px;color:var(--gold);}
-@keyframes popText{0%{opacity:0;scale:.4}18%{opacity:1;scale:1.12}30%{scale:1}75%{opacity:1}100%{opacity:0;translate:-50% -24px}}
+.pop{position:absolute;left:50%;top:52%;z-index:8;translate:-50% 0;white-space:nowrap;pointer-events:none;text-align:center;
+  font-weight:900;font-size:34px;line-height:1.05;opacity:0;color:#fff;letter-spacing:.01em;
+  -webkit-text-stroke:1.5px rgba(40,10,90,.55);paint-order:stroke fill;
+  filter:drop-shadow(0 3px 0 rgba(0,0,0,.3)) drop-shadow(0 0 14px rgba(255,255,255,.35));}
+.pop small{display:block;font-size:24px;margin-top:2px;}
+.pop.show{animation:popText 820ms cubic-bezier(.2,.9,.3,1);}
+@keyframes popText{0%{opacity:0;scale:.3;rotate:-8deg}16%{opacity:1;scale:1.25;rotate:3deg}28%{scale:.95;rotate:0deg}38%{scale:1.03}
+  75%{opacity:1;scale:1}100%{opacity:0;scale:1.08;translate:-50% -28px}}
+/* 段階ごとのグラデーション（t1 = Good … t5 = Unbelievable / NEW BEST） */
+.pop[class*=" t"] small,.pop.t5{background:var(--g);-webkit-background-clip:text;background-clip:text;color:transparent;}
+.pop.t1{--g:linear-gradient(#e8fff4,#5df2a0);}
+.pop.t2{--g:linear-gradient(#e6fbff,#3fd8ff);}
+.pop.t3{--g:linear-gradient(#fff6c8,#ffc21a 55%,#ff8a00);font-size:38px;}
+.pop.t4{--g:linear-gradient(#ffe0f4,#ff5ec4 50%,#a64dff);font-size:42px;}
+.pop.t5{--g:linear-gradient(100deg,#ff4d6d,#ffb020,#ffe94a,#4dff88,#3fd8ff,#a64dff,#ff4d6d);font-size:46px;
+  background-size:200% 100%;animation:popText 1000ms cubic-bezier(.2,.9,.3,1),rainbow 700ms linear infinite;}
+.pop.t5 small{background:none;color:#fff;-webkit-background-clip:border-box;background-clip:border-box;}
+@keyframes rainbow{to{background-position:-200% 0}}
+.pop.t4,.pop.t5{filter:drop-shadow(0 3px 0 rgba(0,0,0,.3)) drop-shadow(0 0 20px rgba(255,120,220,.65));}
+
+/* 連続発動（COMBO）: 盤面の上に炎色の文字 */
+.combo-pop{position:absolute;left:50%;top:27%;z-index:9;translate:-50% 0;pointer-events:none;white-space:nowrap;opacity:0;
+  display:flex;align-items:baseline;gap:6px;font-weight:900;font-size:24px;font-style:italic;color:#fff;
+  -webkit-text-stroke:1.2px rgba(120,20,0,.6);paint-order:stroke fill;
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.3)) drop-shadow(0 0 10px rgba(255,150,40,.8));}
+.combo-pop b{font-size:40px;background:linear-gradient(#fff7b0,#ffb300 50%,#ff4d1a);-webkit-background-clip:text;background-clip:text;color:transparent;}
+.combo-pop.show{animation:comboIn 1000ms cubic-bezier(.2,.9,.3,1);}
+.combo-pop.hot{filter:drop-shadow(0 2px 0 rgba(0,0,0,.3)) drop-shadow(0 0 18px rgba(255,80,20,.95));}
+@keyframes comboIn{0%{opacity:0;scale:2.2}14%{opacity:1;scale:.9}24%{scale:1.08}34%{scale:1}80%{opacity:1}100%{opacity:0;translate:-50% -14px}}
+
+/* ---- 発動・ゴールの演出 ---- */
+.fx2{z-index:7;overflow:visible;}
+.line-flash{border-radius:18%;background:#fff;box-shadow:0 0 14px 4px var(--col),inset 0 0 8px var(--col);
+  animation:lineFlash 440ms ease-out both;}
+@keyframes lineFlash{0%{opacity:0;scale:.6}15%{opacity:1;scale:1.12}100%{opacity:0;scale:1}}
+.beam{position:absolute;pointer-events:none;border-radius:999px;mix-blend-mode:screen;
+  background:linear-gradient(var(--dir,90deg),transparent,color-mix(in srgb,var(--col),#fff 60%) 35%,#fff 50%,color-mix(in srgb,var(--col),#fff 60%) 65%,transparent);
+  box-shadow:0 0 24px 6px var(--col);animation:beam 400ms ease-out both;}
+.beam.row{--dir:0deg;}
+.beam.col{animation-name:beamCol;}
+@keyframes beam{0%{opacity:1;scale:1 .1}40%{opacity:1;scale:1 1.5}100%{opacity:0;scale:1 2.4}}
+@keyframes beamCol{0%{opacity:1;scale:.1 1}40%{opacity:1;scale:1.5 1}100%{opacity:0;scale:2.4 1}}
+.trail{position:absolute;width:calc(var(--cell) * .55);height:calc(var(--cell) * .55);translate:-50% -50%;border-radius:50%;
+  background:radial-gradient(#fff,var(--col) 45%,transparent 70%);animation:trail 340ms ease-out forwards;pointer-events:none;}
+@keyframes trail{to{opacity:0;scale:.2}}
+.shard{position:absolute;translate:-50% -50%;border-radius:22%;pointer-events:none;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--col),#fff 55%),var(--col) 50%,var(--lo));
+  box-shadow:0 0 6px var(--col);}
+.wave{position:absolute;width:calc(var(--cell) * 1.3);height:calc(var(--cell) * 1.3);translate:-50% -50%;border-radius:50%;
+  border:3px solid color-mix(in srgb,var(--col),#fff 50%);box-shadow:0 0 16px var(--col),inset 0 0 12px var(--col);
+  animation:wave 540ms cubic-bezier(.2,.7,.3,1) forwards;pointer-events:none;}
+@keyframes wave{0%{scale:.3;opacity:1}100%{scale:3.2;opacity:0;border-width:1px}}
+.float-score{position:absolute;translate:-50% -50%;font-weight:900;font-size:calc(var(--cell) * .62);color:#fff;white-space:nowrap;
+  -webkit-text-stroke:1.2px rgba(20,20,80,.5);paint-order:stroke fill;text-shadow:0 2px 0 rgba(0,0,0,.25);
+  animation:floatUp 880ms cubic-bezier(.2,.8,.3,1) forwards;pointer-events:none;}
+.float-score.warm{color:var(--gold);font-size:calc(var(--cell) * .75);}
+.float-score.hot{color:#ff7ad0;font-size:calc(var(--cell) * .9);text-shadow:0 0 12px rgba(255,90,200,.8);}
+@keyframes floatUp{0%{opacity:0;scale:.5}15%{opacity:1;scale:1.25}30%{scale:1}75%{opacity:1}100%{opacity:0;translate:-50% calc(-50% - var(--cell) * 1.8)}}
+.confetti{position:absolute;width:9px;height:14px;margin:-7px -4px;border-radius:2px;background:var(--col);pointer-events:none;}
+#screenFlash{position:fixed;inset:0;z-index:25;pointer-events:none;opacity:0;
+  background:radial-gradient(circle at 50% 50%,#fff,rgba(255,255,255,.6) 60%,rgba(255,255,255,.2));}
+/* コンボが続くほど背景が光って脈打つ */
+#fever{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 500ms;
+  background:radial-gradient(70% 45% at 50% 45%,rgba(255,110,210,.45),rgba(120,60,255,.25) 55%,transparent 80%),
+             radial-gradient(120% 60% at 50% 110%,rgba(255,170,40,.35),transparent 60%);
+  animation:fever 900ms ease-in-out infinite alternate;}
+#fever.max{animation-duration:450ms;}
+@keyframes fever{from{filter:hue-rotate(0deg) brightness(.9)}to{filter:hue-rotate(40deg) brightness(1.2)}}
+#app{z-index:1;}
+.best-pill.beat{border-color:var(--gold);box-shadow:0 0 14px rgba(255,213,74,.7);animation:beat 1.2s ease-in-out infinite;}
+@keyframes beat{50%{box-shadow:0 0 22px rgba(255,213,74,1)}}
+.score.bump{animation:bump 300ms cubic-bezier(.3,1.6,.5,1);}
+@keyframes bump{35%{transform:scale(1.14);text-shadow:0 3px 3px rgba(0,0,0,.18),0 0 22px rgba(255,230,120,.9)}}
+@media (prefers-reduced-motion: reduce){#fever{animation:none}}
 
 /* ---- トレイ ---- */
 .tray{width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:16.5px;padding:0 10px;
