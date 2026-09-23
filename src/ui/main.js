@@ -1,7 +1,7 @@
 import { Game } from '../core/game.js';
 import { Board } from '../core/board.js';
-import { resolveChains, columnMoves } from '../core/mancala.js';
-import { COLUMN_COUNT, ROW_COUNT, screenXToColIndex, ANIM } from '../core/constants.js';
+import { resolveChains } from '../core/mancala.js';
+import { SIZE, ANIM } from '../core/constants.js';
 import { Renderer, delay } from './renderer.js';
 import { Sfx } from './sfx.js';
 
@@ -9,195 +9,190 @@ const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
 const renderer = new Renderer(sfx);
 
-let originX = 3;
-let active = -1;        // ゴースト表示中の候補（-1 = なし）
-let dragging = false;   // 指でつかんでいる最中か
-let overBoard = false;
+/* ---------- ベストスコア（端末ごと） ---------- */
+const BEST_KEY = 'stair-mancala-best';
+let best = 0;
+try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch {}
+function saveBest() {
+  if (game.score.score <= best) return false;
+  best = game.score.score;
+  try { localStorage.setItem(BEST_KEY, String(best)); } catch {}
+  return true;
+}
+
+/* ---------- ゲーム ---------- */
+const PRAISE = [[8, 'Unbelievable!'], [5, 'Excellent!'], [3, 'Great!']];
 
 const game = new Game({
   hooks: {
-    async onPlaced() {
-      sfx.land();
-      renderer.syncBoard(game.board, ANIM.drop, 'cubic-bezier(.3,1.4,.5,1)');
-      await delay(ANIM.drop + 60);
-    },
-    async onColumnResolve(step) {
-      await renderer.conveyColumn(step.column, step.stack, game.board, step.chain);
-    },
-    async onChainStep(step, gained) {
-      renderer.showChain(step.chain, gained);
+    async onPlaced(placed) {
+      sfx.place();
+      renderer.popIn(placed);
+      renderTray();
       updateHud();
+      await delay(ANIM.place);
+    },
+    async onRows(step) { await renderer.clearRows(step); },
+    async onColumn(step) { await renderer.conveyColumn(step, game.board); },
+    async onStep(step, gained) {
+      const praise = PRAISE.find(([n]) => step.chain >= n)?.[1];
+      if (step.chain >= 2) renderer.showText(`${step.chain} CHAIN<small>${praise ?? ''} +${gained}</small>`, step.chain >= 5 ? 'big' : '');
+      else renderer.showText(`<small>+${gained}</small>`);
+      updateHud(true);
       updateDebug();
       await delay(ANIM.betweenChains);
     },
-    async onChainEnd() {
-      renderer.syncBoard(game.board, ANIM.drop);
+    async onTurnEnd(steps) {
+      renderer.syncBoard(game.board, 120);
+      const st = game.score.streak;
+      if (steps.length && st >= 2) {
+        await delay(200);
+        renderer.showText(`COMBO ×${st}`, 'big');
+        sfx.combo(st);
+      }
+      updateHud();
       updateDebug();
     },
+    async onTrayRefill() { sfx.refill(); renderTray(true); },
     async onGameOver() {
+      await delay(350);
       sfx.over();
+      const isBest = saveBest();
       $('finalScore').textContent = game.score.score;
+      $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best}`;
       $('gameOver').classList.remove('hidden');
     },
   },
 });
 
-/* ---------- HUD / 候補 ---------- */
-function updateHud() {
-  $('score').textContent = game.score.score;
-  $('chain').textContent = game.score.lastChain;
-  $('best').textContent = game.score.bestChain;
+/* ---------- HUD ---------- */
+function updateHud(bump = false) {
+  const s = $('score');
+  s.textContent = game.score.score;
+  if (bump) { s.classList.remove('bump'); void s.offsetWidth; s.classList.add('bump'); }
+  $('best').textContent = Math.max(best, game.score.score);
+  const st = game.score.streak;
+  $('streak').textContent = st >= 2 ? `COMBO ×${st}` : '';
 }
 
-function renderCandidates() {
-  const wrap = $('candidates');
+/* ---------- トレイ ---------- */
+function trayCellSize() {
+  return Math.min(Math.floor(renderer.cell * 0.52), 22);
+}
+function renderTray(enter = false) {
+  const wrap = $('tray');
   wrap.innerHTML = '';
-  game.candidates.forEach((piece, idx) => {
-    const box = document.createElement('div');
-    box.className = 'cand';
-    box.dataset.idx = idx;
-    const tag = document.createElement('span');
-    tag.className = 'idx';
-    tag.textContent = idx + 1;
-    box.appendChild(tag);
-    const cells = piece.normalizedCells();
-    const w = Math.max(...cells.map((c) => c.x)) + 1;
-    const h = Math.max(...cells.map((c) => c.y)) + 1;
-    const s = 13;
-    for (const c of cells) {
-      const d = document.createElement('div');
-      d.className = `mini b-${piece.color}`;
-      d.style.width = d.style.height = s - 2 + 'px';
-      d.style.left = `calc(50% + ${(c.x - w / 2) * s}px)`;
-      d.style.top = `calc(50% + ${(c.y - h / 2) * s}px)`;
-      box.appendChild(d);
+  const s = trayCellSize();
+  game.tray.forEach((piece, i) => {
+    const slot = document.createElement('div');
+    slot.className = 'slot' + (enter ? ' enter' : '');
+    slot.dataset.slot = i;
+    if (enter) slot.style.setProperty('animation-delay', `${i * 50}ms`);
+    if (piece) {
+      if (!game.board.fits(piece)) slot.classList.add('nofit');
+      const box = document.createElement('div');
+      box.className = 'piece';
+      box.style.width = piece.width * s + 'px';
+      box.style.height = piece.height * s + 'px';
+      if (enter) box.style.animationDelay = `${i * 60}ms`;
+      for (const c of piece.cells) {
+        const d = document.createElement('div');
+        d.className = `tray-cell c-${piece.color}`;
+        Object.assign(d.style, { width: s - 2 + 'px', height: s - 2 + 'px', left: c.x * s + 'px', top: c.y * s + 'px' });
+        box.appendChild(d);
+      }
+      slot.appendChild(box);
     }
-    wrap.appendChild(box);
+    wrap.appendChild(slot);
   });
 }
 
-/* ---------- ゴースト / 落下位置 ---------- */
-function currentPiece() { return active >= 0 ? game.candidates[active] : null; }
+/* ---------- ドラッグ ---------- */
+let drag = null; // { slot, piece, lift, ox, oy, valid }
 
-function clampOrigin() {
-  const p = currentPiece();
-  if (!p) return;
-  originX = Math.max(0, Math.min(COLUMN_COUNT - p.width, originX));
-}
-function landingInfo() {
-  const p = currentPiece();
-  if (!p) return { cells: [], landing: [] };
-  const cells = p.cellsAt(originX);
-  const add = new Array(COLUMN_COUNT).fill(0);
-  const landing = [];
-  for (const c of [...cells].sort((a, b) => b.y - a.y)) {
-    const i = screenXToColIndex(c.x);
-    landing.push({ colIndex: i, stackIndex: game.board.height(i) + add[i] });
-    add[i]++;
+function previewInfo(piece, ox, oy) {
+  const b = game.board.clone();
+  b.place(piece, ox, oy);
+  const cells = [];
+  for (const r of b.fullRows()) cells.push(...b.rowCells(r));
+  for (const n of b.fullColumns()) {
+    const x = SIZE - n;
+    for (let r = 0; r < n; r++) cells.push({ x, r });
   }
-  return { cells, landing };
-}
-function updateGhost(pointerY) {
-  const p = currentPiece();
-  if (!p || game.busy || game.gameOver) { renderer.clearGhost(); return; }
-  const { cells, landing } = landingInfo();
-  renderer.showGhost(cells, landing);
-  const topLanding = Math.min(...landing.map((l) => renderer.blockPos(l.colIndex, l.stackIndex).y));
-  const h = Math.max(...p.normalizedCells().map((c) => c.y)) + 1;
-  const maxY = topLanding - (h - 1) * renderer.cell - renderer.cell * 0.6;
-  const y = Math.max(0, Math.min(maxY, (pointerY ?? 0) - renderer.cell * 1.6));
-  renderer.showFloating(p, originX, y);
+  const chain = resolveChains(b).length;
+  return { cells, chain };
 }
 
-/* ---------- 入力：候補をつかんで盤面へ運ぶ ---------- */
-const pf = $('playfield');
-
-function pointerToOrigin(e) {
-  const p = currentPiece();
-  if (!p) return;
-  const rect = pf.getBoundingClientRect();
-  const x = Math.round((e.clientX - rect.left) / renderer.cell - p.width / 2);
-  originX = Math.max(0, Math.min(COLUMN_COUNT - p.width, x));
-  const y = e.clientY - rect.top;
-  overBoard = e.clientY < rect.bottom;
-  updateGhost(y);
+function renderDragPiece(fx, fy) {
+  const { piece, lift } = drag;
+  const c = renderer.cell;
+  const left = fx - (piece.width * c) / 2;
+  const top = fy - lift - piece.height * c;
+  const layer = $('dragLayer');
+  if (!layer.childElementCount) {
+    for (const cc of piece.cells) {
+      const d = document.createElement('div');
+      d.className = `drag-cell c-${piece.color}`;
+      d.style.left = cc.x * c + 'px';
+      d.style.top = cc.y * c + 'px';
+      layer.appendChild(d);
+    }
+  }
+  layer.style.transform = `translate(${left}px,${top}px)`;
+  return { left, top };
 }
 
-$('candidates').addEventListener('pointerdown', (e) => {
-  const box = e.target.closest('.cand');
-  if (!box || game.busy || game.gameOver) return;
+function updateDrag(e) {
+  const { left, top } = renderDragPiece(e.clientX, e.clientY);
+  const rect = renderer.pf.getBoundingClientRect();
+  const c = renderer.cell;
+  const ox = Math.round((left - rect.left) / c);
+  const oy = Math.round((top - rect.top) / c);
+  if (ox === drag.ox && oy === drag.oy) return;
+  drag.ox = ox; drag.oy = oy;
+  drag.valid = game.canPlace(drag.slot, ox, oy);
+  if (drag.valid) {
+    const { cells, chain } = previewInfo(drag.piece, ox, oy);
+    renderer.showPreview(drag.piece, ox, oy, cells, chain);
+  } else {
+    renderer.clearPreview();
+  }
+}
+
+function endDrag() {
+  $('dragLayer').innerHTML = '';
+  renderer.clearPreview();
+  document.querySelectorAll('.slot').forEach((s) => s.classList.remove('dragging'));
+  drag = null;
+}
+
+$('tray').addEventListener('pointerdown', (e) => {
+  const slotEl = e.target.closest('.slot');
+  if (!slotEl || game.busy || game.gameOver || drag) return;
+  const slot = Number(slotEl.dataset.slot);
+  const piece = game.tray[slot];
+  if (!piece) return;
   sfx.unlock();
-  active = Number(box.dataset.idx);
-  dragging = true;
-  overBoard = false;
   sfx.pick();
-  markCandidates();
-  clampOrigin();
-  pointerToOrigin(e);
+  const lift = e.pointerType === 'mouse' ? -(piece.height * renderer.cell) / 2 : renderer.cell * 1.3;
+  drag = { slot, piece, lift, ox: null, oy: null, valid: false };
+  slotEl.classList.add('dragging');
+  $('dragLayer').innerHTML = '';
+  updateDrag(e);
   e.preventDefault();
 });
-
-window.addEventListener('pointermove', (e) => {
-  if (!dragging) return;
-  pointerToOrigin(e);
-  e.preventDefault();
-}, { passive: false });
-
+window.addEventListener('pointermove', (e) => { if (drag) { updateDrag(e); e.preventDefault(); } }, { passive: false });
 window.addEventListener('pointerup', async () => {
-  if (!dragging) return;
-  const idx = active;
-  const x = originX;
-  const canDrop = overBoard;
-  dragging = false;
-  active = -1;
-  renderer.clearGhost();
-  markCandidates();
-  if (canDrop) await drop(idx, x);
+  if (!drag) return;
+  const { slot, ox, oy, valid } = drag;
+  const overBoard = ox !== null && ox > -3 && oy > -3 && ox < SIZE + 1 && oy < SIZE + 1;
+  endDrag();
+  if (valid) await game.placePiece(slot, ox, oy);
+  else { if (overBoard) sfx.invalid(); renderTray(); }
 });
-window.addEventListener('pointercancel', () => {
-  dragging = false;
-  active = -1;
-  renderer.clearGhost();
-  markCandidates();
-});
+window.addEventListener('pointercancel', () => { if (drag) { endDrag(); renderTray(); } });
 
-function markCandidates() {
-  document.querySelectorAll('.cand').forEach((el, i) => {
-    el.classList.toggle('active', i === active);
-    el.classList.toggle('taken', dragging && i === active);
-  });
-}
-
-async function drop(idx, x) {
-  if (game.busy || game.gameOver) return;
-  const ok = await game.placePiece(idx, x);
-  if (!ok) return;
-  renderCandidates();
-  updateHud();
-  updateDebug();
-}
-
-// PC 用のキーボード補助（1/2/3 選択 + ←→ + Enter/Space で落とす）
-window.addEventListener('keydown', (e) => {
-  if (game.busy || game.gameOver) return;
-  if (['1','2','3'].includes(e.key)) active = Number(e.key) - 1;
-  else if (e.key === 'ArrowLeft') { if (active < 0) active = 0; originX--; }
-  else if (e.key === 'ArrowRight') { if (active < 0) active = 0; originX++; }
-  else if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowDown') {
-    e.preventDefault();
-    if (active < 0) return;
-    const idx = active;
-    active = -1; renderer.clearGhost(); markCandidates();
-    drop(idx, originX);
-    return;
-  } else return;
-  sfx.unlock();
-  clampOrigin();
-  markCandidates();
-  updateGhost(0);
-});
-
-/* ---------- サウンド切替 ---------- */
+/* ---------- サウンド ---------- */
 $('btnSound').addEventListener('click', () => {
   sfx.unlock();
   sfx.enabled = !sfx.enabled;
@@ -205,53 +200,49 @@ $('btnSound').addEventListener('click', () => {
 });
 
 /* ---------- デバッグ ---------- */
-$('btnDebug').addEventListener('click', () => {
-  $('debugPanel').classList.toggle('hidden');
-  updateDebug();
-});
+$('btnDebug').addEventListener('click', () => { $('debugPanel').classList.toggle('hidden'); updateDebug(); });
 function updateDebug() {
   if ($('debugPanel').classList.contains('hidden')) return;
-  $('debugText').textContent =
-    game.debugStatus().join('\n') +
-    `\nheights(列1→列8) = [${game.board.heights.join(', ')}]`;
+  $('debugText').textContent = game.debugStatus().join('\n') +
+    `\nheights(列1→列8) = [${game.board.heights.join(', ')}]  (■=埋まり □=空き, 左が一番下)`;
 }
 $('btnApplyHeights').addEventListener('click', () => {
+  if (game.busy) return;
   const hs = $('debugHeights').value.split(',').map((v) => Number(v.trim()) || 0);
-  game.board = Board.fromHeights(hs.slice(0, COLUMN_COUNT));
+  game.board = Board.fromHeights(hs.slice(0, SIZE));
   renderer.reset();
   renderer.bindBoard(game.board);
+  renderTray();
   updateDebug();
 });
 $('btnRunChain').addEventListener('click', async () => {
   if (game.busy) return;
   game.busy = true;
-  const trace = resolveChains(game.board.clone()).map((s) => s.column);
-  for (;;) {
-    const c = game.board.findExactColumns();
-    if (!c.length) break;
-    const column = Math.min(...c);
-    let stack = [];
-    for (const ev of columnMoves(game.board, column)) if (ev.type === 'suck') stack = ev.blocks;
-    await renderer.conveyColumn(column, stack, game.board, 1);
-    await delay(ANIM.betweenChains);
-  }
+  const trace = resolveChains(game.board.clone()).map((s) => (s.type === 'rows' ? `row${s.rows.join('+')}` : s.column));
+  await game.resolve();
   game.busy = false;
+  renderer.syncBoard(game.board, 120);
+  updateHud();
   updateDebug();
-  $('debugText').textContent += `\nchain order: ${trace.join(' -> ')}`;
+  renderTray();
+  $('debugText').textContent += `\norder: ${trace.join(' -> ') || '(none)'}`;
 });
 
-/* ---------- 初期化 ---------- */
+/* ---------- 開始 ---------- */
 function restart() {
+  saveBest();
   game.reset();
-  active = -1; dragging = false; originX = 3;
+  endDrag();
   renderer.reset();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
-  renderCandidates();
+  renderTray(true);
   updateHud();
   updateDebug();
 }
 $('btnRestart').addEventListener('click', restart);
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); restart(); });
+window.addEventListener('resize', () => renderTray());
 restart();
 window.__game = game;
+window.__renderer = renderer;

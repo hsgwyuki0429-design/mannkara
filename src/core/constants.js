@@ -1,37 +1,52 @@
-// ===== 盤面定数 =====
-// 列番号は「右端 = 列1」「左端 = 列8」。
-// 配列 index は columnHeights[0] = 列1, columnHeights[7] = 列8 とする（仕様 21）。
-// 画面上の x 座標(screenX) は 0 = 一番左 = 列8, 7 = 一番右 = 列1。
-export const COLUMN_COUNT = 8;
-export const ROW_COUNT = 10;          // グリッド縦マス数（床を含む）
-export const GAME_OVER_HEIGHT = 9;    // 床底からの高さがこれを超えたらゲームオーバー
-                                      // （全列が揃う基準高さ8 の1マス上）
+// ===== 盤面 =====
+// 8×8 を対角線で切った三角形。列番号は「右端 = 列1」「左端 = 列8」。
+// 列N は上端から N マスだけ使える（列1 = 1マス, 列8 = 8マス）。
+//
+// 座標系は2つ:
+//   画面座標 (x, r) : x = 0(左端=列8)…7(右端=列1), r = 0(上端)…7(下端)
+//   列座標 (colIndex, slot) : colIndex 0 = 列1 … 7 = 列8,
+//                             slot 0 = その列の一番下のマス … N-1 = 一番上のマス
+// columnHeights[0] = 列1 … columnHeights[7] = 列8 とする（仕様 21）。
+export const SIZE = 8;
 
-// 列 index -> 固定床の高さ（床マス数）。列1が最も高く、列8が0。
-export function floorHeight(colIndex) {
-  return COLUMN_COUNT - 1 - colIndex;
+export const capacity = (colIndex) => colIndex + 1;          // 列の容量 = 列番号
+export const screenXToColIndex = (x) => SIZE - 1 - x;
+export const colIndexToScreenX = (i) => SIZE - 1 - i;
+/** 画面座標が三角盤面の内側か */
+export const isInside = (x, r) => x >= 0 && r >= 0 && x < SIZE && r < SIZE && x + r <= SIZE - 1;
+/** 画面座標 -> 列座標 */
+export function toColSlot(x, r) {
+  const colIndex = screenXToColIndex(x);
+  return { colIndex, slot: colIndex - r };                    // slot = (N-1) - r
 }
-// 列 index -> 発動に必要なブロック数（列番号と同じ）
-export function requiredCount(colIndex) {
-  return colIndex + 1;
+/** 列座標 -> 画面座標 */
+export function toScreen(colIndex, slot) {
+  return { x: colIndexToScreenX(colIndex), r: colIndex - slot };
 }
-// 画面 x <-> 列 index
-export const screenXToColIndex = (x) => COLUMN_COUNT - 1 - x;
-export const colIndexToScreenX = (i) => COLUMN_COUNT - 1 - i;
+/** 横ライン r に含まれるマス数（r=0 は8マス, r=7 は1マス） */
+export const rowLength = (r) => SIZE - r;
 
-// ===== スコア定数（調整用） =====
-export const SCORE_PER_GOAL = 100;
-// chain 回数 -> 倍率（仮の値。あとから差し替えやすいよう配列で管理）
+// ===== トレイ =====
+export const TRAY_SIZE = 3;
+
+// ===== スコア（調整用） =====
+export const SCORE_PER_CELL_PLACED = 1;
+export const SCORE_PER_COLUMN_GOAL = 100;   // 列発動でゴールへ入った1個
+export const SCORE_PER_ROW_CELL = 40;       // 横ラインで消えた1個
+// 連鎖回数 -> 倍率
 export const CHAIN_MULTIPLIERS = [1, 1, 1.5, 2, 3, 4, 6, 8, 10, 13, 16, 20];
-export function chainMultiplier(chain) {
-  return CHAIN_MULTIPLIERS[Math.min(chain, CHAIN_MULTIPLIERS.length - 1)];
-}
+export const chainMultiplier = (chain) => CHAIN_MULTIPLIERS[Math.min(chain, CHAIN_MULTIPLIERS.length - 1)];
+// 連続で何かを発動させた手数(streak) -> 倍率
+export const streakMultiplier = (streak) => 1 + Math.min(streak - 1, 8) * 0.25;
 
 // ===== アニメーション時間（ms・調整用） =====
 export const ANIM = {
-  drop: 110,       // 着地・重力
-  step: 85,        // ベルトコンベア1コマぶん（下がる/右へ1つ）
-  goal: 260,       // ゴール吸収
-  push: 230,       // 各列へ下から押し上げ
-  betweenChains: 140,
+  place: 140,      // 置いた時のポップ
+  sink: 150,       // 発動列が通路まで沈む
+  step: 80,        // ベルトコンベア1コマ
+  goal: 240,       // ゴール吸収
+  push: 240,       // 各列へ下から押し上げ
+  rowFlash: 160,   // 横ラインが光る
+  rowFly: 320,     // 横ラインがゴールへ飛ぶ
+  betweenChains: 120,
 };

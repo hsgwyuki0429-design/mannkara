@@ -1,8 +1,8 @@
-import { Board } from '../src/core/board.js';
-import { resolveChains, resolveColumn } from '../src/core/mancala.js';
-import { PieceGenerator, Piece } from '../src/core/pieces.js';
+import { Board, createBlock } from '../src/core/board.js';
+import { resolveChains, resolveColumn, nextActivation } from '../src/core/mancala.js';
+import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js';
 import { Game } from '../src/core/game.js';
-import { requiredCount } from '../src/core/constants.js';
+import { isInside, capacity, toColSlot, toScreen, SIZE } from '../src/core/constants.js';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -10,138 +10,175 @@ function eq(actual, expected, name) {
   if (a === e) { pass++; console.log(`  ok   ${name}`); }
   else { fail++; console.log(`  FAIL ${name}\n       expected ${e}\n       actual   ${a}`); }
 }
-// heights[0] = 列1 … heights[7] = 列8
-const H = (b) => b.heights;
+const H = (b) => b.heights;                                   // [列1 … 列8]
+const pattern = (b, i) => b.columns[i].map((v) => (v ? 1 : 0)); // 下→上
+/** 列 i に下から pattern(1/0) を置く */
+function setCol(b, i, bits) { bits.forEach((v, k) => { b.columns[i][k] = v ? createBlock('debug') : null; }); }
 
-console.log('Case A: 列1が1個 -> ゴールへ入り0個');
+console.log('盤面形状: 8×8 の三角形、列N は N マス');
+{
+  eq([...Array(SIZE)].map((_, i) => capacity(i)), [1,2,3,4,5,6,7,8], '容量 = 列番号');
+  let n = 0; for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r)) n++;
+  eq(n, 36, 'マス数 36 (= 8+7+…+1)');
+  eq(isInside(7, 0), true, '列1 は上端の1マスだけ');
+  eq(isInside(7, 1), false, '列1 の2マス目は無い');
+  eq(isInside(0, 7), true, '列8 は下端まである');
+  eq(toColSlot(0, 7), { colIndex: 7, slot: 0 }, '列8 の一番下 = slot0');
+  eq(toScreen(0, 0), { x: 7, r: 0 }, '列1 slot0 = 右上');
+}
+
+console.log('重力なし: 置いた場所に残る');
+{
+  const b = new Board();
+  b.place(new Piece('1'), 0, 0);                  // 列8 の一番上
+  eq(pattern(b, 7), [0,0,0,0,0,0,0,1], '列8 の最上段に浮いたまま');
+  eq(b.canPlace(new Piece('1'), 0, 0), false, '埋まったマスには置けない');
+  eq(b.canPlace(new Piece('2h'), 6, 1), false, '三角形の外には置けない');
+}
+
+console.log('Case A: 列1が埋まる -> ゴール');
 {
   const b = Board.fromHeights([1,0,0,0,0,0,0,0]);
   const steps = resolveChains(b);
-  eq(H(b), [0,0,0,0,0,0,0,0], 'board empty');
-  eq(steps.map(s => s.column), [1], 'chain = 列1 のみ');
-  eq(steps[0].moves.map(m => m.to), ['goal'], '列1の1個はゴール');
+  eq(steps.map((s) => s.column), [1], '列1 発動');
+  eq(H(b), [0,0,0,0,0,0,0,0], '空になる');
 }
 
-console.log('Case B: 列2が2個 -> 列1へ1個+ゴール1個 -> 列1が発動');
+console.log('Case B: 列2 が満杯 -> 列1へ1個 + ゴール -> 列1 発動');
 {
   const b = Board.fromHeights([0,2,0,0,0,0,0,0]);
   const steps = resolveChains(b);
-  eq(steps.map(s => s.column), [2,1], '列2 -> 列1 の2連鎖');
-  eq(steps[0].moves.map(m => m.to), [1,'goal'], '列2の配り先');
-  eq(H(b), [0,0,0,0,0,0,0,0], 'board empty');
+  eq(steps.map((s) => s.column), [2,1], '列2 -> 列1');
+  eq(H(b), [0,0,0,0,0,0,0,0], '空になる');
 }
 
-console.log('Case C: 列5が5個 -> 列4,3,2,1,ゴール');
+console.log('Case C: 列5 が満杯 -> 列4,3,2,1,ゴール');
 {
   const b = Board.fromHeights([0,0,0,0,5,0,0,0]);
   const step = resolveColumn(b, 5);
-  eq(step.moves.map(m => m.to), [4,3,2,1,'goal'], '配り順');
-  eq(H(b), [1,1,1,1,0,0,0,0], '各列に1個ずつ');
+  eq(step.moves.map((m) => m.to), [4,3,2,1,'goal'], '配る順');
+  eq(step.moves.at(-1).block.id, step.stack[0].id, 'ゴールへ行くのは一番下のブロック');
 }
 
-console.log('Case D: 列4が5個 -> 発動しない');
+console.log('押し上げ: 一番下の空欄までだけが上がり、空欄が1つ消える');
 {
-  const b = Board.fromHeights([0,0,0,5,0,0,0,0]);
-  eq(b.findExactColumns(), [], '発動可能列なし');
-  eq(resolveChains(b).length, 0, '発動0回');
+  const b = new Board();
+  setCol(b, 3, [1,0,1,0]);                 // 列4: 下から ■□■□
+  const ids = b.columns[3].map((v) => v?.id ?? null);
+  b.insertBottom(3, createBlock('x'));
+  eq(pattern(b, 3), [1,1,1,0], '■■■□ になる（下の空欄が埋まる）');
+  eq(b.columns[3][1].id, ids[0], '元の一番下が1段上がった');
+  eq(b.columns[3][2].id, ids[2], '空欄より上のブロックは動かない');
+}
+{
+  const b = new Board();
+  setCol(b, 3, [0,1,1,0]);                 // 列4: □■■□ -> 押し込むと一番下の空欄(slot0)が埋まるだけ
+  b.insertBottom(3, createBlock('x'));
+  eq(pattern(b, 3), [1,1,1,0], '□■■□ -> ■■■□');
 }
 
-console.log('Case E: 列4が3個 + マンカラで下から1個 -> 4個で発動');
+console.log('穴あき列への配布で満杯になり連鎖');
 {
-  const b = Board.fromHeights([0,0,0,3,5,0,0,0]); // 列5発動で列4へ1個入る
+  const b = new Board();
+  setCol(b, 4, [1,1,1,1,1]);               // 列5 満杯
+  setCol(b, 3, [0,1,1,1]);                 // 列4 は一番下だけ空欄
   const steps = resolveChains(b);
-  // 列5発動で列4が3->4個になり、以降も毎回「最小番号優先」で再判定される
-  eq(steps.map(s => s.column), [5,1,4,1,2,1], '列5発動後 列4が4個になり発動する');
-  eq(steps.filter(s => s.column === 4).length, 1, '列4が発動した');
-  eq(H(b), [0,0,2,0,0,0,0,0], '列3に2個だけ残る');
+  eq(steps[0].column, 5, '列5 発動');
+  eq(steps[1].column, 1, '列1 が最小なので先');
+  eq(steps.some((s) => s.column === 4), true, '列4 も押し上げで満杯になり発動');
 }
 
-console.log('Case F: 列4が3個 + 通常配置で一度に2個 -> 5個で発動しない');
-{
-  const b = Board.fromHeights([0,0,0,3,0,0,0,0]);
-  // 列4 = screenX 4（左端0 = 列8）。縦向きOは無いので2セルを列4へ積む
-  b.placeCells([{x:4,y:0,color:'t'},{x:4,y:1,color:'t'}]);
-  eq(b.height(3), 5, '列4 = 5個');
-  eq(b.findExactColumns(), [], '発動しない');
-}
-
-console.log('Case G: 列2と列5が同時 -> 列2を先に');
-{
-  const b = Board.fromHeights([0,2,0,0,5,0,0,0]);
-  const steps = resolveChains(b);
-  eq(steps[0].column, 2, '最初は列2');
-  eq(steps.map(s => s.column), [2,1,5,1], '毎回再判定して最小番号を発動');
-  eq(H(b), [0,1,1,1,0,0,0,0], '残り盤面');
-}
-
-console.log('Case H: 列2と列3が同時 -> 列2が先（列3先行で列2を超過させない）');
+console.log('Case G/H: 複数の列が同時に満杯 -> 最小番号から、毎回再判定');
 {
   const b = Board.fromHeights([0,2,3,0,0,0,0,0]);
   const steps = resolveChains(b);
   eq(steps[0].column, 2, '最初は列2');
-  eq(steps.map(s => s.column), [2,1,3,1], '列2を先に処理し、毎回再判定');
-  eq(steps.findIndex(s => s.column === 2) < steps.findIndex(s => s.column === 3), true, '列3より列2が先');
-  eq(H(b), [0,1,0,0,0,0,0,0], '列2に1個残る');
+  eq(steps.map((s) => s.column), [2,1,3,1], '列2 -> 1 -> 3 -> 1');
+  eq(H(b), [0,1,0,0,0,0,0,0], '列2 に1個残る');
 }
 
-console.log('Case I: 長い連鎖でも毎回 最小番号1列ずつ');
+console.log('Case I: 長い連鎖でも毎回最小番号を1列ずつ');
 {
-  const start = [1,2,3,4,5,6,7,8]; // 全列がちょうど必要数
-  const b = Board.fromHeights(start);
+  const b = Board.fromHeights([1,2,3,4,5,6,7,8]);
+  // 全マス埋まっている = 横ラインも全部満杯なので、先に横ラインが全部消える
   const steps = resolveChains(b);
-  eq(steps.length > 5, true, `連鎖数 ${steps.length} > 5`);
-  let okOrder = true;
-  const check = Board.fromHeights(start);
-  for (const s of steps) {
-    const cands = check.findExactColumns();
-    if (s.column !== Math.min(...cands)) okOrder = false;
-    resolveColumn(check, s.column);
+  eq(steps[0].type, 'rows', '横ラインが先');
+  eq(H(b), [0,0,0,0,0,0,0,0], '全消し');
+}
+{
+  // 穴あき列を押し上げで次々に満杯にしていく連鎖
+  const b = new Board();
+  setCol(b, 4, [1,1,1,1,1]);   // 列5 満杯
+  setCol(b, 3, [0,1,1,1]);     // 列4 一番下だけ空欄
+  setCol(b, 2, [0,1,1]);       // 列3
+  setCol(b, 1, [0,1]);         // 列2
+  const steps = resolveChains(b);
+  eq(steps.map((s) => s.column), [5,1,2,1,3,1,4,1,2,1], '10連鎖');
+  eq(H(b), [0,0,1,0,0,0,0,0], '列3 に1個残る');
+}
+{
+  // ランダム盤面: 各ステップが「その時点の最優先」と一致するか
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  let ok = true;
+  for (let t = 0; t < 300; t++) {
+    const b = new Board();
+    for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && rnd() < 0.7) b.set(x, r, createBlock('x'));
+    const check = b.clone();
+    for (const s of resolveChains(b)) {
+      const act = nextActivation(check);
+      if (!act || act.type !== s.type || (s.type === 'column' && act.column !== s.column)) { ok = false; break; }
+      if (s.type === 'column') resolveColumn(check, s.column); else act.rows.forEach((r) => check.clearRow(r));
+    }
+    if (nextActivation(b) !== null) ok = false;
   }
-  eq(okOrder, true, '常に最小番号を発動している');
-  eq(H(b), check.heights, '再現一致');
+  eq(ok, true, 'ランダム300盤面で優先順位どおり・最後は発動なし');
 }
 
-console.log('Case J: 候補3つに同じテトロミノが出ても動作する');
+console.log('横ライン: 揃ったらその場で消えてゴール扱い');
 {
-  const gen = new PieceGenerator(() => 0.99); // 常に最後の種類
-  const cs = gen.spawnCandidates([], 3);
-  eq(cs.map(c => c.type), ['L','L','L'], '同種3つ');
-  eq(cs.every(c => c.cells.length === 4), true, 'セル数4');
+  const b = new Board();
+  for (let x = 0; x < 3; x++) b.set(x, 5, createBlock('x'));   // r=5 は3マス (x=0..2)
+  const steps = resolveChains(b);
+  eq(steps.map((s) => s.type), ['rows'], '横ライン発動');
+  eq(steps[0].goals, 3, '3個ゴール');
+  eq(b.totalBlocks(), 0, '消えた');
+}
+{
+  const b = new Board();
+  b.set(0, 7, createBlock('x'));                              // r=7 は1マス（列8の一番下）
+  eq(resolveChains(b).map((s) => s.type), ['rows'], '左下の1マスは置いた瞬間に消える');
+}
+{
+  const b = new Board();
+  for (let x = 0; x < 7; x++) b.set(x, 0, createBlock('x'));  // 最上段 8マス中7マス
+  eq(nextActivation(b), null, '1マス足りない横ラインは発動しない');
 }
 
-console.log('Extra: 完全一致判定は height === required のみ');
+console.log('Case J: 同じ形が複数出ても動作する');
 {
-  for (let i = 0; i < 8; i++) {
-    const req = requiredCount(i);
-    const over = Board.fromHeights(Array.from({length:8},(_,k)=>k===i?req+1:0));
-    if (over.findExactColumns().length !== 0) { fail++; console.log(`  FAIL 列${i+1} 超過で発動`); }
-  }
-  pass++; console.log('  ok   超過列は発動しない');
+  const gen = new PieceGenerator(() => 0);
+  const tray = gen.spawnTray(3);
+  eq(tray.map((p) => p.name), ['1','1','1'], '同じ形3つ');
+  eq(SHAPES.every((s) => s.cells.length >= 1), true, '全形状が有効');
 }
 
-console.log('Extra: 配布は上のブロックから＝一番下のブロックがゴールへ');
+console.log('Game: 3つ使い切るまで補充しない / 置けなくなったらゲームオーバー');
 {
-  const b = Board.fromHeights([0,0,0,4,0,0,0,0]);
-  const stack = b.columns[3].map(x => x.id); // 下から順
-  const step = resolveColumn(b, 4);
-  eq(step.moves.map(m => m.to), [3,2,1,'goal'], '配り先の順は仕様どおり');
-  eq(step.moves[step.moves.length-1].block.id, stack[0], 'ゴールへ行くのは一番下のブロック');
-  eq(step.moves[0].block.id, stack[stack.length-1], '最初に配られるのは一番上のブロック');
+  const g = new Game({ random: () => 0 });           // 常に 1マスピース
+  eq(g.tray.length, 3, 'トレイは3つ');
+  await g.placePiece(0, 0, 0);
+  eq(g.tray.filter(Boolean).length, 2, '1つ使うと残り2');
+  await g.placePiece(1, 1, 0);
+  await g.placePiece(2, 2, 0);
+  eq(g.tray.filter(Boolean).length, 3, '使い切ったら3つ補充');
+  eq(g.score.score > 0, true, 'スコアが入る');
 }
-
-console.log('Extra: 通常のライン消去は存在しない');
 {
-  const b = Board.fromHeights([9,9,9,9,9,9,9,9]);
-  eq(resolveChains(b).length, 0, '横一列でも何も起きない');
-}
-
-console.log('Extra: Game 経由の1手（連鎖含む）');
-{
-  const g = new Game({ random: () => 0 });
-  g.board = Board.fromHeights([0,1,0,0,0,0,0,0]); // 列2にあと1個で発動
-  await g.placePiece(0, 4); // I 横向き -> 列1,2 にも乗る
-  eq(g.board.isOverflow(), false, 'オーバーフローなし');
-  eq(g.score.score > 0, true, `スコア加算 ${g.score.score}`);
+  const g = new Game({ random: () => 0.999 });
+  // 盤面を市松模様で埋めて、大きいピースを置けなくする
+  for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && (x + r) % 2 === 0) g.board.set(x, r, createBlock('x'));
+  eq(g.hasMove(), g.tray.some((p) => p.size === 1), '1マス以外は置けない');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

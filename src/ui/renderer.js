@@ -1,237 +1,266 @@
-import { COLUMN_COUNT, ROW_COUNT, GAME_OVER_HEIGHT, floorHeight, colIndexToScreenX, ANIM } from '../core/constants.js';
+import { SIZE, isInside, colIndexToScreenX, capacity, ANIM } from '../core/constants.js';
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 盤面の描画とアニメーションだけを担当する（ゲームルールは持たない） */
+/**
+ * 描画とアニメーションだけを担当（ルールは持たない）。
+ * 画面座標 (x, r): x=0 左端(列8)…7 右端(列1), r=0 上端…7 下端。r=8 は盤面下の通路。
+ */
 export class Renderer {
   constructor(sfx) {
     this.sfx = sfx;
     this.pf = document.getElementById('playfield');
-    this.floorLayer = document.getElementById('floorLayer');
-    this.gridLayer = document.getElementById('gridLayer');
+    this.wellLayer = document.getElementById('wellLayer');
+    this.pipeLayer = document.getElementById('pipeLayer');
+    this.hiLayer = document.getElementById('hiLayer');
     this.blockLayer = document.getElementById('blockLayer');
     this.ghostLayer = document.getElementById('ghostLayer');
     this.fxLayer = document.getElementById('fxLayer');
-    this.overLine = document.getElementById('overLine');
     this.lane = document.getElementById('lane');
     this.goal = document.getElementById('goal');
-    this.chainPop = document.getElementById('chainPop');
-    this.els = new Map();    // blockId -> element
-    this.manual = new Set(); // 手動制御中のブロック
-    this.cell = 34;
+    this.pop = document.getElementById('pop');
+    this.els = new Map();     // blockId -> element
+    this.manual = new Set();  // 手動制御中
+    this.cell = 40;
     this.layout();
     window.addEventListener('resize', () => this.layout());
   }
 
   /* ---------- レイアウト ---------- */
   layout() {
-    const availH = window.innerHeight - 180;                 // HUD + 候補ぶん
-    const availW = Math.min(window.innerWidth, 560) - 8;
-    const cell = Math.max(18, Math.floor(Math.min(availW / (COLUMN_COUNT + 1.55), availH / (ROW_COUNT + 1.2))));
+    const vw = Math.min(window.innerWidth, 560);
+    const availW = vw - 16;
+    const availH = window.innerHeight - 250;
+    const cell = Math.max(20, Math.floor(Math.min(availW / (SIZE + 1.35), availH / (SIZE + 1.1))));
     this.cell = cell;
     document.documentElement.style.setProperty('--cell', cell + 'px');
-    const boardW = COLUMN_COUNT * cell;
-    this.boardW = boardW;
-    this.pf.style.width = boardW + cell * 1.55 + 'px';
-    this.pf.style.height = ROW_COUNT * cell + cell * 1.1 + 'px';
-    this.lane.style.top = ROW_COUNT * cell + 'px';
-    this.lane.style.width = boardW + 'px';
-    this.lane.style.height = cell + 'px';
-    this.goal.style.left = boardW + cell * 0.1 + 'px';
-    this.goal.style.top = ROW_COUNT * cell - cell * 0.15 + 'px';
-    this.goal.style.width = cell * 1.4 + 'px';
-    this.goal.style.height = cell * 1.3 + 'px';
-    this.overLine.style.top = (ROW_COUNT - GAME_OVER_HEIGHT) * cell + 'px';
-    this.overLine.style.width = boardW + 'px';
+    const W = SIZE * cell;
+    this.pf.style.width = W + cell * 1.35 + 'px';
+    this.pf.style.height = W + cell * 1.1 + 'px';
+    Object.assign(this.lane.style, { top: W + 'px', width: W + 'px', height: cell + 'px' });
+    Object.assign(this.goal.style, {
+      left: W + cell * 0.1 + 'px', top: W - cell * 0.15 + 'px',
+      width: cell * 1.2 + 'px', height: cell * 1.3 + 'px',
+    });
     this.drawStatic();
+    if (this._board) this.syncBoard(this._board, 0);
   }
 
   drawStatic() {
-    const cell = this.cell;
-    this.gridLayer.innerHTML = '';
-    this.floorLayer.innerHTML = '';
+    const c = this.cell;
+    this.wellLayer.innerHTML = '';
+    this.pipeLayer.innerHTML = '';
     this.lane.innerHTML = '';
-    for (let i = 0; i < COLUMN_COUNT; i++) {
-      const x = colIndexToScreenX(i);
-      // 列の有効範囲（床の上〜ゲームオーバーライン）だけグリッドを描く
-      for (let h = floorHeight(i); h < GAME_OVER_HEIGHT; h++) {
+    this.wells = new Map();
+    for (let x = 0; x < SIZE; x++) {
+      for (let r = 0; r < SIZE; r++) {
+        if (!isInside(x, r)) continue;
         const d = document.createElement('div');
-        d.className = 'cell grid-cell';
-        d.style.transform = `translate(${x * cell}px,${(ROW_COUNT - 1 - h) * cell}px)`;
-        this.gridLayer.appendChild(d);
+        d.className = 'cell well'
+          + (x === 0 && r === 0 ? ' tl' : '') + (x === SIZE - 1 ? ' tr' : '')
+          + (x === 0 && r === SIZE - 1 ? ' bl' : '') + (x + r === SIZE - 1 && x > 0 && x < SIZE - 1 ? ' edge-r' : '');
+        d.style.transform = `translate(${x * c}px,${r * c}px)`;
+        this.wellLayer.appendChild(d);
+        this.wells.set(`${x},${r}`, d);
       }
-      // 階段状の床（列1が最も高い＝右が高い）
-      for (let h = 0; h < floorHeight(i); h++) {
-        const d = document.createElement('div');
-        d.className = 'cell floor-cell';
-        d.style.transform = `translate(${x * cell}px,${(ROW_COUNT - 1 - h) * cell}px)`;
-        this.floorLayer.appendChild(d);
-      }
-      // 通路の列番号
-      const label = document.createElement('div');
-      label.className = 'lane-label';
-      label.textContent = i + 1;
-      label.style.width = cell + 'px';
-      label.style.transform = `translate(${x * cell}px,0)`;
-      this.lane.appendChild(label);
     }
-    this.refreshAll();
+    // 各列の下から通路へ伸びるパイプ（配られたブロックの通り道）
+    for (let i = 0; i < SIZE; i++) {
+      const x = colIndexToScreenX(i);
+      const top = capacity(i);             // 列の一番下の1つ下の行
+      if (top >= SIZE) continue;
+      const p = document.createElement('div');
+      p.className = 'pipe';
+      Object.assign(p.style, {
+        left: x * c + c * 0.3 + 'px', width: c * 0.4 + 'px',
+        top: top * c + 'px', height: (SIZE - top) * c + 'px',
+      });
+      this.pipeLayer.appendChild(p);
+    }
+    for (let i = 0; i < SIZE; i++) {
+      const l = document.createElement('div');
+      l.className = 'lane-label';
+      l.textContent = i + 1;
+      l.style.width = c + 'px';
+      l.style.transform = `translate(${colIndexToScreenX(i) * c}px,0)`;
+      this.lane.appendChild(l);
+    }
   }
 
-  /* ---------- 座標 ---------- */
-  blockPos(colIndex, stackIndex) {
-    const h = floorHeight(colIndex) + stackIndex;
-    return { x: colIndexToScreenX(colIndex) * this.cell, y: (ROW_COUNT - 1 - h) * this.cell };
-  }
-  laneSlotPos(slot) { // slot: 0=画面左端 … 7=列1 … 8=ゴール
-    return { x: slot * this.cell, y: ROW_COUNT * this.cell };
-  }
-
+  /* ---------- ブロック ---------- */
+  pos(x, r) { return { x: x * this.cell, y: r * this.cell }; }
   ensureEl(block) {
     let el = this.els.get(block.id);
     if (!el) {
       el = document.createElement('div');
-      el.className = `cell block b-${block.color}`;
+      el.className = `cell block c-${block.color}`;
       this.blockLayer.appendChild(el);
       this.els.set(block.id, el);
     }
     return el;
   }
-  setPos(el, pos, dur = ANIM.drop, ease = '') {
+  setPos(el, p, dur = 0, ease = '') {
     el.style.setProperty('--t', dur + 'ms');
-    if (ease) el.style.setProperty('--e', ease);
-    el.style.transform = `translate(${pos.x}px,${pos.y}px)`;
+    el.style.setProperty('--e', ease || 'cubic-bezier(.2,.8,.3,1)');
+    el.style.transform = `translate(${p.x}px,${p.y}px)`;
+  }
+  removeEl(id) {
+    this.els.get(id)?.remove();
+    this.els.delete(id);
+    this.manual.delete(id);
   }
 
-  /** 盤面上の全ブロックを正しい位置へ（手動制御中のものは除く） */
-  syncBoard(board, dur = ANIM.drop, ease = '') {
-    const alive = new Set();
-    board.columns.forEach((col, i) => {
-      col.forEach((block, k) => {
-        alive.add(block.id);
-        const el = this.ensureEl(block);
-        if (this.manual.has(block.id)) return;
-        this.setPos(el, this.blockPos(i, k), dur, ease);
-      });
-    });
-    for (const [id, el] of this.els) {
-      if (!alive.has(id) && !this.manual.has(id)) { el.remove(); this.els.delete(id); }
-    }
-  }
   bindBoard(board) { this._board = board; this.syncBoard(board, 0); }
-  refreshAll() { if (this._board) this.syncBoard(this._board, 0); }
 
-  /* ---------- ゴースト ---------- */
-  showGhost(cells, landing) {
-    const cell = this.cell;
+  syncBoard(board, dur = 0, ease = '') {
+    this._board = board;
+    const alive = new Set();
+    for (const { block, x, r } of board.entries()) {
+      alive.add(block.id);
+      const el = this.ensureEl(block);
+      if (!this.manual.has(block.id)) this.setPos(el, this.pos(x, r), dur, ease);
+    }
+    for (const id of [...this.els.keys()]) if (!alive.has(id) && !this.manual.has(id)) this.removeEl(id);
+  }
+
+  /** 置いた直後のポップ */
+  popIn(placed) {
+    for (const { block, x, r } of placed) {
+      const el = this.ensureEl(block);
+      this.setPos(el, this.pos(x, r), 0);
+      el.classList.remove('pop-in');
+      void el.offsetWidth;
+      el.classList.add('pop-in');
+    }
+  }
+
+  /* ---------- ドラッグ中のプレビュー ---------- */
+  showPreview(piece, ox, oy, clearCells, chainCount) {
+    const c = this.cell;
     this.ghostLayer.innerHTML = '';
-    for (const c of cells) {
+    this.hiLayer.innerHTML = '';
+    for (const cc of piece.cells) {
       const d = document.createElement('div');
-      d.className = 'ghost-col';
-      d.style.width = cell + 'px';
-      d.style.height = ROW_COUNT * cell + 'px';
-      d.style.transform = `translate(${c.x * cell}px,0)`;
+      d.className = `cell ghost c-${piece.color}`;
+      d.style.transform = `translate(${(ox + cc.x) * c}px,${(oy + cc.y) * c}px)`;
       this.ghostLayer.appendChild(d);
     }
-    for (const c of landing) {
+    for (const { x, r } of clearCells) {
       const d = document.createElement('div');
-      d.className = 'cell ghost';
-      const p = this.blockPos(c.colIndex, c.stackIndex);
-      d.style.transform = `translate(${p.x}px,${p.y}px)`;
-      this.ghostLayer.appendChild(d);
+      d.className = `cell hi c-${piece.color}`;
+      d.style.transform = `translate(${x * c}px,${r * c}px)`;
+      this.hiLayer.appendChild(d);
     }
-  }
-  clearGhost() { this.ghostLayer.innerHTML = ''; }
-
-  /** 指で運んでいる最中のピース（盤面上に浮かせて表示） */
-  showFloating(piece, originX, topY = 0) {
-    this.clearFloating();
-    const cell = this.cell;
-    this.floatEls = [];
-    for (const c of piece.normalizedCells()) {
-      const d = document.createElement('div');
-      d.className = `cell block b-${piece.color} floating`;
-      d.style.transform = `translate(${(originX + c.x) * cell}px,${topY + c.y * cell}px)`;
-      this.ghostLayer.appendChild(d);
-      this.floatEls.push(d);
+    if (chainCount >= 2) {
+      const b = document.createElement('div');
+      b.className = 'chain-badge';
+      b.textContent = `⚡${chainCount}`;
+      b.style.transform = `translate(${(ox + piece.width) * c}px,${oy * c - c * 0.35}px)`;
+      this.ghostLayer.appendChild(b);
     }
   }
-  clearFloating() { this.floatEls = []; }
+  clearPreview() { this.ghostLayer.innerHTML = ''; this.hiLayer.innerHTML = ''; }
 
-  /* ---------- マンカラ演出 ---------- */
+  /* ---------- 横ライン ---------- */
+  async clearRows(step) {
+    const els = step.removed.map(({ block, x, r }) => {
+      this.manual.add(block.id);
+      const el = this.ensureEl(block);
+      el.classList.add('flash');
+      return { el, block, x, r };
+    });
+    this.sfx?.rows(step.rows.length, step.chain);
+    await delay(ANIM.rowFlash);
+    const g = this.goalPos();
+    els.forEach(({ el, x, r }, i) => {
+      this.burst(this.pos(x, r), el.className.match(/c-(\w+)/)?.[1]);
+      setTimeout(() => {
+        el.classList.add('fly');
+        this.setPos(el, g, ANIM.rowFly, 'cubic-bezier(.5,0,.8,.4)');
+      }, i * 18);
+    });
+    await delay(ANIM.rowFly + els.length * 18);
+    this.hitGoal(step.chain);
+    els.forEach(({ block }) => this.removeEl(block.id));
+  }
+
+  /* ---------- 列（マンカラ） ---------- */
+  laneSlot(slot) { return { x: slot * this.cell, y: SIZE * this.cell }; }
+  goalPos() { return { x: SIZE * this.cell + this.cell * 0.1, y: SIZE * this.cell - this.cell * 0.1 }; }
+
   /**
-   * 列 N の発動をベルトコンベア状に見せる。
-   * 1コマごとに「列全体が1マス下がる / 通路のブロックが1マス右へ」を同時に行い、
-   * 一番下のブロックが先頭としてゴールまで流れる。
+   * 列 N の発動：列全体がパイプを通って通路まで沈み、
+   * 1コマごとに「列が1マス下がる / 通路のブロックが1マス右へ」を同時に行う。
+   * 先頭（一番下のブロック）がゴールへ入ったあと、残りが一斉に各列へ押し上がる。
    */
-  async conveyColumn(columnNumber, stack, board, chain) {
-    const N = stack.length;
-    const srcSlot = colIndexToScreenX(columnNumber - 1);
-    const colIndex = columnNumber - 1;
+  async conveyColumn(step, board) {
+    const { column: N, stack, chain } = step;
+    const src = colIndexToScreenX(N - 1);
+    const laneR = SIZE;
     stack.forEach((b) => { this.manual.add(b.id); this.ensureEl(b).classList.add('travel'); });
 
-    for (let s = 1; s <= N + 1; s++) {
-      for (let k = 0; k < stack.length; k++) {
-        const el = this.ensureEl(stack[k]);
-        if (k < s) {
-          // 通路に出ているブロック：右へ流れる（目標位置で停止）
-          const slot = srcSlot + Math.min(s - 1 - k, N - k);
-          this.setPos(el, this.laneSlotPos(slot), ANIM.step, 'linear');
-        } else {
-          // まだ列に残っているブロック：1マスずつ下がる
-          this.setPos(el, this.blockPos(colIndex, k - s), ANIM.step, 'linear');
-        }
-      }
-      this.sfx?.step(Math.min(s, 6));
+    // 1) 通路まで沈む
+    const sinkT = ANIM.sink + 22 * (SIZE - N);
+    stack.forEach((b, k) => this.setPos(this.ensureEl(b), this.pos(src, laneR - k), sinkT, 'cubic-bezier(.5,0,.7,1)'));
+    this.sfx?.sink();
+    await delay(sinkT);
+
+    // 2) ベルトコンベア
+    for (let s = 1; s <= N; s++) {
+      stack.forEach((b, k) => {
+        const el = this.ensureEl(b);
+        if (k <= s) this.setPos(el, this.laneSlot(src + Math.min(s - k, N - k)), ANIM.step, 'linear');
+        else this.setPos(el, this.pos(src, laneR - (k - s)), ANIM.step, 'linear');
+      });
+      this.sfx?.step(s);
       await delay(ANIM.step);
     }
 
-    // 先頭（一番下だったブロック）がゴールへ
+    // 3) 先頭がゴールへ
     const lead = stack[0];
     const leadEl = this.ensureEl(lead);
-    leadEl.classList.add('goaled');
-    this.goal.classList.add('hit');
-    this.burst(this.laneSlotPos(srcSlot + N), lead.color);
-    this.sfx?.goal(chain);
-    await delay(ANIM.goal);
-    this.goal.classList.remove('hit');
-    this.manual.delete(lead.id);
-    leadEl.remove();
-    this.els.delete(lead.id);
+    this.setPos(leadEl, this.goalPos(), ANIM.step);
+    leadEl.classList.add('fly');
+    await delay(ANIM.step);
+    this.burst(this.goalPos(), lead.color);
+    this.hitGoal(chain);
+    this.removeEl(lead.id);
 
-    // 残りが一斉に各列へ下から押し上がる
-    for (let k = 1; k < stack.length; k++) this.manual.delete(stack[k].id);
-    stack.forEach((b) => this.els.get(b.id)?.classList.remove('travel'));
-    this.syncBoard(board, ANIM.push, 'cubic-bezier(.2,1.5,.4,1)');
-    this.pf.classList.add('shake');
-    this.sfx?.chain(chain);
+    // 4) 残りが一斉に各列へ押し上がる（グイン）
+    stack.slice(1).forEach((b) => { this.manual.delete(b.id); this.els.get(b.id)?.classList.remove('travel'); });
+    this.syncBoard(board, ANIM.push, 'cubic-bezier(.25,1.55,.45,1)');
+    this.pf.classList.remove('thump'); void this.pf.offsetWidth; this.pf.classList.add('thump');
+    this.sfx?.push(chain);
     await delay(ANIM.push);
-    this.pf.classList.remove('shake');
   }
 
-  /** ゴール時のパーティクル */
-  burst(pos, color) {
-    const n = 10;
+  hitGoal(chain) {
+    this.goal.classList.remove('hit'); void this.goal.offsetWidth; this.goal.classList.add('hit');
+    this.sfx?.goal(chain);
+  }
+
+  burst(p, color = 'yellow') {
+    const n = 9;
     for (let i = 0; i < n; i++) {
       const d = document.createElement('div');
-      d.className = `particle b-${color}`;
-      const a = (Math.PI * 2 * i) / n + Math.random();
-      const r = this.cell * (0.8 + Math.random() * 1.4);
-      d.style.setProperty('--dx', Math.cos(a) * r + 'px');
-      d.style.setProperty('--dy', Math.sin(a) * r + 'px');
-      d.style.transform = `translate(${pos.x + this.cell / 2}px,${pos.y + this.cell / 2}px)`;
+      d.className = `particle c-${color}`;
+      const a = (Math.PI * 2 * i) / n + Math.random() * 0.6;
+      const dist = this.cell * (0.7 + Math.random() * 1.3);
+      d.style.setProperty('--dx', Math.cos(a) * dist + 'px');
+      d.style.setProperty('--dy', Math.sin(a) * dist + 'px');
+      d.style.left = p.x + this.cell / 2 + 'px';
+      d.style.top = p.y + this.cell / 2 + 'px';
       this.fxLayer.appendChild(d);
-      setTimeout(() => d.remove(), 620);
+      setTimeout(() => d.remove(), 650);
     }
   }
 
-  showChain(chain, gained) {
-    this.chainPop.innerHTML = chain >= 2
-      ? `<b>${chain}</b> CHAIN <i>+${gained}</i>`
-      : `<i>+${gained}</i>`;
-    this.chainPop.classList.remove('show');
-    void this.chainPop.offsetWidth;
-    this.chainPop.classList.add('show');
+  /** 中央に出る大きな文字（Combo / Chain） */
+  showText(html, cls = '') {
+    this.pop.innerHTML = html;
+    this.pop.className = 'pop';
+    void this.pop.offsetWidth;
+    this.pop.className = `pop show ${cls}`;
   }
 
   reset() {
@@ -239,6 +268,6 @@ export class Renderer {
     this.fxLayer.innerHTML = '';
     this.els.clear();
     this.manual.clear();
-    this.clearGhost();
+    this.clearPreview();
   }
 }

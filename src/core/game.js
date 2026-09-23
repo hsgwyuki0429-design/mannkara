@@ -1,12 +1,13 @@
 import { Board } from './board.js';
 import { PieceGenerator } from './pieces.js';
 import { ScoreManager } from './score.js';
-import { columnMoves } from './mancala.js';
-import { COLUMN_COUNT, screenXToColIndex } from './constants.js';
+import { nextActivation, columnMoves, resolveRows } from './mancala.js';
+import { TRAY_SIZE } from './constants.js';
 
 /**
- * ゲーム本体（DOM 非依存）。
- * 描画側は hooks（すべて async 可）で進行を受け取る。
+ * ゲーム本体（DOM 非依存）。描画側は hooks（async 可）で進行を受け取る。
+ * 流れ: 置く → [横ライン同時消去 / 最小番号の列を1列発動] を発動が無くなるまで繰り返す
+ *       → スコア確定 → トレイ補充（3つ使い切ったら）→ ゲームオーバー判定
  */
 export class Game {
   constructor({ random = Math.random, hooks = {} } = {}) {
@@ -18,50 +19,35 @@ export class Game {
   reset() {
     this.board = new Board();
     this.score = new ScoreManager();
-    this.candidates = this.generator.spawnCandidates([], 3);
+    this.tray = this.generator.spawnTray(TRAY_SIZE);
     this.gameOver = false;
     this.busy = false;
   }
 
-  /** 候補 index のピースを screenX（左端）に落とす。連鎖まで完全に処理する。 */
-  async placePiece(candidateIndex, screenX) {
-    if (this.busy || this.gameOver) return false;
-    const p = this.candidates[candidateIndex];
-    if (!p) return false;
-    const cells = p.cellsAt(screenX);
-    if (!this.board.canPlaceCells(cells)) return false;
+  canPlace(slot, ox, oy) {
+    const piece = this.tray[slot];
+    return !!piece && this.board.canPlace(piece, ox, oy);
+  }
 
+  /** トレイ slot のピースを (ox, oy)=左上の画面座標 に置く。連鎖まで完全に処理する */
+  async placePiece(slot, ox, oy) {
+    if (this.busy || this.gameOver || !this.canPlace(slot, ox, oy)) return false;
     this.busy = true;
-    const placed = this.board.placeCells(cells);
-    await this.hooks.onPlaced?.(placed);
+    const piece = this.tray[slot];
+    this.tray[slot] = null;
+    const placed = this.board.place(piece, ox, oy);
+    this.score.addPlaced(placed.length);
+    await this.hooks.onPlaced?.(placed, piece);
 
-    // 連鎖：1列発動するたびに盤面を再判定（最小番号優先）
-    const steps = [];
-    for (;;) {
-      const candidatesCols = this.board.findExactColumns();
-      if (candidatesCols.length === 0) break;
-      const column = Math.min(...candidatesCols);
-      const chain = steps.length + 1;
-      const step = { column, chain, moves: [], goalCount: 1 };
-      steps.push(step);
-      let stack = [];
-      for (const ev of columnMoves(this.board, column)) {
-        if (ev.type === 'suck') stack = ev.blocks; // 下から順のブロック列
-        else step.moves.push({ block: ev.block, from: ev.from, to: ev.to });
-      }
-      step.stack = stack;
-      await this.hooks.onColumnResolve?.(step);
-      const gained = this.score.addStep(chain, 1);
-      await this.hooks.onChainStep?.(step, gained);
+    const steps = await this.resolve();
+    this.score.endTurn(steps.length > 0);
+    await this.hooks.onTurnEnd?.(steps);
+
+    if (this.tray.every((p) => !p)) {
+      this.tray = this.generator.spawnTray(TRAY_SIZE);
+      await this.hooks.onTrayRefill?.(this.tray);
     }
-    await this.hooks.onChainEnd?.(steps);
-
-    // 候補補充
-    this.candidates.splice(candidateIndex, 1);
-    this.candidates = this.generator.spawnCandidates(this.candidates, 3);
-
-    // ゲームオーバー判定（連鎖完全終了後）
-    if (this.board.isOverflow() || !this.hasLegalPlacement()) {
+    if (!this.hasMove()) {
       this.gameOver = true;
       await this.hooks.onGameOver?.();
     }
@@ -69,14 +55,35 @@ export class Game {
     return true;
   }
 
-  hasLegalPlacement() {
-    for (const p of this.candidates) {
-      const w = p.width;
-      for (let x = 0; x + w <= COLUMN_COUNT; x++) {
-        if (this.board.canPlaceCells(p.cellsAt(x))) return true;
+  /** 発動が無くなるまで1つずつ処理（毎回盤面を再判定） */
+  async resolve() {
+    const steps = [];
+    for (let act; (act = nextActivation(this.board)); ) {
+      const chain = steps.length + 1;
+      let step;
+      if (act.type === 'rows') {
+        step = resolveRows(this.board, act.rows);
+        step.chain = chain;
+        await this.hooks.onRows?.(step);
+      } else {
+        step = { type: 'column', column: act.column, chain, moves: [], stack: [], goals: 0 };
+        for (const ev of columnMoves(this.board, act.column)) {
+          if (ev.type === 'take') { step.stack = ev.blocks; continue; }
+          step.moves.push({ block: ev.block, from: ev.from, to: ev.to });
+          if (ev.to === 'goal') step.goals++;
+        }
+        await this.hooks.onColumn?.(step);
       }
+      steps.push(step);
+      const gained = this.score.addStep(step);
+      await this.hooks.onStep?.(step, gained);
+      if (steps.length > 2000) break;
     }
-    return false;
+    return steps;
+  }
+
+  hasMove() {
+    return this.tray.some((p) => p && this.board.fits(p));
   }
 
   debugStatus() { return this.board.debugLines(); }
