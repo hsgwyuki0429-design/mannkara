@@ -1,7 +1,7 @@
 import {
   SCORE_PER_CELL_PLACED, SCORE_PER_GOAL,
   chainMultiplier, streakMultiplier,
-} from './constants.js?v=202609230857';
+} from './constants.js?v=202609230947';
 
 export class ScoreManager {
   constructor() { this.reset(); }

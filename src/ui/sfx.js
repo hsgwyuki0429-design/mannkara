@@ -35,6 +35,10 @@ export class Sfx {
                   this.tone(988, { dur: 0.09, gain: 0.22, at: 0.02 });
                   this.tone(1319, { dur: 0.12, gain: 0.14, at: 0.06 }); this.vibe(12); }
   hover()       { this.tone(1760, { dur: 0.025, gain: 0.05 }); }
+  // 消える場所に入った: 連鎖が多いほど高く上がっていくキラッという音（期待）
+  anticipate(chain) { const f = note(Math.min(chain, 6) + 1, 659);
+                  this.tone(f, { dur: 0.12, gain: 0.16, type: 'triangle', slide: 1.12 });
+                  this.tone(f * 1.5, { dur: 0.16, gain: 0.08, at: 0.05 }); this.vibe(8); }
   invalid()     { this.tone(180, { dur: 0.12, type: 'square', gain: 0.15, slide: 0.8 }); }
   // 発動: 低い衝撃音＋上へ抜けるシュッという音
   sink()        { this.tone(300, { dur: 0.16, type: 'sine', gain: 0.3, slide: 0.5 });

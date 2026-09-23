@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609230857';
-import { Board } from '../core/board.js?v=202609230857';
-import { resolveChains } from '../core/mancala.js?v=202609230857';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609230857';
-import { Renderer, delay } from './renderer.js?v=202609230857';
-import { Sfx } from './sfx.js?v=202609230857';
+import { Game } from '../core/game.js?v=202609230947';
+import { Board } from '../core/board.js?v=202609230947';
+import { resolveChains } from '../core/mancala.js?v=202609230947';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609230947';
+import { Renderer, delay } from './renderer.js?v=202609230947';
+import { Sfx } from './sfx.js?v=202609230947';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -78,6 +78,7 @@ async function playTurn(turn) {
   } else renderer.setFever(0);
   for (const [i, step] of turn.steps.entries()) {
     const sp = speeds[i] * backlog();
+    if (i === 0) await renderer.charge(step.kind, step.n, step.stack[0]?.color, 70 / backlog());
     await renderer.playStep(step, sp);
     const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
     if (step.chain >= 2) {
@@ -89,6 +90,7 @@ async function playTurn(turn) {
     await delay(ANIM.betweenChains / sp);
   }
   showScore(turn.score);
+  updateDanger();
   if (turn.gameOver) {
     await delay(350);
     renderer.setFever(0);
@@ -98,6 +100,18 @@ async function playTurn(turn) {
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best}`;
     $('gameOver').classList.remove('hidden');
   }
+}
+
+/**
+ * ピンチ度: 盤面の埋まり具合と、残りの手駒のうち置けないものの割合から。
+ * 発動で盤面が空くとスッと消える（緊張→解放）。
+ */
+function updateDanger() {
+  if (game.gameOver) { renderer.setDanger(0); return; }
+  const fill = game.board.totalBlocks() / 36;                // 盤面は 36 マス
+  const rest = game.tray.filter(Boolean);
+  const stuck = rest.length ? rest.filter((p) => !game.board.fits(p)).length / rest.length : 0;
+  renderer.setDanger(Math.max(0, (fill - 0.55) / 0.3) * 0.6 + stuck * 0.6);
 }
 
 /* ---------- HUD ---------- */
@@ -190,9 +204,10 @@ let drag = null; // { slot, piece, lift, ox, oy, valid }
 function previewInfo(piece, ox, oy) {
   const b = game.board.clone();
   b.place(piece, ox, oy);
-  const cells = b.fullLines().flatMap(({ kind, n }) => lineCells(kind, n));
+  const lines = b.fullLines();
+  const cells = lines.flatMap(({ kind, n }) => lineCells(kind, n));
   const chain = resolveChains(b).length;
-  return { cells, chain };
+  return { cells, chain, lines };
 }
 
 /**
@@ -246,16 +261,22 @@ function updateDrag(e) {
   if (ox === drag.ox && oy === drag.oy && valid === drag.valid) return;
   drag.ox = ox; drag.oy = oy; drag.valid = valid;
   if (valid) {
-    const { cells, chain } = previewInfo(drag.piece, ox, oy);
-    renderer.showPreview(drag.piece, ox, oy, cells, chain);
-    sfx.hover?.();
+    const { cells, chain, lines } = previewInfo(drag.piece, ox, oy);
+    renderer.showPreview(drag.piece, ox, oy, cells, chain, lines);
+    // 消える場所に入った瞬間だけ、期待をあおる上昇音と軽い振動
+    if (chain > 0 && chain !== drag.chain) sfx.anticipate(chain);
+    else if (!chain) sfx.hover();
+    drag.chain = chain;
   } else {
     renderer.clearPreview();
+    drag.chain = 0;
   }
+  $('dragLayer').classList.toggle('will-clear', valid && drag.chain > 0);
 }
 
 function endDrag() {
   $('dragLayer').innerHTML = '';
+  $('dragLayer').classList.remove('will-clear');
   renderer.clearPreview();
   document.querySelectorAll('.slot').forEach((s) => s.classList.remove('dragging'));
   drag = null;
@@ -270,7 +291,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   sfx.unlock();
   sfx.pick();
   const lift = e.pointerType === 'mouse' ? 0 : renderer.cell * (1.2 + Math.max(piece.width, piece.height) * 0.5);
-  drag = { slot, piece, lift, ox: null, oy: null, valid: false };
+  drag = { slot, piece, lift, ox: null, oy: null, valid: false, chain: 0 };
   slotEl.classList.add('dragging');
   $('dragLayer').innerHTML = '';
   updateDrag(e);
@@ -350,6 +371,7 @@ function restart() {
   setPaused(false);
   renderTray(true);
   updateHud();
+  updateDanger();
   updateDebug();
 }
 $('btnRestart').addEventListener('click', restart);

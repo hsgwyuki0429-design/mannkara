@@ -70,14 +70,23 @@ button{font-family:inherit;cursor:pointer;}
 .well.bl{border-bottom-left-radius:22%;} .well.edge-r{border-bottom-right-radius:22%;}
 .lane{position:absolute;pointer-events:none;}
 .lane-nums{position:absolute;inset:0;pointer-events:none;}
-.lane-num{position:absolute;left:0;top:0;translate:-50% -50%;font-size:calc(var(--cell) * .5);font-weight:800;line-height:1;color:#eef3ff;
-  text-shadow:0 2px 2px rgba(0,10,60,.3);}
+.lane-num{position:absolute;isolation:isolate;left:0;top:0;translate:-50% -50%;font-size:calc(var(--cell) * .5);font-weight:800;line-height:1;color:#eef3ff;
+  text-shadow:0 2px 2px rgba(0,10,60,.3);transition:scale 160ms cubic-bezier(.3,1.6,.5,1),color 160ms;}
+/* 発動するラインの番号 */
+.lane-num.lit{scale:1.3;color:#fff;text-shadow:0 1px 2px rgba(0,10,60,.45);}
+/* 番号の後ろにピースの色の丸（どの色でも背景の青に埋もれないよう白いふち） */
+.lane-num::before{content:'';position:absolute;left:50%;top:50%;width:1.55em;height:1.55em;translate:-50% -50%;z-index:-1;border-radius:50%;
+  background:var(--col);box-shadow:0 0 0 1.5px rgba(255,255,255,.85),0 0 12px var(--col);opacity:0;scale:.4;
+  transition:opacity 140ms,scale 180ms cubic-bezier(.3,1.6,.5,1);}
+.lane-num.lit::before{opacity:1;scale:1;}
 .goal{position:absolute;display:flex;align-items:center;justify-content:center;border-radius:26%;
   border:3px solid var(--goal);background:rgba(8,30,120,.18);
   box-shadow:0 0 6px rgba(34,211,214,.35),inset 0 0 6px rgba(34,211,214,.25);
   color:var(--goal-text);font-size:calc(var(--cell) * .415);font-weight:900;letter-spacing:.01em;}
 .goal .upright{text-shadow:0 0 6px rgba(80,240,250,.6);}
 .goal.hit{animation:goalHit 320ms ease-out;}
+.goal.ready{animation:goalReady 560ms ease-in-out infinite alternate;}
+@keyframes goalReady{to{box-shadow:0 0 18px rgba(34,211,214,.85),inset 0 0 10px rgba(34,211,214,.5);scale:1.06}}
 @keyframes goalHit{35%{transform:scale(1.2);box-shadow:0 0 30px rgba(34,211,214,.95)}}
 
 /* ---- ブロック（宝石） ----
@@ -126,11 +135,27 @@ button{font-family:inherit;cursor:pointer;}
 .block.travel{z-index:5;filter:brightness(1.12) drop-shadow(0 0 6px var(--col));}
 .block.flash{filter:brightness(2.2) saturate(.6);}
 .block.fly::before,.block.fly::after{opacity:0;scale:.4;}
-.ghost{opacity:.38;filter:saturate(.8);}
-.hi{opacity:.95;filter:brightness(1.12) drop-shadow(0 0 5px var(--col));animation:hiPulse 700ms ease-in-out infinite alternate;}
-@keyframes hiPulse{to{filter:brightness(1.4) drop-shadow(0 0 8px var(--col))}}
-.chain-badge{position:absolute;translate:-50% -50%;padding:2px 7px;border-radius:10px;font-size:13px;font-weight:900;
-  background:var(--gold);color:#402c00;box-shadow:0 3px 0 rgba(0,0,0,.25);white-space:nowrap;}
+.ghost{opacity:.38;filter:saturate(.8);animation:ghostIn 140ms ease-out;}
+.ghost.strong{opacity:.72;filter:saturate(1) brightness(1.08);}
+@keyframes ghostIn{from{scale:1.12;opacity:.15}}
+/* 仮置き中に消える列: 既存ブロックの上に持っているピースの色を重ね、光が走り込んでから脈打つ */
+.hi{opacity:1;filter:brightness(1.05) drop-shadow(0 0 4px var(--col));
+  animation:hiPulse 620ms ease-in-out infinite alternate;}
+.hi.enter{animation:hiIn 240ms cubic-bezier(.3,1.5,.5,1) var(--d,0ms) both,hiPulse 620ms ease-in-out calc(var(--d,0ms) + 240ms) infinite alternate;}
+@keyframes hiIn{0%{scale:.5;opacity:0;filter:brightness(1.8)}100%{scale:1;opacity:1}}
+@keyframes hiPulse{from{filter:brightness(1.02) drop-shadow(0 0 2px var(--col))}to{filter:brightness(1.28) drop-shadow(0 0 10px var(--col))}}
+.hi::after{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55),inset -.8px 0 0 rgba(255,255,255,.3);}
+/* 白いふちが脈打つので、元と同じ色のブロックでも「消える」と分かる */
+.hi::before{outline:2px solid rgba(255,255,255,.75);outline-offset:-1px;}
+.chain-badge{position:absolute;translate:-50% -50%;padding:3px 9px;border-radius:11px;font-size:13px;font-weight:900;z-index:3;
+  background:linear-gradient(#fff3a8,var(--gold));color:#402c00;box-shadow:0 3px 0 rgba(0,0,0,.25),0 0 10px rgba(255,213,74,.6);white-space:nowrap;
+  animation:badgeIn 260ms cubic-bezier(.3,1.7,.5,1);}
+.chain-badge.hot{background:linear-gradient(#ffe0f2,#ff8fd0);color:#4a0a36;box-shadow:0 3px 0 rgba(0,0,0,.25),0 0 12px rgba(255,120,210,.7);}
+@keyframes badgeIn{from{scale:.3;opacity:0}}
+/* 発動直前の溜め */
+.charge{border-radius:18%;background:color-mix(in srgb,var(--col),#fff 45%);box-shadow:0 0 12px 2px var(--col);
+  animation:charge 70ms ease-in both;}
+@keyframes charge{from{opacity:.2;scale:.9}to{opacity:.9;scale:1.06}}
 /* --col 本体 / --hi テーブル上面 / --tb テーブル下側 / --lo 下のふち / --rim 上のふち */
 .c-red{--col:#ff3f5c;--hi:#ffa9c1;--tb:#f5294f;--lo:#c80a3a;--rim:#ffc4d2}
 .c-orange{--col:#ff8c06;--hi:#ffca7c;--tb:#fb7b00;--lo:#dc5500;--rim:#ffd9a2}
@@ -177,7 +202,7 @@ button{font-family:inherit;cursor:pointer;}
 
 /* ---- 発動・ゴールの演出 ---- */
 .fx2{z-index:7;overflow:visible;}
-.line-flash{border-radius:18%;background:#fff;box-shadow:0 0 14px 4px var(--col),inset 0 0 8px var(--col);
+.line-flash{border-radius:18%;background:color-mix(in srgb,var(--col),#fff 60%);box-shadow:0 0 14px 4px var(--col),inset 0 0 8px var(--col);
   animation:lineFlash 440ms ease-out both;}
 @keyframes lineFlash{0%{opacity:0;scale:.6}15%{opacity:1;scale:1.12}100%{opacity:0;scale:1}}
 .beam{position:absolute;pointer-events:none;border-radius:999px;mix-blend-mode:screen;
@@ -205,20 +230,25 @@ button{font-family:inherit;cursor:pointer;}
 @keyframes floatUp{0%{opacity:0;scale:.5}15%{opacity:1;scale:1.25}30%{scale:1}75%{opacity:1}100%{opacity:0;translate:-50% calc(-50% - var(--cell) * 1.8)}}
 .confetti{position:absolute;width:9px;height:14px;margin:-7px -4px;border-radius:2px;background:var(--col);pointer-events:none;}
 #screenFlash{position:fixed;inset:0;z-index:25;pointer-events:none;opacity:0;
-  background:radial-gradient(circle at 50% 50%,#fff,rgba(255,255,255,.6) 60%,rgba(255,255,255,.2));}
-/* コンボが続くほど背景が光って脈打つ */
+  background:radial-gradient(circle at 50% 45%,color-mix(in srgb,var(--col,#fff),#fff 65%),color-mix(in srgb,var(--col,#fff),transparent 55%) 55%,transparent 85%);}
+/* コンボが続くほど背景が光って脈打つ。色は1色に偏らないよう、ゆっくり色相を一周させる（明るさは一定） */
 #fever{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 500ms;
-  background:radial-gradient(70% 45% at 50% 45%,rgba(255,110,210,.45),rgba(120,60,255,.25) 55%,transparent 80%),
-             radial-gradient(120% 60% at 50% 110%,rgba(255,170,40,.35),transparent 60%);
-  animation:fever 900ms ease-in-out infinite alternate;}
-#fever.max{animation-duration:450ms;}
-@keyframes fever{from{filter:hue-rotate(0deg) brightness(.9)}to{filter:hue-rotate(40deg) brightness(1.2)}}
+  background:radial-gradient(70% 45% at 50% 45%,rgba(255,120,200,.32),rgba(110,90,255,.2) 55%,transparent 80%),
+             radial-gradient(120% 55% at 50% 110%,rgba(60,220,255,.25),transparent 60%);
+  animation:fever 6s linear infinite,feverPulse 900ms ease-in-out infinite alternate;}
+#fever.max{animation-duration:4s,450ms;}
+@keyframes fever{to{filter:hue-rotate(360deg)}}
+@keyframes feverPulse{from{scale:1}to{scale:1.05}}
+/* ピンチ: 画面の縁が暖色でゆっくり脈打つ（発動で空くと消える） */
+#danger{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 600ms;
+  box-shadow:inset 0 0 70px 10px rgba(255,90,60,.4);animation:danger 1.4s ease-in-out infinite alternate;}
+@keyframes danger{to{box-shadow:inset 0 0 90px 16px rgba(255,90,60,.55)}}
 #app{z-index:1;}
 .best-pill.beat{border-color:var(--gold);box-shadow:0 0 14px rgba(255,213,74,.7);animation:beat 1.2s ease-in-out infinite;}
 @keyframes beat{50%{box-shadow:0 0 22px rgba(255,213,74,1)}}
 .score.bump{animation:bump 300ms cubic-bezier(.3,1.6,.5,1);}
 @keyframes bump{35%{transform:scale(1.14);text-shadow:0 3px 3px rgba(0,0,0,.18),0 0 22px rgba(255,230,120,.9)}}
-@media (prefers-reduced-motion: reduce){#fever{animation:none}}
+@media (prefers-reduced-motion: reduce){#fever,#danger,.hi,.goal.ready{animation:none}}
 
 /* ---- トレイ ---- */
 .tray{width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:16.5px;padding:0 10px;
@@ -235,7 +265,9 @@ button{font-family:inherit;cursor:pointer;}
 .tray-cell::before{box-shadow:inset -1px 0 0 rgba(255,255,255,.55),inset 0 -1px 0 rgba(255,255,255,.28),
   inset 1px 0 0 rgba(255,255,255,.12),-4px 0 7px rgba(4,14,64,.3),0 0 1.5px rgba(4,14,64,.4);}
 .drag-layer{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:20;transform:rotate(225deg);}   /* 実際は盤面と同じ transform を main.js が設定 */
-.drag-cell{position:absolute;width:var(--cell);height:var(--cell);}
+.drag-cell{position:absolute;width:var(--cell);height:var(--cell);animation:pickUp 200ms cubic-bezier(.3,1.6,.5,1);}
+@keyframes pickUp{from{scale:.6}}
+.drag-layer.will-clear .drag-cell{filter:brightness(1.12) drop-shadow(0 0 6px var(--col));}
 
 /* ---- フッター ---- */
 .footer{position:relative;width:100%;display:flex;justify-content:center;align-items:center;margin-top:min(26px,3vh);flex-shrink:0;}
