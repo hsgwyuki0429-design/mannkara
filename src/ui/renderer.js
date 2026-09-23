@@ -1,5 +1,10 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230425';
+import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230458';
+
+/** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
+const STRETCH_Y = 1.04;
+/** 盤面の外（通路・ゴール）を画面上で斜辺側へ縮める率（縦に伸ばした後で 0.86 倍になるように） */
+const LANE_SQUASH = 0.86 / STRETCH_Y;
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const easeInOut = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
@@ -54,29 +59,32 @@ export class Renderer {
 
   /* ---------- レイアウト ---------- */
   layout() {
-    const vw = Math.min(window.innerWidth, 560);
-    const availW = vw - 12;
-    const availH = window.innerHeight - 230;
-    // 回転後の外接サイズ = 一辺 × √2
-    const span = (SIZE + 1.15) * Math.SQRT2;
-    const cell = Math.max(16, Math.floor(Math.min(availW / span, availH / (span * 0.86))));
+    const stage = this.wrap.parentElement.getBoundingClientRect();
+    const sw = Math.min(stage.width || window.innerWidth, 560);
+    const sh = stage.height || window.innerHeight - 380;
+    // 横幅: 斜辺(8マス)＋両脇の番号 ≒ 12.25 マス。高さ: 盤面は上寄せなので、ゴール上端が枠内に収まるよう 12.7 マス
+    const cell = Math.max(16, Math.floor(Math.min((sw - 8) / 12.25, (sh - 6) / 12.7)));
     this.cell = cell;
     document.documentElement.style.setProperty('--cell', cell + 'px');
     const W = SIZE * cell;
-    const L = W + cell * 1.15;
-    this.L = L;
-    const D = L * Math.SQRT2;
-    // 盤面の三角形とゴールが収まる高さだけ確保（左右の角の外側は空白なので少し詰める）
-    Object.assign(this.wrap.style, { width: D + 'px', height: D * 0.86 + 'px' });
+    this.W = W;
+    const h = cell / Math.SQRT2;                             // 画面上で 1 マス進むと縦横にこれだけずれる
+    // 見える範囲: 斜辺の中心線から上へ ゴール上端(≒8.8h)、下へ 直角の先端(8h)
+    const wrapW = sw, wrapH = 17.2 * h;
+    this.wrapW = wrapW;
+    this.topY = wrapH / 2 - 0.05 * h;                         // 斜辺の中心線（playfield の中心）の高さ
+    Object.assign(this.wrap.style, { width: wrapW + 'px', height: wrapH + 'px' });
     Object.assign(this.pf.style, {
-      width: L + 'px', height: L + 'px',
-      left: (D - L) / 2 + 'px', top: (D * 0.86 - L) / 2 - D * 0.02 + 'px',
+      width: W + 'px', height: W + 'px',
+      left: wrapW / 2 - W / 2 + 'px', top: this.topY - W / 2 + 'px',
+      transform: `scaleY(${STRETCH_Y}) rotate(${ROTATION}deg)`,
     });
     Object.assign(this.lane.style, { left: 0, top: W + 'px', width: W + 'px', height: cell + 'px' });
     Object.assign(this.laneRow.style, { left: W + 'px', top: 0, width: cell + 'px', height: W + 'px' });
+    const g = this.goalPos(), gs = cell * 1.22;
     Object.assign(this.goal.style, {
-      left: W - cell * 0.05 + 'px', top: W - cell * 0.05 + 'px',
-      width: cell * 1.1 + 'px', height: cell * 1.1 + 'px',
+      left: g.x + (cell - gs) / 2 + 'px', top: g.y + (cell - gs) / 2 + 'px',
+      width: gs + 'px', height: gs + 'px',
     });
     this.drawStatic();
     if (this._board) this.syncBoard(this._board, 0);
@@ -84,14 +92,22 @@ export class Renderer {
 
   /** 画面上の座標 -> 盤面（回転前）のローカル px 座標 */
   clientToLocal(cx, cy) {
-    const r = this.wrap.getBoundingClientRect();
     const pr = this.pf.getBoundingClientRect();
     const dx = cx - (pr.left + pr.width / 2);
-    const dy = cy - (pr.top + pr.height / 2);
+    const dy = (cy - (pr.top + pr.height / 2)) / STRETCH_Y;
     const a = (-ROTATION * Math.PI) / 180;
     return {
-      x: this.L / 2 + dx * Math.cos(a) - dy * Math.sin(a),
-      y: this.L / 2 + dx * Math.sin(a) + dy * Math.cos(a),
+      x: this.W / 2 + dx * Math.cos(a) - dy * Math.sin(a),
+      y: this.W / 2 + dx * Math.sin(a) + dy * Math.cos(a),
+    };
+  }
+  /** 盤面ローカル px 座標 -> rotWrap 内の座標（回転しない要素を置くため） */
+  localToWrap(px, py) {
+    const a = (ROTATION * Math.PI) / 180;
+    const vx = px - this.W / 2, vy = py - this.W / 2;
+    return {
+      x: this.wrapW / 2 + vx * Math.cos(a) - vy * Math.sin(a),
+      y: this.topY + (vx * Math.sin(a) + vy * Math.cos(a)) * STRETCH_Y,
     };
   }
 
@@ -99,6 +115,7 @@ export class Renderer {
     const c = this.cell;
     this.wellLayer.innerHTML = '';
     this.lane.innerHTML = '';
+    this.laneRow.innerHTML = '';
     this.wells = new Map();
     for (let x = 0; x < SIZE; x++) {
       for (let r = 0; r < SIZE; r++) {
@@ -106,30 +123,46 @@ export class Renderer {
         const d = document.createElement('div');
         d.className = 'cell well'
           + (x === 0 && r === 0 ? ' tl' : '') + (x === SIZE - 1 ? ' tr' : '')
-          + (x === 0 && r === SIZE - 1 ? ' bl' : '') + (x + r === SIZE - 1 && x > 0 && x < SIZE - 1 ? ' edge-r' : '');
+          + (x === 0 && r === SIZE - 1 ? ' bl' : '') + (x + r === SIZE - 1 ? ' edge-r' : '');
         d.style.transform = `translate(${x * c}px,${r * c}px)`;
         this.wellLayer.appendChild(d);
         this.wells.set(`${x},${r}`, d);
       }
     }
-    // ライン番号（縦は盤面の下、横は盤面の右）
-    this.laneRow.innerHTML = '';
+    // ライン番号（縦は盤面の下の通路、横は右の通路）。文字は回転させないので rotWrap 側に置く。
+    // 通路のマスの中心から、ゴールに近いほど少し外側へずらす
+    if (!this.nums) {
+      this.nums = document.createElement('div');
+      this.nums.className = 'lane-nums';
+      this.wrap.insertBefore(this.nums, this.pf.nextSibling);
+    }
+    this.nums.innerHTML = '';
+    const h = c / Math.SQRT2;
     for (let n = 1; n <= SIZE; n++) {
-      const a = document.createElement('div');
-      a.className = 'lane-label';
-      a.innerHTML = `<span class="upright">${n}</span>`;
-      Object.assign(a.style, { width: c + 'px', height: c + 'px', left: (SIZE - n) * c + 'px', top: 0 });
-      this.lane.appendChild(a);
-      const b = document.createElement('div');
-      b.className = 'lane-label';
-      b.innerHTML = `<span class="upright">${n}</span>`;
-      Object.assign(b.style, { width: c + 'px', height: c + 'px', left: 0, top: (SIZE - n) * c + 'px' });
-      this.laneRow.appendChild(b);
+      for (const [x, r] of [[SIZE - n, SIZE], [SIZE, SIZE - n]]) {
+        const p = this.pos(x, r);
+        const q = this.localToWrap(p.x + c / 2, p.y + c / 2);
+        const out = Math.sign(q.x - this.wrapW / 2) * 0.28 * h * (SIZE - n) / (SIZE - 1);
+        const a = document.createElement('div');
+        a.className = 'lane-num';
+        a.textContent = n;
+        a.style.left = q.x + out + 'px';
+        a.style.top = q.y + 0.15 * h + 'px';
+        this.nums.appendChild(a);
+      }
     }
   }
 
   /* ---------- ブロック ---------- */
-  pos(x, r) { return { x: x * this.cell, y: r * this.cell }; }
+  /**
+   * マス座標 -> ローカル px。盤面の外（通路とゴール, x + r > 7）は、画面上で斜辺からの高さを
+   * LANE_SQUASH 倍に縮めて描く（通路の番号とゴールを盤面に少し近づける）。盤面の中はそのまま。
+   */
+  pos(x, r) {
+    const d = x + r - (SIZE - 1);
+    if (d > 0) { const s = ((1 - LANE_SQUASH) * d) / 2; x -= s; r -= s; }
+    return { x: x * this.cell, y: r * this.cell };
+  }
   ensureEl(block) {
     let el = this.els.get(block.id);
     if (!el) {

@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609230425';
-import { Board } from '../core/board.js?v=202609230425';
-import { resolveChains } from '../core/mancala.js?v=202609230425';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_UP, CHAIN_SPEED_MAX } from '../core/constants.js?v=202609230425';
-import { Renderer, delay } from './renderer.js?v=202609230425';
-import { Sfx } from './sfx.js?v=202609230425';
+import { Game } from '../core/game.js?v=202609230458';
+import { Board } from '../core/board.js?v=202609230458';
+import { resolveChains } from '../core/mancala.js?v=202609230458';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_UP, CHAIN_SPEED_MAX } from '../core/constants.js?v=202609230458';
+import { Renderer, delay } from './renderer.js?v=202609230458';
+import { Sfx } from './sfx.js?v=202609230458';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -61,13 +61,13 @@ const game = new Game({
           renderer.showText(`COMBO ×${turn.streak}`, 'big');
           sfx.combo(turn.streak);
         }
-        $('streak').textContent = turn.streak >= 2 ? `COMBO ×${turn.streak}` : '';
+        setStreak(turn.streak);
         showScore(turn.score);
         if (turn.gameOver) {
           await delay(350);
           sfx.over();
           const isBest = saveBest();
-          $('finalScore').textContent = game.score.score;
+          $('finalScore').textContent = game.score.score.toLocaleString('en-US');
           $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best}`;
           $('gameOver').classList.remove('hidden');
         }
@@ -81,36 +81,59 @@ const game = new Game({
 function showScore(v, bump = false) {
   shownScore = v;
   const s = $('score');
-  s.textContent = v;
+  s.textContent = v.toLocaleString('en-US');
   if (bump) { s.classList.remove('bump'); void s.offsetWidth; s.classList.add('bump'); }
   $('best').textContent = Math.max(best, v);
 }
-function updateHud() { showScore(game.score.score); $('streak').textContent = ''; }
+function setStreak(n) { $('streak').textContent = n >= 2 ? `COMBO ×${n}` : ''; }
+function updateHud() { showScore(game.score.score); setStreak(0); }
 
 /* ---------- トレイ ---------- */
-function trayCellSize() {
-  return Math.min(Math.floor(renderer.cell * 0.52), 22);
+/**
+ * トレイでの1マスの大きさ。基本は盤面と同じ大きさで、枠に収まらない形だけ縮める。
+ * 225° 回転して表示するので、w×h の形は画面上で (w+h)/√2 マス四方になる。
+ */
+function trayCellSize(piece, box) {
+  const room = Math.min(box.width, box.height) - 18;
+  return Math.max(10, Math.min(renderer.cell, Math.floor((room * Math.SQRT2) / (piece.width + piece.height))));
+}
+/** 225° 回転した形の、画面上でマスが占める範囲の中心（形の外接四角の中心からのずれ, px） */
+function pieceScreenCenter(piece, s) {
+  const k = Math.SQRT1_2;
+  const xs = [], ys = [];
+  for (const c of piece.cells) {
+    const u = (c.x + 0.5 - piece.width / 2) * s, v = (c.y + 0.5 - piece.height / 2) * s;
+    xs.push(k * (v - u)); ys.push(-k * (u + v));
+  }
+  return { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
 }
 function renderTray(enter = false) {
   const wrap = $('tray');
   wrap.innerHTML = '';
-  const s = trayCellSize();
+  const cols = wrap.clientWidth ? getComputedStyle(wrap) : null;
+  const gap = cols ? parseFloat(cols.columnGap) || 0 : 0;
+  const pad = cols ? parseFloat(cols.paddingLeft) + parseFloat(cols.paddingRight) : 0;
+  const slotBox = { width: (wrap.clientWidth - pad - gap * 2) / 3, height: wrap.clientHeight };
   game.tray.forEach((piece, i) => {
     const slot = document.createElement('div');
     slot.className = 'slot' + (enter ? ' enter' : '');
     slot.dataset.slot = i;
     if (enter) slot.style.setProperty('animation-delay', `${i * 50}ms`);
     if (piece) {
+      const s = trayCellSize(piece, slotBox);
       if (!game.board.fits(piece)) slot.classList.add('nofit');
       const box = document.createElement('div');
       box.className = 'piece';
       box.style.width = piece.width * s + 'px';
       box.style.height = piece.height * s + 'px';
+      // 形の外接四角ではなく、実際のマスが見えている範囲の中心を枠の中心に合わせる
+      const mid = pieceScreenCenter(piece, s);
+      box.style.translate = `${-mid.x}px ${-mid.y}px`;
       if (enter) box.style.animationDelay = `${i * 60}ms`;
       for (const c of piece.cells) {
         const d = document.createElement('div');
         d.className = `tray-cell c-${piece.color}`;
-        Object.assign(d.style, { width: s - 2 + 'px', height: s - 2 + 'px', left: c.x * s + 'px', top: c.y * s + 'px' });
+        Object.assign(d.style, { width: s + 'px', height: s + 'px', left: c.x * s + 'px', top: c.y * s + 'px' });
         box.appendChild(d);
       }
       slot.appendChild(box);
@@ -178,7 +201,7 @@ function endDrag() {
 
 $('tray').addEventListener('pointerdown', (e) => {
   const slotEl = e.target.closest('.slot');
-  if (!slotEl || game.gameOver || drag) return;
+  if (!slotEl || game.gameOver || drag || paused) return;
   const slot = Number(slotEl.dataset.slot);
   const piece = game.tray[slot];
   if (!piece) return;
@@ -209,7 +232,17 @@ $('btnSound').addEventListener('click', () => {
   $('btnSound').classList.toggle('off', !sfx.enabled);
 });
 
-/* ---------- デバッグ ---------- */
+/* ---------- 一時停止 ---------- */
+let paused = false;
+function setPaused(v) {
+  paused = v;
+  $('pauseOverlay').classList.toggle('hidden', !v);
+}
+$('btnPause').addEventListener('click', () => { sfx.unlock(); if (!game.gameOver) setPaused(true); });
+$('btnResume').addEventListener('click', () => setPaused(false));
+
+/* ---------- デバッグ（URL に ?debug を付けた時だけボタンを出す） ---------- */
+if (new URLSearchParams(location.search).has('debug')) $('btnDebug').classList.remove('hidden');
 $('btnDebug').addEventListener('click', () => { $('debugPanel').classList.toggle('hidden'); updateDebug(); });
 function updateDebug() {
   if ($('debugPanel').classList.contains('hidden')) return;
@@ -249,6 +282,7 @@ function restart() {
   renderer.reset();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
+  setPaused(false);
   renderTray(true);
   updateHud();
   updateDebug();
@@ -260,3 +294,4 @@ restart();
 window.__booted = true;
 window.__game = game;
 window.__renderer = renderer;
+window.__ui = { showScore, setStreak, renderTray, setBest(v) { best = v; } };
