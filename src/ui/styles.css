@@ -10,9 +10,9 @@
 @font-face{font-family:"Round One";font-weight:900;src:url(./fonts/one-900.woff2) format("woff2");unicode-range:U+31;}
 :root{
   --cell:35px;
-  --bg:#163ba4; --bg-hi:#1741ad;
+  --bg:#2451c4; --bg-hi:#2e60d6;
   --line:rgba(150,192,255,.78);           /* ピル・丸ボタン・トレイ枠の線 */
-  --plate:#102d92; --well:#0b163f; --well-rim:#4b71cf;
+  --plate:#1a3eae; --well:#0b163f; --well-rim:#4b71cf;
   --text:#fff; --dim:rgba(255,255,255,.62);
   --gold:#ffd54a; --goal:#22d3d6; --goal-text:#72f3fa;
   /* 宝石の色: --col 本体 / --hi 上面の明るい面 / --lo 下側の濃い色 / --rim 上側のふち */
@@ -69,9 +69,9 @@ button{font-family:inherit;cursor:pointer;}
 .well::before{content:'';position:absolute;inset:-.6px;background:var(--plate);border-radius:inherit;}
 /* 盤面は 225° 回転して表示するので、ローカルの 右・下 = 画面の上側、左・上 = 画面の下側 */
 .well::after{content:'';position:absolute;inset:6%;border-radius:14%;
-  background:#12215f;
-  box-shadow:inset -3px -3px 7px 1px rgba(0,3,26,.9),inset .8px .8px 0 rgba(0,2,24,.6),
-             0 0 0 .7px rgba(70,112,226,.75),-.9px -.9px 0 .2px rgba(128,164,246,.9);}
+  background:#1f3285;
+  box-shadow:inset -3px -3px 7px 1px rgba(4,12,60,.7),inset .8px .8px 0 rgba(4,12,60,.45),
+             0 0 0 .7px rgba(96,140,245,.8),-.9px -.9px 0 .2px rgba(150,186,255,.95);}
 .well.tl{border-top-left-radius:22%;} .well.tr{border-top-right-radius:22%;}
 .well.bl{border-bottom-left-radius:22%;} .well.edge-r{border-bottom-right-radius:22%;}
 .lane{position:absolute;pointer-events:none;}
@@ -95,7 +95,7 @@ button{font-family:inherit;cursor:pointer;}
     radial-gradient(circle at 90% 90%,rgba(255,255,255,.98) 0 3%,rgba(255,255,255,0) 14%),
     linear-gradient(to bottom right,var(--lo) 8%,var(--col) 50%,var(--rim) 96%);
   box-shadow:inset -1.2px -1.2px 0 rgba(255,255,255,.6),inset 1.5px 1.5px 1px rgba(0,0,0,.12),
-             -2px -2px 4px rgba(0,5,40,.5),0 0 7px color-mix(in srgb,var(--col) 45%,transparent);}
+             -2px -2px 4px rgba(5,20,80,.35),0 0 7px color-mix(in srgb,var(--col) 45%,transparent);}
 .block::after,.ghost::after,.hi::after,.tray-cell::after,.drag-cell::after{
   content:'';position:absolute;inset:18%;border-radius:14%;
   background:
@@ -183,7 +183,7 @@ button{font-family:inherit;cursor:pointer;}
 .hint{margin:6px 0 0;font-size:10px;color:var(--dim);}
 .hidden{display:none !important;}
 .overlay{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
-  background:rgba(10,24,90,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
+  background:rgba(20,45,140,.66);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
 .overlay-box{text-align:center;animation:trayIn 360ms cubic-bezier(.3,1.4,.5,1) both;}
 .over-title{margin:0 0 20px;font-family:"M PLUS Rounded 1c",sans-serif;font-size:26px;font-weight:900;text-shadow:0 3px 0 rgba(0,0,0,.3);}
 .over-label{margin:0;font-size:14px;color:var(--dim);letter-spacing:.2em;}
