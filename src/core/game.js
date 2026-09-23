@@ -1,8 +1,8 @@
-import { Board } from './board.js?v=202609230526';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609230526';
-import { ScoreManager } from './score.js?v=202609230526';
-import { nextActivation, lineMoves, resolveChains } from './mancala.js?v=202609230526';
-import { TRAY_SIZE, CHAIN_PIECE_RATE, SOLVABLE_TRAY_RATE, TRAY_RETRIES } from './constants.js?v=202609230526';
+import { Board } from './board.js?v=202609230548';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609230548';
+import { ScoreManager } from './score.js?v=202609230548';
+import { nextActivation, lineMoves, resolveChains } from './mancala.js?v=202609230548';
+import { TRAY_SIZE, CHAIN_PIECE_RATE, SOLVABLE_TRAY_RATE, TRAY_RETRIES } from './constants.js?v=202609230548';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。

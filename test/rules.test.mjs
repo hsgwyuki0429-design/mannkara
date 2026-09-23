@@ -1,8 +1,8 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609230526';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609230526';
-import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230526';
-import { Game, isSolvable } from '../src/core/game.js?v=202609230526';
-import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230526';
+import { Board, createBlock } from '../src/core/board.js?v=202609230548';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609230548';
+import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230548';
+import { Game, isSolvable } from '../src/core/game.js?v=202609230548';
+import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230548';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {

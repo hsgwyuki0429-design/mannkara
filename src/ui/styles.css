@@ -55,7 +55,7 @@ button{font-family:inherit;cursor:pointer;}
 .streak:empty{visibility:hidden;}
 
 /* ---- 盤面 ---- */
-.stage{flex:1;min-height:0;width:100%;display:flex;align-items:center;justify-content:center;}
+.stage{flex:1;min-height:0;width:calc(100% + 16px);margin:0 -8px;display:flex;align-items:center;justify-content:center;}   /* 盤面は画面の端まで使う */
 .rot-wrap{position:relative;flex-shrink:0;}
 .playfield{position:absolute;transform:rotate(225deg);}   /* 実際の transform は renderer.layout が設定 */
 .upright{display:inline-block;rotate:-225deg;}
