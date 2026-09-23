@@ -1,5 +1,5 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609230857';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609230947';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -33,6 +33,8 @@ export class Renderer {
     this.blockLayer = document.getElementById('blockLayer');
     this.ghostLayer = document.getElementById('ghostLayer');
     this.fxLayer = document.getElementById('fxLayer');
+    // 消える列のハイライトは既存ブロックの上に重ねる（下にあると隠れて見えない）
+    this.blockLayer.after(this.hiLayer);
     this.lane = document.getElementById('lane');
     this.laneRow = document.getElementById('laneRow');
     this.goal = document.getElementById('goal');
@@ -57,6 +59,7 @@ export class Renderer {
     this.wrap.appendChild(this.comboPop);
     // 画面全体のフラッシュと、コンボが続くほど強くなる背景の光
     this.flashEl = document.getElementById('screenFlash') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'screenFlash' }));
+    this.dangerEl = document.getElementById('danger') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'danger' }));
     this.feverEl = document.getElementById('fever') || document.body.insertBefore(Object.assign(document.createElement('div'), { id: 'fever' }), document.body.firstChild);
     const goalText = this.goal.querySelector('span');
     if (goalText) goalText.className = 'upright';
@@ -153,9 +156,10 @@ export class Renderer {
       this.wrap.insertBefore(this.nums, this.pf.nextSibling);
     }
     this.nums.innerHTML = '';
+    this.numEls = new Map();   // 'col3' / 'row5' -> 番号の要素
     const h = c / Math.SQRT2;
     for (let n = 1; n <= SIZE; n++) {
-      for (const [x, r] of [[SIZE - n, SIZE], [SIZE, SIZE - n]]) {
+      for (const [kind, x, r] of [['col', SIZE - n, SIZE], ['row', SIZE, SIZE - n]]) {
         const p = this.pos(x, r);
         const q = this.localToWrap(p.x + c / 2, p.y + c / 2);
         const out = Math.sign(q.x - this.wrapW / 2) * 0.28 * h * (SIZE - n) / (SIZE - 1);
@@ -165,6 +169,7 @@ export class Renderer {
         a.style.left = q.x + out + 'px';
         a.style.top = q.y + 0.15 * h + 'px';
         this.nums.appendChild(a);
+        this.numEls.set(kind + n, a);
       }
     }
   }
@@ -255,32 +260,81 @@ export class Renderer {
   }
 
   /* ---------- ドラッグ中のプレビュー ---------- */
-  showPreview(piece, ox, oy, clearCells, chainCount) {
+  /**
+   * 仮置きのプレビュー。消える列は既存ブロックごと「持っているピースの色」に塗り替えて光らせ、
+   * その列の番号とゴールも光らせる（ここに置けば消える、という期待を先に見せる）。
+   */
+  showPreview(piece, ox, oy, clearCells, chainCount, lines = []) {
     const c = this.cell;
+    const key = `${ox},${oy},${chainCount}`;
+    const fresh = key !== this._pvKey;
+    this._pvKey = key;
     this.ghostLayer.innerHTML = '';
     this.hiLayer.innerHTML = '';
+    const willClear = clearCells.length > 0;
     for (const cc of piece.cells) {
       const d = document.createElement('div');
-      d.className = `cell ghost c-${piece.color}`;
+      d.className = `cell ghost c-${piece.color}` + (willClear ? ' strong' : '');
       d.style.transform = `translate(${(ox + cc.x) * c}px,${(oy + cc.y) * c}px)`;
       this.ghostLayer.appendChild(d);
     }
+    // 斜辺側の端から順に光が走り込むよう、少しずつ遅らせる
+    const seen = new Set();
     for (const { x, r } of clearCells) {
+      const k = `${x},${r}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
       const d = document.createElement('div');
-      d.className = `cell hi c-${piece.color}`;
+      d.className = `cell hi c-${piece.color}` + (fresh ? ' enter' : '');
       d.style.transform = `translate(${x * c}px,${r * c}px)`;
+      d.style.setProperty('--d', (x + r) * 14 + 'ms');
       this.hiLayer.appendChild(d);
     }
-    if (chainCount >= 2) {
+    this.litLines(lines, piece.color);
+    this.goal.classList.toggle('ready', willClear);
+    if (chainCount >= 1 && willClear) {
       const b = document.createElement('div');
-      b.className = 'chain-badge';
-      b.innerHTML = `<span class="upright">⚡${chainCount}</span>`;
+      b.className = 'chain-badge' + (chainCount >= 3 ? ' hot' : '');
+      b.innerHTML = `<span class="upright">${chainCount >= 2 ? `⚡${chainCount} CHAIN` : 'CLEAR'}</span>`;
       b.style.left = (ox + piece.width / 2) * c + 'px';
       b.style.top = (oy + piece.height / 2) * c + 'px';
       this.ghostLayer.appendChild(b);
     }
   }
-  clearPreview() { this.ghostLayer.innerHTML = ''; this.hiLayer.innerHTML = ''; }
+  /** 発動するラインの番号を光らせる */
+  litLines(lines, color) {
+    for (const el of this.numEls?.values() ?? []) el.classList.remove('lit');
+    for (const { kind, n } of lines) {
+      const el = this.numEls?.get(kind + n);
+      if (!el) continue;
+      el.className = `lane-num lit c-${color}`;
+    }
+  }
+  clearPreview() {
+    this.ghostLayer.innerHTML = ''; this.hiLayer.innerHTML = '';
+    this._pvKey = null;
+    this.litLines([]);
+    this.goal.classList.remove('ready');
+  }
+
+  /** 発動の直前に、満杯になったラインが一瞬ぎゅっと光る「溜め」（期待を最高潮にしてから解放する） */
+  async charge(kind, n, color, ms = 70) {
+    const c = this.cell;
+    const els = lineCells(kind, n).map(({ x, r }) => {
+      const d = document.createElement('div');
+      d.className = `cell charge c-${color}`;
+      d.style.transform = `translate(${x * c}px,${r * c}px)`;
+      this.fxLayer.appendChild(d);
+      return d;
+    });
+    await delay(ms);
+    els.forEach((d) => d.remove());
+  }
+
+  /** 盤面が混んでピンチのときだけ、画面の縁がゆっくり脈打つ（0 = なし … 1 = 最大） */
+  setDanger(level) {
+    this.dangerEl.style.opacity = Math.max(0, Math.min(1, level));
+  }
 
   /* ---------- ライン発動（マンカラ） ---------- */
   goalPos() { return this.pos(SIZE, SIZE); }
@@ -453,7 +507,7 @@ export class Renderer {
     this.fxLayer.appendChild(beam);
     setTimeout(() => beam.remove(), 420);
     this.shake(Math.min(2 + chain * 1.2, 11), 180 + Math.min(chain, 8) * 20);
-    if (chain >= 3) this.flash(chain >= 6 ? 0.55 : 0.3);
+    if (chain >= 3) this.flash(chain >= 6 ? 0.32 : 0.2, color);
   }
 
   /** 流れる先頭ブロックが残す光の粒 */
@@ -511,7 +565,8 @@ export class Renderer {
   }
 
   /** 画面全体が一瞬白く光る */
-  flash(strength = 0.35) {
+  flash(strength = 0.25, color = 'yellow') {
+    this.flashEl.className = `c-${color}`;
     this.flashEl.animate([{ opacity: strength }, { opacity: 0 }], { duration: 260, easing: 'ease-out' });
   }
 
@@ -576,6 +631,7 @@ export class Renderer {
     this.fxLayer.innerHTML = '';
     this.fx2.innerHTML = '';
     this.setFever(0);
+    this.setDanger(0);
     this.els.clear();
     this.manual.clear();
     this.clearPreview();
