@@ -87,21 +87,33 @@ button{font-family:inherit;cursor:pointer;}
 @keyframes goalHit{35%{transform:scale(1.2);box-shadow:0 0 30px rgba(34,211,214,.95)}}
 
 /* ---- ブロック（宝石） ----
-   本体 = ::before（ふちの面と上のハイライト）、テーブル面 = ::after（上 1/4 が明るい）。
+   光源は画面の「左上」ひとつに統一して陰影をつける。
+   本体 = ::before（四方のふちの面をそれぞれの明るさで塗り分け、左上の面に細長い映り込み）、
+   テーブル面 = ::after（左上ほど明るい、なだらかな面）。
+   盤面は 225° 回転しているので、ローカルの 右 = 画面の左上、下 = 右上、上 = 左下、左 = 右下。
    要素そのものは位置だけを持つ透明な箱なので、拡大縮小のアニメは疑似要素に掛ける。 */
+.block,.ghost,.hi,.tray-cell,.drag-cell{
+  --f1:color-mix(in srgb,var(--col),#fffbe8 48%);   /* 左上の面: 光を正面から受ける（暖かい白へ） */
+  --f2:color-mix(in srgb,var(--col),#fff 16%);      /* 右上の面: 少し明るい */
+  --f3:color-mix(in srgb,var(--col),var(--lo) 62%); /* 左下の面: 影側 */
+  --f4:color-mix(in srgb,var(--lo),#160b48 10%);    /* 右下の面: 一番暗い（影は彩度を保ったまま寒色寄りへ） */
+  --t1:color-mix(in srgb,var(--col),var(--lo) 34%);
+  --t2:color-mix(in srgb,var(--col),#fff8e0 14%);}
 .block::before,.ghost::before,.hi::before,.tray-cell::before,.drag-cell::before{
   content:'';position:absolute;inset:1.5%;border-radius:18%;
   background:
-    radial-gradient(circle at 90% 90%,rgba(255,255,255,.98) 0 3%,rgba(255,255,255,0) 14%),
-    linear-gradient(to bottom right,var(--lo) 8%,var(--col) 50%,var(--rim) 96%);
-  box-shadow:inset -1.2px -1.2px 0 rgba(255,255,255,.6),inset 1.5px 1.5px 1px rgba(0,0,0,.12),
-             -2px -2px 4px rgba(5,20,80,.35),0 0 7px color-mix(in srgb,var(--col) 45%,transparent);}
+    radial-gradient(circle at 90% 70%,rgba(255,255,255,.95) 0 2.5%,rgba(255,255,255,0) 7%),
+    radial-gradient(ellipse 6% 26% at 91% 56%,rgba(255,255,255,.7),rgba(255,255,255,0) 100%),
+    conic-gradient(var(--f3) 0 44deg,var(--f1) 46deg 134deg,var(--f2) 136deg 224deg,var(--f4) 226deg 314deg,var(--f3) 316deg);
+  box-shadow:inset -1px 0 0 rgba(255,255,255,.55),inset 0 -1px 0 rgba(255,255,255,.28),
+             inset 1px 0 0 rgba(255,255,255,.12),
+             -2.5px 0 4px rgba(4,14,64,.38),0 0 1.5px rgba(4,14,64,.45);}
 .block::after,.ghost::after,.hi::after,.tray-cell::after,.drag-cell::after{
   content:'';position:absolute;inset:18%;border-radius:14%;
   background:
-    linear-gradient(var(--hi),var(--hi)) 100% 100%/52% 52% no-repeat,
-    linear-gradient(to bottom right,var(--tb),var(--col) 55%);
-  box-shadow:-.8px -.8px .5px rgba(255,255,255,.3),.8px .8px .5px rgba(0,0,0,.08);}
+    radial-gradient(ellipse 55% 70% at 88% 58%,rgba(255,255,255,.3),rgba(255,255,255,0) 70%),
+    linear-gradient(to right,var(--t1),var(--col) 55%,var(--t2));
+  box-shadow:inset -.8px 0 0 rgba(255,255,255,.3),inset .8px 0 0 rgba(0,0,0,.08),inset 0 .8px 0 rgba(0,0,0,.06);}
 .block{transition:transform var(--t,0ms) var(--e,ease),filter 160ms;will-change:transform;}
 .block::before,.block::after{transition:opacity 180ms,scale 200ms ease-in,filter 160ms;}
 .block.pop-in::before,.block.pop-in::after{animation:land 340ms cubic-bezier(.25,1.4,.5,1) var(--d,0ms) both;}
@@ -159,8 +171,8 @@ button{font-family:inherit;cursor:pointer;}
 @keyframes trayIn{from{transform:translateY(40px) scale(.4);opacity:0}}
 .tray-cell{position:absolute;}
 .tray-cell::before{inset:3.5%;}
-.tray-cell::before{box-shadow:inset -1.5px -1.5px 0 rgba(255,255,255,.55),inset 2px 2px 2px rgba(0,0,0,.14),
-  -5px -5px 8px rgba(0,5,50,.32),0 0 6px color-mix(in srgb,var(--col) 35%,transparent);}
+.tray-cell::before{box-shadow:inset -1px 0 0 rgba(255,255,255,.55),inset 0 -1px 0 rgba(255,255,255,.28),
+  inset 1px 0 0 rgba(255,255,255,.12),-4px 0 7px rgba(4,14,64,.3),0 0 1.5px rgba(4,14,64,.4);}
 .drag-layer{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:20;transform:rotate(225deg);}   /* 実際は盤面と同じ transform を main.js が設定 */
 .drag-cell{position:absolute;width:var(--cell);height:var(--cell);}
 
