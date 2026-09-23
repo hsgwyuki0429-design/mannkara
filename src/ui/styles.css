@@ -49,13 +49,9 @@ button{font-family:inherit;cursor:pointer;}
   text-shadow:0 3px 3px rgba(0,0,0,.18);font-variant-numeric:tabular-nums;}
 .score.bump{animation:bump 260ms ease-out;}
 @keyframes bump{40%{transform:scale(1.08)}}
-.streak{margin-top:-1px;height:26px;min-width:116px;padding:0 13px;border-radius:13px;display:flex;align-items:center;justify-content:center;
-  border:1.5px solid #e9b92c;background:linear-gradient(180deg,#5b4c38,#443835);color:var(--gold);
-  font-size:16px;font-weight:900;letter-spacing:.02em;box-shadow:0 2px 4px rgba(0,0,0,.18);}
-.streak:empty{visibility:hidden;}
 
 /* ---- 盤面 ---- */
-.stage{flex:1;min-height:0;width:100%;display:flex;align-items:center;justify-content:center;}
+.stage{flex:1;min-height:0;width:calc(100% + 16px);margin:0 -8px;display:flex;align-items:center;justify-content:center;}   /* 盤面は画面の端まで使う */
 .rot-wrap{position:relative;flex-shrink:0;}
 .playfield{position:absolute;transform:rotate(225deg);}   /* 実際の transform は renderer.layout が設定 */
 .upright{display:inline-block;rotate:-225deg;}

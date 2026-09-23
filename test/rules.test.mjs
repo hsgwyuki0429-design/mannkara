@@ -1,8 +1,8 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609230526';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609230526';
-import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230526';
-import { Game, isSolvable } from '../src/core/game.js?v=202609230526';
-import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230526';
+import { Board, createBlock } from '../src/core/board.js?v=202609230554';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609230554';
+import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609230554';
+import { Game, isSolvable } from '../src/core/game.js?v=202609230554';
+import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609230554';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -73,16 +73,26 @@ console.log('横列: 縦列と同じ挙動');
   eq(b.totalBlocks(), 0, '空になる');
 }
 
-console.log('空のラインへ配られたブロックは一番奥まで進む');
+console.log('配られたブロックは、ブロックか壁に当たる手前まで奥へ進む');
 {
   const b = new Board();
   b.insertBottom('col', 5, createBlock('x'));
-  eq(pat(b, 'col', 5), [0,0,0,0,1], '空の縦5 -> 一番奥（上端）');
+  eq(pat(b, 'col', 5), [0,0,0,0,1], '空の縦5 -> 一番奥（壁の手前）');
   b.insertBottom('col', 5, createBlock('x'));
-  eq(pat(b, 'col', 5), [1,0,0,0,1], '空でなければ手前の端から（押す相手が無いので手前に入る）');
+  eq(pat(b, 'col', 5), [0,0,0,1,1], '奥のブロックに当たる手前まで進む');
+  b.insertBottom('col', 5, createBlock('x'));
+  eq(pat(b, 'col', 5), [0,0,1,1,1], 'もう1個も同じく手前まで');
   const r = new Board();
   r.insertBottom('row', 4, createBlock('x'));
   eq(pat(r, 'row', 4), [0,0,0,1], '空の横4 -> 一番奥（左端）');
+}
+{
+  const b = new Board();
+  setLine(b, 'col', 6, [0,0,1,0,0,1]);
+  const ids = b.line('col', 6).map((v) => v?.id ?? null);
+  b.insertBottom('col', 6, createBlock('x'));
+  eq(pat(b, 'col', 6), [0,1,1,0,0,1], '途中のブロックに当たる手前で止まる（奥の空欄は飛び越えない）');
+  eq([b.line('col', 6)[2].id, b.line('col', 6)[5].id], [ids[2], ids[5]], '他のブロックは動かない');
 }
 {
   const b = Board.fromHeights([0,0,0,0,5,0,0,0]);
@@ -90,15 +100,40 @@ console.log('空のラインへ配られたブロックは一番奥まで進む'
   eq([4,3,2,1].map((n) => pat(b, 'col', n).at(-1)), [1,1,1,1], '縦5 発動: 空の縦4〜1 には一番奥に入る');
 }
 
-console.log('押し上げ（縦）: 一番下の空欄までだけが上がる');
+console.log('満杯より1個少ないラインだけは、手前のブロックを奥へ詰めて埋める');
+{
+  const b = new Board();
+  setLine(b, 'col', 4, [1,0,1,1]);
+  const ids = b.line('col', 4).map((v) => v?.id ?? null);
+  eq(b.insertBottom('col', 4, createBlock('x')), true, '入れる');
+  eq(pat(b, 'col', 4), [1,1,1,1], '■□■■ -> ■■■■（満杯になる）');
+  eq(b.line('col', 4)[1].id, ids[0], '元の一番手前が1マス奥へ');
+  eq([b.line('col', 4)[2].id, b.line('col', 4)[3].id], [ids[2], ids[3]], '空欄より奥は動かない');
+}
+{
+  const b = new Board();
+  setLine(b, 'col', 4, [1,1,1,0]);
+  b.insertBottom('col', 4, createBlock('x'));
+  eq(pat(b, 'col', 4), [1,1,1,1], '■■■□ -> 3個とも奥へ詰めて満杯');
+}
+
+console.log('手前の端が埋まっていて進めないとき（満杯より2個以上少ない）は入れずにゴールへ');
 {
   const b = new Board();
   setLine(b, 'col', 4, [1,0,1,0]);
-  const ids = b.line('col', 4).map((v) => v?.id ?? null);
-  b.insertBottom('col', 4, createBlock('x'));
-  eq(pat(b, 'col', 4), [1,1,1,0], '■□■□ -> ■■■□');
-  eq(b.line('col', 4)[1].id, ids[0], '元の一番下が1段上がった');
-  eq(b.line('col', 4)[2].id, ids[2], '空欄より上は動かない');
+  eq(b.insertBottom('col', 4, createBlock('x')), false, '■□■□ には入れない');
+  eq(pat(b, 'col', 4), [1,0,1,0], '盤面は変わらない');
+  const f = new Board();
+  setLine(f, 'col', 3, [1,1,1]);
+  eq(f.insertBottom('col', 3, createBlock('x')), false, '満杯にも入れない');
+}
+{
+  const b = new Board();
+  setLine(b, 'col', 3, [1,1,1]);
+  setLine(b, 'col', 2, [1,0]);                // 縦2 は満杯より1個少ない -> 詰めて入る
+  setLine(b, 'col', 1, []);
+  const st = resolveLine(b, 'col', 3);
+  eq(st.moves.map((m) => m.to), [2,1,'goal'], '縦2・縦1 に配り、最後はゴール');
 }
 
 // ---- 仕様をそのまま書いた参照実装（本体とは独立したメモ）----

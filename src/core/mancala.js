@@ -1,13 +1,14 @@
-import { Board } from './board.js?v=202609230526';
-import { KIND_PRIORITY } from './constants.js?v=202609230526';
+import { Board } from './board.js?v=202609230554';
+import { KIND_PRIORITY } from './constants.js?v=202609230554';
 
 /**
  * ライン(kind, n) の発動を1move ずつ進めるジェネレータ。縦列・横列で完全に同じ処理。
  *  - n 個すべてを取り出す
  *  - 奥（斜辺から遠い側）のブロックから順に 同じ種類の n-1, n-2, …, 1 番ラインへ1個ずつ、
  *    最後の1個（斜辺側の端）はゴールへ
- *  - 配られたブロックは斜辺側の端から入り、一番近い空欄までを押し込む
- *  - 配布先が満杯（空欄なし）なら、そのブロックは押し込めずにゴールへ流れる
+ *  - 配られたブロックは斜辺側の端から入り、ブロックか壁に当たる手前まで奥へ進む
+ *    （配布先が満杯より1個少ないときだけ、手前のブロックを奥へ詰めて空欄を埋める。Board.insertBottom）
+ *  - 配布先に入れない（満杯、または手前の端が埋まっている）なら、そのブロックはゴールへ流れる
  */
 export function* lineMoves(board, kind, n) {
   const stack = board.takeLine(kind, n);

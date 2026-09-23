@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609230526';
-import { Board } from '../core/board.js?v=202609230526';
-import { resolveChains } from '../core/mancala.js?v=202609230526';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_UP, CHAIN_SPEED_MAX } from '../core/constants.js?v=202609230526';
-import { Renderer, delay } from './renderer.js?v=202609230526';
-import { Sfx } from './sfx.js?v=202609230526';
+import { Game } from '../core/game.js?v=202609230554';
+import { Board } from '../core/board.js?v=202609230554';
+import { resolveChains } from '../core/mancala.js?v=202609230554';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_UP, CHAIN_SPEED_MAX } from '../core/constants.js?v=202609230554';
+import { Renderer, delay } from './renderer.js?v=202609230554';
+import { Sfx } from './sfx.js?v=202609230554';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -61,7 +61,6 @@ const game = new Game({
           renderer.showText(`COMBO ×${turn.streak}`, 'big');
           sfx.combo(turn.streak);
         }
-        setStreak(turn.streak);
         showScore(turn.score);
         if (turn.gameOver) {
           await delay(350);
@@ -85,8 +84,7 @@ function showScore(v, bump = false) {
   if (bump) { s.classList.remove('bump'); void s.offsetWidth; s.classList.add('bump'); }
   $('best').textContent = Math.max(best, v);
 }
-function setStreak(n) { $('streak').textContent = n >= 2 ? `COMBO ×${n}` : ''; }
-function updateHud() { showScore(game.score.score); setStreak(0); }
+function updateHud() { showScore(game.score.score); }
 
 /* ---------- トレイ ---------- */
 /**
@@ -314,4 +312,4 @@ restart();
 window.__booted = true;
 window.__game = game;
 window.__renderer = renderer;
-window.__ui = { showScore, setStreak, renderTray, setBest(v) { best = v; } };
+window.__ui = { showScore, renderTray, setBest(v) { best = v; } };

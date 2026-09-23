@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells, KINDS } from './constants.js?v=202609230526';
+import { SIZE, isInside, lineCells, KINDS } from './constants.js?v=202609230554';
 
 let nextBlockId = 1;
 export function createBlock(color) {
@@ -47,23 +47,28 @@ export class Board {
     return blocks;
   }
   /**
-   * 斜辺側の端から押し込む。
-   *  - ラインが空なら、ブロックは一番奥まで進む
-   *  - そうでなければ、一番近い空欄までのブロックだけが1マスずれ、空欄が1つ埋まる
-   *    （それより奥のブロックは動かない）
-   * 空欄が無ければ false。
+   * 斜辺側の端からブロックを1個入れる。
+   *  - ラインが「満杯より1個少ない」（空欄がちょうど1つ）とき:
+   *    一番近い空欄までのブロックを奥へ1マスずつ詰め、空いた手前の端に入る（ラインが満杯になる）
+   *  - それ以外: 入ったブロックは奥へ進み、ブロックか壁に当たる手前まで入る（他のブロックは動かない）
+   *    手前の端がすでに埋まっていて進めないときは入れない
+   * 入れなかったら false（呼び出し側でゴールへ流す）。
    */
   insertBottom(kind, n, block) {
     const cells = lineCells(kind, n);
-    if (cells.every(({ x, r }) => !this.get(x, r))) {
-      const far = cells[cells.length - 1];
-      this.set(far.x, far.r, block);
+    const filled = cells.map(({ x, r }) => !!this.get(x, r));
+    const count = filled.filter(Boolean).length;
+    if (count === n) return false;
+    if (count === n - 1) {
+      const hole = filled.indexOf(false);
+      for (let k = hole; k > 0; k--) this.set(cells[k].x, cells[k].r, this.get(cells[k - 1].x, cells[k - 1].r));
+      this.set(cells[0].x, cells[0].r, block);
       return true;
     }
-    const hole = cells.findIndex(({ x, r }) => !this.get(x, r));
-    if (hole < 0) return false;
-    for (let k = hole; k > 0; k--) this.set(cells[k].x, cells[k].r, this.get(cells[k - 1].x, cells[k - 1].r));
-    this.set(cells[0].x, cells[0].r, block);
+    const firstBlock = filled.indexOf(true);
+    const stop = firstBlock < 0 ? n - 1 : firstBlock - 1;
+    if (stop < 0) return false;
+    this.set(cells[stop].x, cells[stop].r, block);
     return true;
   }
 

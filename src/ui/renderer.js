@@ -1,5 +1,5 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230526';
+import { SIZE, isInside, ANIM } from '../core/constants.js?v=202609230554';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -62,17 +62,20 @@ export class Renderer {
     const stage = this.wrap.parentElement.getBoundingClientRect();
     const sw = Math.min(stage.width || window.innerWidth, 560);
     const sh = stage.height || window.innerHeight - 380;
-    // 横幅: 斜辺(8マス)＋両脇の番号 ≒ 12.25 マス。高さ: 盤面は上寄せなので、ゴール上端が枠内に収まるよう 12.7 マス
-    const cell = Math.max(16, Math.floor(Math.min((sw - 8) / 12.25, (sh - 6) / 12.7)));
+    // 盤面をできるだけ大きく: 見えている範囲（左右の番号「8」の外側まで、ゴール上端〜直角の先端まで）が
+    // ステージにぴったり収まる最大のマスの大きさにする
+    const EXT_UP = 8.99, EXT_DOWN = 8.55;                     // 斜辺の中心線から上下に見えている範囲（h 単位）
+    const SPAN_W = 11.62;                                     // 左右の番号を含めた横幅（マス単位）
+    const SPAN_H = (EXT_UP + EXT_DOWN) / Math.SQRT2;          // 縦幅（マス単位）
+    const cell = Math.max(16, Math.floor(Math.min((sw - 4) / SPAN_W, (sh - 4) / SPAN_H)));
     this.cell = cell;
     document.documentElement.style.setProperty('--cell', cell + 'px');
     const W = SIZE * cell;
     this.W = W;
     const h = cell / Math.SQRT2;                             // 画面上で 1 マス進むと縦横にこれだけずれる
-    // 見える範囲: 斜辺の中心線から上へ ゴール上端(≒8.8h)、下へ 直角の先端(8h)
-    const wrapW = sw, wrapH = 17.2 * h;
+    const wrapW = sw, wrapH = (EXT_UP + EXT_DOWN) * h;
     this.wrapW = wrapW;
-    this.topY = wrapH / 2 - 0.05 * h;                         // 斜辺の中心線（playfield の中心）の高さ
+    this.topY = EXT_UP * h;                                   // 斜辺の中心線（playfield の中心）の高さ
     Object.assign(this.wrap.style, { width: wrapW + 'px', height: wrapH + 'px' });
     Object.assign(this.pf.style, {
       width: W + 'px', height: W + 'px',
