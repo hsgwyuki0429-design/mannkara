@@ -30,8 +30,11 @@ export class Sfx {
   vibe(p) { if (this.enabled) try { navigator.vibrate?.(p); } catch {} }
 
   pick()        { this.tone(660, { dur: 0.06, gain: 0.3 }); this.vibe(6); }
-  place()       { this.tone(220, { dur: 0.09, type: 'triangle', gain: 0.7, slide: 0.6 });
-                  this.tone(880, { dur: 0.05, gain: 0.15 }); this.vibe(14); }
+  // はまる音: 低い「コトッ」＋澄んだ高音の2音
+  place()       { this.tone(330, { dur: 0.08, type: 'triangle', gain: 0.75, slide: 0.55 });
+                  this.tone(988, { dur: 0.09, gain: 0.22, at: 0.02 });
+                  this.tone(1319, { dur: 0.12, gain: 0.14, at: 0.06 }); this.vibe(12); }
+  hover()       { this.tone(1760, { dur: 0.025, gain: 0.05 }); }
   invalid()     { this.tone(180, { dur: 0.12, type: 'square', gain: 0.15, slide: 0.8 }); }
   sink()        { this.tone(300, { dur: 0.16, type: 'sine', gain: 0.3, slide: 0.5 }); }
   step(i)       { this.tone(note(i, 392), { dur: 0.05, type: 'triangle', gain: 0.25 }); }

@@ -104,12 +104,23 @@ button{font-family:inherit;cursor:pointer;}
   box-shadow:-.8px -.8px .5px rgba(255,255,255,.3),.8px .8px .5px rgba(0,0,0,.08);}
 .block{transition:transform var(--t,0ms) var(--e,ease),filter 160ms;will-change:transform;}
 .block::before,.block::after{transition:opacity 180ms,scale 200ms ease-in,filter 160ms;}
-.block.pop-in::before,.block.pop-in::after{animation:popIn 180ms cubic-bezier(.3,1.6,.5,1);}
-@keyframes popIn{0%{scale:.6}100%{scale:1}}
+.block.pop-in::before,.block.pop-in::after{animation:land 340ms cubic-bezier(.25,1.4,.5,1) var(--d,0ms) both;}
+.block.pop-in{animation:landFlash 360ms ease-out var(--d,0ms) both;}
+@keyframes land{0%{scale:1.22}45%{scale:.9}72%{scale:1.04}100%{scale:1}}
+@keyframes landFlash{0%{filter:brightness(2.1) saturate(.7)}100%{filter:none}}
+/* 着地したマスに広がる光の輪と粒 */
+.land-ring{border-radius:18%;box-shadow:0 0 0 2px color-mix(in srgb,var(--col),#fff 55%),0 0 12px var(--col);
+  animation:ring 480ms ease-out both;pointer-events:none;}
+@keyframes ring{0%{opacity:.95;scale:.85}100%{opacity:0;scale:1.45}}
+.spark{position:absolute;width:5px;height:5px;margin:-2.5px;border-radius:50%;background:#fff;
+  box-shadow:0 0 6px 2px var(--col);animation:spark 520ms cubic-bezier(.2,.7,.3,1) forwards;pointer-events:none;}
+@keyframes spark{to{opacity:0;translate:var(--dx) var(--dy);scale:.3}}
+.playfield.land{animation:landThump 240ms ease-out;}
+@keyframes landThump{35%{scale:1.008}70%{scale:.998}}
 .block.travel{z-index:5;filter:brightness(1.12) drop-shadow(0 0 6px var(--col));}
 .block.flash{filter:brightness(2.2) saturate(.6);}
 .block.fly::before,.block.fly::after{opacity:0;scale:.4;}
-.ghost{opacity:.42;}
+.ghost{opacity:.38;filter:saturate(.8);}
 .hi{opacity:.95;filter:brightness(1.12) drop-shadow(0 0 5px var(--col));animation:hiPulse 700ms ease-in-out infinite alternate;}
 @keyframes hiPulse{to{filter:brightness(1.4) drop-shadow(0 0 8px var(--col))}}
 .chain-badge{position:absolute;translate:-50% -50%;padding:2px 7px;border-radius:10px;font-size:13px;font-weight:900;
@@ -150,8 +161,8 @@ button{font-family:inherit;cursor:pointer;}
 .tray-cell::before{inset:3.5%;}
 .tray-cell::before{box-shadow:inset -1.5px -1.5px 0 rgba(255,255,255,.55),inset 2px 2px 2px rgba(0,0,0,.14),
   -5px -5px 8px rgba(0,5,50,.32),0 0 6px color-mix(in srgb,var(--col) 35%,transparent);}
-.drag-layer{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:20;rotate:225deg;}
-.drag-cell{position:absolute;width:var(--cell);height:var(--cell);filter:drop-shadow(-6px -6px 8px rgba(0,0,0,.3));}
+.drag-layer{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:20;transform:rotate(225deg);}   /* 実際は盤面と同じ transform を main.js が設定 */
+.drag-cell{position:absolute;width:var(--cell);height:var(--cell);}
 
 /* ---- フッター ---- */
 .footer{position:relative;width:100%;display:flex;justify-content:center;align-items:center;margin-top:min(26px,3vh);flex-shrink:0;}
