@@ -1,16 +1,17 @@
-import { Board } from './board.js?v=202609240234';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609240234';
-import { ScoreManager } from './score.js?v=202609240234';
-import { nextActivation, lineMoves } from './mancala.js?v=202609240234';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609240234';
-import * as Sim from './sim.js?v=202609240234';
-import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609240234';
+import { Board } from './board.js?v=202609240308';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609240308';
+import { ScoreManager } from './score.js?v=202609240308';
+import { nextActivation, lineMoves } from './mancala.js?v=202609240308';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609240308';
+import * as Sim from './sim.js?v=202609240308';
+import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609240308';
+import { bestMove } from './advisor.js?v=202609240308';
 import {
   TRAY_SIZE, CHAIN_PIECE_RATE, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_FILL, ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609240234';
+} from './constants.js?v=202609240308';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -29,6 +30,7 @@ export class Game {
   reset() {
     this.board = new Board();
     this.score = new ScoreManager();
+    this.planTray = null;         // 今のトレイで、全消しの手順どおりにまだ置いていない手 [{ name, ox, oy }]
     this.plan = null;             // 全消しの計画の続き { key: ここまで手順どおりに置いた盤面, rest: 残りの手順, strict: 違ったら打ち切る }
     this.wantAllClear = false;    // 全消しのチャンスを引いたが、まだ手順が見つかっていない
     this.wantTight = false;       // 置き方の少ない組み合わせのチャンスを引いたが、まだ見つかっていない
@@ -53,6 +55,11 @@ export class Game {
     if (this.gameOver || !this.canPlace(slot, ox, oy)) return null;
     const piece = this.tray[slot];
     this.tray[slot] = null;
+    // 全消しの手順どおりの手か（違ったら、このトレイではもう手順を教えない）
+    if (this.planTray) {
+      const i = this.planTray.findIndex((m) => m.name === piece.name && m.ox === ox && m.oy === oy);
+      this.planTray = i < 0 ? null : this.planTray.filter((_, j) => j !== i);
+    }
     const placed = this.board.place(piece, ox, oy);
     this.score.addPlaced(placed.length);
     const scoreAfterPlace = this.score.score;
@@ -62,6 +69,7 @@ export class Game {
 
     let refilled = false;
     if (this.tray.every((p) => !p)) {
+      this.planTray = null;
       this.tray = this.spawnTray();
       refilled = true;
     }
@@ -251,6 +259,7 @@ export class Game {
    */
   dealPlan(seq, strict) {
     const first = seq.slice(0, TRAY_SIZE), rest = seq.slice(TRAY_SIZE);
+    this.planTray = first.map((m) => ({ ...m }));
     if (rest.length) this.plan = { key: keyAfter(this.board, first), rest, strict };
     return this.deal(first);
   }
@@ -294,6 +303,20 @@ export class Game {
     }
     this.chainCache = { key, list: out };
     return out;
+  }
+
+  /**
+   * 学習モードのおすすめ { slot, ox, oy, plan }。全消しの手順どおりに進んでいる間はその手順の次の手（plan: true）、
+   * それ以外は advisor.bestMove（今の盤面での総当たり）。置ける手が無ければ null
+   */
+  hint() {
+    if (this.gameOver) return null;
+    for (const m of this.planTray ?? []) {
+      const slot = this.tray.findIndex((p) => p?.name === m.name);
+      if (slot >= 0 && this.board.canPlace(this.tray[slot], m.ox, m.oy)) return { slot, ox: m.ox, oy: m.oy, plan: true };
+    }
+    const m = bestMove(this.board, this.tray);
+    return m && { ...m, plan: false };
   }
 
   hasMove() {

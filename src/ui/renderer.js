@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609240234';
-import { Particles, RAINBOW } from './particles.js?v=202609240234';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609240308';
+import { Particles, RAINBOW } from './particles.js?v=202609240308';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -38,13 +38,14 @@ export class Renderer {
       d.id = id; d.className = cls;
       document.getElementById(parent).appendChild(d);
     };
-    ['wellLayer', 'hiLayer', 'blockLayer', 'ghostLayer', 'fxLayer'].forEach((id) => need(id, 'layer'));
+    ['wellLayer', 'hiLayer', 'blockLayer', 'hintLayer', 'ghostLayer', 'fxLayer'].forEach((id) => need(id, 'layer'));
     need('lane', 'lane'); need('laneRow', 'lane'); need('goal', 'goal'); need('pop', 'pop');
     this.pf = document.getElementById('playfield');
     this.wellLayer = document.getElementById('wellLayer');
     this.hiLayer = document.getElementById('hiLayer');
     this.blockLayer = document.getElementById('blockLayer');
     this.ghostLayer = document.getElementById('ghostLayer');
+    this.hintLayer = document.getElementById('hintLayer');
     this.fxLayer = document.getElementById('fxLayer');
     // 消える列のハイライトは既存ブロックの上に重ねる（下にあると隠れて見えない）
     this.blockLayer.after(this.hiLayer);
@@ -308,6 +309,19 @@ export class Renderer {
       el.className = `lane-num lit c-${color}`;
     }
   }
+  /** 学習モードのおすすめ: 置く場所のマスを、持つピースの色で光る枠にして脈打たせる（手順どおりの手は金色） */
+  showHint(piece, ox, oy, plan = false) {
+    const c = this.cell;
+    this.hintLayer.innerHTML = '';
+    for (const cc of piece.cells) {
+      const d = document.createElement('div');
+      d.className = `cell hint c-${piece.color}` + (plan ? ' plan' : '');
+      d.style.transform = `translate(${(ox + cc.x) * c}px,${(oy + cc.y) * c}px)`;
+      this.hintLayer.appendChild(d);
+    }
+  }
+  clearHint() { this.hintLayer.innerHTML = ''; }
+
   clearPreview() {
     this.ghostLayer.innerHTML = ''; this.hiLayer.innerHTML = '';
     this._pvKey = null;
@@ -803,6 +817,7 @@ export class Renderer {
     this.blockLayer.innerHTML = '';
     this.fxLayer.innerHTML = '';
     this.fx2.innerHTML = '';
+    this.hintLayer.innerHTML = '';
     this.particles.clear();
     this.fxGen = (this.fxGen || 0) + 1;
     for (const a of this._spriteAnims ?? []) a.finish();

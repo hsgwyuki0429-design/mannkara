@@ -1,22 +1,29 @@
-import { Game } from '../core/game.js?v=202609240234';
-import { Board } from '../core/board.js?v=202609240234';
-import { resolveChains } from '../core/mancala.js?v=202609240234';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609240234';
-import { Renderer, delay } from './renderer.js?v=202609240234';
-import { Sfx } from './sfx.js?v=202609240234';
+import { Game } from '../core/game.js?v=202609240308';
+import { Board } from '../core/board.js?v=202609240308';
+import { resolveChains } from '../core/mancala.js?v=202609240308';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609240308';
+import { Renderer, delay } from './renderer.js?v=202609240308';
+import { Sfx } from './sfx.js?v=202609240308';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
 const renderer = new Renderer(sfx);
 
-/* ---------- ベストスコア（端末ごと） ---------- */
-const BEST_KEY = 'stair-mancala-best';
+/* ---------- モード（通常 / 学習）とベストスコア（端末ごと・モードごとに別） ---------- */
+const MODE_KEY = 'stair-mancala-mode';
+let mode = 'normal';
+try { mode = localStorage.getItem(MODE_KEY) === 'learn' ? 'learn' : 'normal'; } catch {}
+const bestKey = () => (mode === 'learn' ? 'stair-mancala-best-learn' : 'stair-mancala-best');
 let best = 0;
-try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch {}
+function loadBest() {
+  best = 0;
+  try { best = Number(localStorage.getItem(bestKey())) || 0; } catch {}
+}
+loadBest();
 function saveBest() {
   if (game.score.score <= best) return false;
   best = game.score.score;
-  try { localStorage.setItem(BEST_KEY, String(best)); } catch {}
+  try { localStorage.setItem(bestKey(), String(best)); } catch {}
   return true;
 }
 
@@ -59,6 +66,7 @@ const game = new Game({
       // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように）
       sfx.place();
       renderer.popIn(turn.placed);
+      renderer.clearHint();
       renderTray(turn.refilled);
       if (turn.refilled) sfx.refill();
       updateDebug();
@@ -100,6 +108,7 @@ async function playTurn(turn) {
   }
   showScore(turn.score);
   updateDanger();
+  if (pending <= 1) updateHint();                  // 再生待ちが無くなったら、次のおすすめを出す
   if (turn.gameOver) {
     await delay(350);
     renderer.setFever(0);
@@ -310,6 +319,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   sfx.pick();
   const lift = e.pointerType === 'mouse' ? 0 : renderer.cell * (1.2 + Math.max(piece.width, piece.height) * 0.5);
   drag = { slot, piece, lift, ox: null, oy: null, valid: false, chain: 0 };
+  renderer.clearHint();
   slotEl.classList.add('dragging');
   $('dragLayer').innerHTML = '';
   updateDrag(e);
@@ -322,9 +332,40 @@ window.addEventListener('pointerup', async () => {
   const overBoard = ox !== null && ox > -3 && oy > -3 && ox < SIZE + 1 && oy < SIZE + 1;
   endDrag();
   if (valid) game.placePiece(slot, ox, oy);
-  else { if (overBoard) sfx.invalid(); renderTray(); }
+  else { if (overBoard) sfx.invalid(); renderTray(); updateHint(); }
 });
-window.addEventListener('pointercancel', () => { if (drag) { endDrag(); renderTray(); } });
+window.addEventListener('pointercancel', () => { if (drag) { endDrag(); renderTray(); updateHint(); } });
+
+/* ---------- 学習モード ---------- */
+/**
+ * 学習モードでは、次に置くとよいピースと場所を光らせる（Game.hint: 全消しの手順中はその手順、
+ * それ以外は今の盤面での総当たり）。スコアとベストスコアは通常モードとは別
+ */
+function updateHint() {
+  document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
+  if (mode !== 'learn' || game.gameOver || drag || pending > 1) { renderer.clearHint(); return; }
+  const h = game.hint();
+  if (!h) { renderer.clearHint(); return; }
+  renderer.showHint(game.tray[h.slot], h.ox, h.oy, h.plan);
+  document.querySelector(`.slot[data-slot="${h.slot}"]`)?.classList.add('hinted');
+}
+function applyMode() {
+  const learn = mode === 'learn';
+  document.body.classList.toggle('learn', learn);
+  $('btnLearn').classList.toggle('on', learn);
+  $('btnLearn').setAttribute('aria-pressed', String(learn));
+  $('modeBadge').classList.toggle('hidden', !learn);
+}
+$('btnLearn').addEventListener('click', () => {
+  sfx.unlock();
+  saveBest();                                      // 切り替える前のモードのベストを残してから
+  mode = mode === 'learn' ? 'normal' : 'learn';
+  try { localStorage.setItem(MODE_KEY, mode); } catch {}
+  loadBest();
+  applyMode();
+  restart();
+  renderer.showText(mode === 'learn' ? 'LEARN MODE' : 'NORMAL MODE', 't2');
+});
 
 /* ---------- サウンド ---------- */
 $('btnSound').addEventListener('click', () => {
@@ -391,7 +432,9 @@ function restart() {
   updateHud();
   updateDanger();
   updateDebug();
+  updateHint();
 }
+applyMode();
 $('btnRestart').addEventListener('click', restart);
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); restart(); });
 window.addEventListener('resize', () => renderTray());

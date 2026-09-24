@@ -1,11 +1,11 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609240234';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240234';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240234';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609240234';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609240234';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609240234';
-import * as Sim from '../src/core/sim.js?v=202609240234';
-import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609240234';
+import { Board, createBlock } from '../src/core/board.js?v=202609240308';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240308';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240308';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609240308';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609240308';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609240308';
+import * as Sim from '../src/core/sim.js?v=202609240308';
+import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609240308';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -654,6 +654,58 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
   let last = null;
   for (const m of play ?? []) last = g.placePiece(m.slot, m.ox, m.oy);
   eq([!!last?.refilled, g.plan, g.lastLineup.kind === 'allClear'], [true, null, false], '違う置き方をしたら次は普通の手駒');
+}
+
+console.log('学習モードのおすすめ（Game.hint）');
+{
+  // 全消しの手順中は、その手順の手を教える。教えられたとおりに置くと ALL CLEAR
+  let seed = 73; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game({ random: rnd });
+  for (let k = 0; k < 20 && !g.plan; k++) { g.board = new Board(); g.plan = null; g.tray = g.spawnTray(); }
+  let placed = 0, allPlan = true, last = null;
+  while (!last?.allClear && placed < 20) {
+    const h = g.hint();
+    if (!h) break;
+    if (!h.plan) allPlan = false;
+    last = g.placePiece(h.slot, h.ox, h.oy);
+    placed++;
+  }
+  eq([allPlan, last?.allClear, placed >= 6], [true, true, true], `手順どおりのおすすめ ${placed} 手で ALL CLEAR`);
+}
+{
+  // ふだんのおすすめ: 必ず置ける手で、そのとおりに置き続けると詰まない
+  let seed = 79; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  let turns = 0, legal = true;
+  for (let gi = 0; gi < 3; gi++) {
+    const g = new Game({ random: rnd });
+    for (let t = 0; t < 60 && !g.gameOver; t++) {
+      const h = g.hint();
+      if (!h || !g.canPlace(h.slot, h.ox, h.oy)) { legal = false; break; }
+      g.placePiece(h.slot, h.ox, h.oy);
+      turns++;
+    }
+    if (g.gameOver) legal = false;
+  }
+  eq([legal, turns], [true, 180], `おすすめどおりに置くと 3ゲーム×60手 詰まない (${turns}手)`);
+}
+{
+  // 残りの手駒を全部置ける手を優先する: 置き方を間違えると詰む盤面で、詰まない手を選ぶ
+  let seed = 83, checked = 0, ok = true;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let t = 0; t < 60 && checked < 10; t++) {
+    const g = new Game({ random: rnd });
+    g.allClearTray = () => null;
+    g.board = boardWithBlocks(rnd, 16, 24);
+    g.tray = g.spawnTray();
+    const s = Sim.fromBoard(g.board);
+    if (countWays(s, g.tray.map((p) => p.name), 30).count >= 30) continue;     // 置き方の少ない（間違えやすい）盤面だけ
+    checked++;
+    const h = g.hint();
+    const b = g.board.clone();
+    b.place(g.tray[h.slot], h.ox, h.oy); resolveChains(b);
+    if (!isSolvable(b, g.tray.filter((_, i) => i !== h.slot))) ok = false;
+  }
+  eq(ok && checked > 0, true, `間違えやすい盤面でも、おすすめの手のあと残りを全部置ける (${checked}盤面)`);
 }
 
 console.log('ゲーム進行');
