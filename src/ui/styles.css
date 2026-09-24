@@ -186,6 +186,14 @@ button{font-family:inherit;cursor:pointer;}
 /* ---- 発動・ゴールの演出 ---- */
 .fx2{z-index:7;overflow:visible;}
 .fx-canvas{position:absolute;z-index:7;pointer-events:none;}
+/* 大きな光（フレア・放射状の光線）: 1枚絵を transform と opacity だけで動かす（毎フレーム描き直さない） */
+.fx-flare,.fx-rays{position:absolute;left:0;top:0;pointer-events:none;opacity:0;transform-origin:50% 50%;}
+.fx-flare{border-radius:50%;}
+.fx-flare{width:96px;height:96px;}
+.fx-rays{width:160px;height:160px;background:center/100% 100% no-repeat;}
+.fx-flare{background:radial-gradient(circle,rgba(255,255,255,.85),color-mix(in srgb,var(--hi) 80%,transparent) 12%,
+  color-mix(in srgb,var(--col) 48%,transparent) 32%,color-mix(in srgb,var(--col) 14%,transparent) 50%,transparent 68%);}
+/* 光線は renderer.drawRays が canvas に1回だけ描く */
 .line-flash{border-radius:18%;background:color-mix(in srgb,var(--col),#fff 60%);box-shadow:0 0 14px 4px var(--col),inset 0 0 8px var(--col);
   animation:lineFlash 440ms ease-out both;}
 @keyframes lineFlash{0%{opacity:0;scale:.6}15%{opacity:1;scale:1.12}100%{opacity:0;scale:1}}
@@ -241,7 +249,6 @@ button{font-family:inherit;cursor:pointer;}
   border:1.5px solid var(--line);background:rgba(120,160,255,.17);}
 .slot .piece{position:relative;rotate:225deg;transition:transform 160ms,opacity 160ms;}
 .slot.dragging .piece{opacity:0;}
-.slot.nofit .piece{opacity:.35;filter:grayscale(.7);}
 .slot.enter .piece{animation:trayIn 260ms cubic-bezier(.3,1.5,.5,1) both;}
 @keyframes trayIn{from{transform:translateY(40px) scale(.4);opacity:0}}
 .tray-cell{position:absolute;}

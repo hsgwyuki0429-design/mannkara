@@ -1,5 +1,5 @@
-import { Piece, SHAPES } from './pieces.js?v=202609240125';
-import * as Sim from './sim.js?v=202609240125';
+import { Piece, SHAPES } from './pieces.js?v=202609240209';
+import * as Sim from './sim.js?v=202609240209';
 
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 const CELLS = Object.fromEntries(SHAPES.map((s) => [s.name, new Piece(s.name).cells]));
@@ -66,14 +66,15 @@ export const spots = (s, name) => Sim.placements(s, CELLS[name]).length;
  * 全消しの手順を探す。
  * 今の盤面から depth 個のピースを順に置き、ちょうど depth 個目で盤面が空になる手順を返す
  * （途中で空になる手順は使わない。全消しは最後の見せ場にする）。
- * ビームサーチを、揺らぎを変えながら budgetMs の間くり返す。
+ * ビームサーチを、揺らぎを変えながら budgetMs の間くり返す。avoid に挙げた種類（'Dot' など）は使わない。
  * 見つかれば [{ name, ox, oy }, …]、見つからなければ null。
  */
-export function planAllClear(board, { depth, random = Math.random, budgetMs = 40, beam = 10, sample = 10 } = {}) {
+export function planAllClear(board, { depth, random = Math.random, budgetMs = 40, beam = 10, sample = 10, avoid = [] } = {}) {
   const deadline = now() + budgetMs;
   const start = Sim.fromBoard(board);
+  const ok = (name) => !avoid.includes(TYPE_OF[name]);
   do {
-    const seq = beamSearch(start, depth, random, beam, sample, deadline);
+    const seq = beamSearch(start, depth, random, beam, sample, deadline, ok);
     if (seq) return seq;
   } while (now() < deadline);
   return null;
@@ -83,14 +84,14 @@ export function planAllClear(board, { depth, random = Math.random, budgetMs = 40
  * 1回ぶんのビームサーチ。各手数で「全消しまでの遠さ」(clearCost) が小さい盤面を beam 個だけ残して進む。
  * 形は出現率どおりに sample 個ずつ抽選して試すので、特定の形ばかりにはならない（最後の1手だけは全部の形を試す）。
  */
-function beamSearch(start, depth, random, beam, sample, deadline) {
+function beamSearch(start, depth, random, beam, sample, deadline, ok) {
   let states = [{ s: start, seq: [] }];
   for (let d = 1; d <= depth; d++) {
     const last = d === depth;
     const kids = new Map();
     for (const st of states) {
       for (const name of last ? ALL : sampleShapes(random, sample)) {
-        if (!allowed(st.seq, name)) continue;
+        if (!ok(name) || !allowed(st.seq, name)) continue;
         const cells = CELLS[name];
         for (const [ox, oy] of Sim.placements(st.s, cells)) {
           const b = Sim.cloneSim(st.s);

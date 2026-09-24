@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609240125';
-import { Particles } from './particles.js?v=202609240125';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609240209';
+import { Particles, RAINBOW } from './particles.js?v=202609240209';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -12,6 +12,11 @@ export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
  * CSS アニメーションを最初から再生し直すため、要素を中身のない複製に差し替える。
  * （クラスを外して offsetWidth を読む方法は毎回ページ全体の強制レイアウトになり、連鎖中のカクつきの原因になる）
  */
+/** '#rrggbb' → 'rgba(r,g,b,a)' */
+const rgba = (hex, a) => {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})` : `rgba(255,255,255,${a})`;
+};
 const fresh = (el) => { const n = el.cloneNode(false); el.replaceWith(n); return n; };
 /** Web Animations の keyframes に、CSS の animation-timing-function と同じく区間ごとの easing を付ける */
 const eased = (frames, easing) => frames.map((f, i) => (i < frames.length - 1 ? { easing, ...f } : f));
@@ -255,6 +260,7 @@ export class Renderer {
       const color = placed[0].block.color;
       const q = this.localToWrap((mx + 0.5) * c, (my + 0.5) * c);
       this.particles.sparks(q.x, q.y, color, 10, c);
+      this.flareFx(q.x, q.y, color, c * 2.2, 300);
     }
     this.bounce([[0, 1], [0.35, 1.008], [0.7, 0.998], [1, 1]], 240);
   }
@@ -460,10 +466,15 @@ export class Renderer {
       el.classList.add('fly');
       setTimeout(() => this.removeEl(block.id), 220);
     }
-    const color = list[0].color, more = Math.min(list.length - 1, 4);
-    this.burst(this.goalPos(), color, 9 + Math.min(chain, 8) * 2 + more * 3);
+    const color = list[0].color, more = Math.min(list.length - 1, 4), k = Math.min(chain, 8), c = this.cell;
+    this.burst(this.goalPos(), color, 7 + Math.round(k * 1.5) + more * 2);
     this.shatter(this.goalPos(), color, 5 + Math.min(chain, 6) + more);
     this.wave(this.goalPos(), color);
+    // 光: ゴールからフレアと光の筋、2連鎖目からは放射状の光線（連鎖が進むほど本数も長さも増える）
+    const q = this.cellCenter(this.goalPos());
+    this.flareFx(q.x, q.y, color, c * (2 + k * 0.35));
+    this.particles.streaks(q.x, q.y, color, this.qn(6 + k), c, { speed: [6, 12] });
+    if (chain >= 2 && this._raysChain !== chain) this._raysChain = chain, this.raysFx(q.x, q.y, color, { n: 8 + k, len: c * Math.min(1.6 + k * 0.1, 2.3), width: c * 0.42, life: 520 });   // canvas の上端で切れない長さまで
     this.hitGoal(chain);
   }
 
@@ -509,8 +520,193 @@ export class Renderer {
       ? { left: fixed + 'px', top: 0, width: c + 'px', height: n * c + 'px' }
       : { left: 0, top: fixed + 'px', width: n * c + 'px', height: c + 'px' });
     this.addFx(this.fxLayer, beam, 420);
+    // ラインの各マスから、ラインと直交する向き（両側）へ光の筋が飛び散る
+    const pts = lineCells(kind, n).map(({ x, r }) => this.localToWrap((x + 0.5) * c, (r + 0.5) * c));
+    const a = pts[0], b = pts[pts.length - 1];
+    const perp = n > 1 ? Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2 : Math.random() * Math.PI * 2;
+    const per = this.q >= 0.7 ? [0, Math.PI] : this.q >= 0.4 ? [Math.random() < 0.5 ? 0 : Math.PI] : [];
+    for (const q of pts) for (const side of per) {
+      this.particles.streaks(q.x, q.y, color, 1, c, { dir: perp + side, spread: 1.2, speed: [3, 7], life: [280, 460], len: 0.8 });
+    }
+    if (chain >= 2) { const m = pts[pts.length >> 1]; this.flareFx(m.x, m.y, color, c * (1.4 + Math.min(chain, 8) * 0.2), 380); }
     this.shake(Math.min(2 + chain * 1.2, 11), 180 + Math.min(chain, 8) * 20);
     if (chain >= 3) this.flash(chain >= 6 ? 0.32 : 0.2, color);
+    if (chain >= 4) this.punch(Math.min(0.01 + chain * 0.003, 0.035));
+  }
+
+  /**
+   * 大きな光の1枚絵（フレア・光線）を使い回す。見た目（種類・色・本数）ごとに決まった大きさで1回だけ描き、
+   * 位置・大きさ・回転はすべて transform で動かす（width や left を変えると描き直しになる）。
+   * 使い終わったものは透明のまま置いておき、次に同じ見た目が要るときに使う
+   */
+  sprite(cls, color, vars = {}) {
+    const key = cls + '|' + color + '|' + Object.values(vars).join(',');
+    this.spritePool ??= new Map();
+    const idle = this.spritePool.get(key) ?? [];
+    this.spritePool.set(key, idle);
+    let d = idle.pop();
+    if (!d) {
+      d = document.createElement('div');
+      d.className = `${cls} c-${color}`;
+      if (cls === 'fx-rays') d.style.backgroundImage = `url(${this.raysImage(color, vars)})`;
+      this.fx2.appendChild(d);
+    }
+    d.__release = () => { if (d.isConnected) idle.push(d); };
+    return d;
+  }
+  /**
+   * 放射状の光線の画像（{ n: 本数, w: 1本の角度 deg }）を canvas に1回だけ描いて画像にする。
+   * 中心の近くと外側へ向かって消えていくところまで描き込むので、CSS の mask は要らない（mask は合成が重い）
+   */
+  raysImage(color, { n, w }) {
+    const key = color + '|' + n + '|' + w;
+    this.raysUrls ??= new Map();
+    if (this.raysUrls.has(key)) return this.raysUrls.get(key);
+    const B = 160, dpr = Math.min(2, window.devicePixelRatio || 1), S = Math.round(B * dpr);
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const g = cv.getContext('2d'), col = this.particles.color(color), R = S / 2;
+    g.translate(R, R);
+    const grd = g.createRadialGradient(0, 0, 0, 0, 0, R);
+    grd.addColorStop(0, rgba(col.hi, 0));
+    grd.addColorStop(0.1, rgba(col.hi, 0.95));
+    grd.addColorStop(0.3, rgba(col.hi, 0.85));
+    grd.addColorStop(0.62, rgba(col.col, 0.4));
+    grd.addColorStop(1, rgba(col.col, 0));
+    g.fillStyle = grd;
+    const half = (w * Math.PI) / 360;
+    for (let i = 0; i < n; i++) {                       // 外へ向かって広がるくさび形
+      const a = (Math.PI * 2 * i) / n;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.arc(0, 0, R, a - half, a + half);
+      g.closePath();
+      g.fill();
+    }
+    // 芯: くさびの中心線を白っぽく細く
+    g.globalCompositeOperation = 'lighter';
+    g.fillStyle = grd;
+    g.globalAlpha = 0.5;
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n;
+      g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R * 0.8, a - half * 0.3, a + half * 0.3); g.closePath(); g.fill();
+    }
+    const url = cv.toDataURL();
+    this.raysUrls.set(key, url);
+    return url;
+  }
+
+  /** 1枚絵を (x, y) を中心に、frames の [透明度, 拡大率, 回転deg, offset?] の順に動かして消す */
+  playSprite(d, base, x, y, frames, life) {
+    this._spriteAnims ??= new Set();
+    const tf = (sc, rot) => `translate(${x - base / 2}px,${y - base / 2}px) rotate(${rot}deg) scale(${sc})`;
+    // 区間ごとの easing: 広がり始めは素早く、消えていくところはゆっくり（全体に ease-out を掛けると早く消えすぎる）
+    const a = d.animate(frames.map(([o, sc, rot, offset], i) => ({
+      opacity: o, transform: tf(sc, rot), easing: i === 0 && frames.length > 2 ? 'ease-out' : 'cubic-bezier(.25,.6,.45,1)',
+      ...(offset != null ? { offset } : {}),
+    })), { duration: life });
+    this._spriteAnims.add(a);
+    a.onfinish = () => { this._spriteAnims.delete(a); d.__release(); };
+  }
+
+  /** 演出の量の目安（1 = 全部 … 0.25 = 最小限。遅い端末では自動で下がる） */
+  get q() { return this.particles.quality; }
+  /** n 個出したい粒を、演出の量に合わせて減らした数 */
+  qn(n) { return Math.round(n * this.q); }
+
+  /** ふわっと広がって消える大きな光（rotWrap 内の座標 x, y・直径 size px） */
+  flareFx(x, y, color, size, life = 420, alpha = 0.75) {
+    if (this.q < 0.4) return;
+    const B = 96, d = this.sprite('fx-flare', color), k = size / B;
+    this.playSprite(d, B, x, y, [[alpha, 0.45 * k, 0], [0, 1.2 * k, 0]], life);
+  }
+
+  /**
+   * 中心から放射状に伸びる光線（n 本・長さ len px・太さ width px）。回りながら伸びて消える。
+   * 光線は CSS の repeating-conic-gradient で1枚に描く
+   */
+  raysFx(x, y, color, { n = 12, len = 80, width = 14, life = 620, spin = 0.5, alpha = 0.8 } = {}) {
+    if (this.q < 0.6 || matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const B = 160;
+    // 本数は 12 / 16 / 20 本の3種類にまとめる（見た目の種類が少ないほど1枚絵を使い回せる）。太さは本数で決める
+    n = n <= 13 ? 12 : n <= 17 ? 16 : 20;
+    const w = { 12: 10, 16: 8, 20: 6 }[n];
+    const d = this.sprite('fx-rays', color, { n, w });
+    const k = (len * 2) / B, r0 = Math.random() * 360, r1 = r0 + (spin * 180) / Math.PI;
+    this.playSprite(d, B, x, y, [[0, 0.55 * k, r0], [alpha, 0.62 * k, r0 + (r1 - r0) * 0.12, 0.12], [0, k, r1]], life);
+  }
+
+  /** 画面が一瞬ぐっと寄って戻る（大きな連鎖の衝撃）。scale だけを動かす */
+  punch(amount = 0.02, dur = 240) {
+    if (matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    this._punch?.cancel();
+    this._punch = this.wrap.animate([{ scale: `${1 + amount}` }, { scale: '1' }], { duration: dur, easing: 'cubic-bezier(.2,.8,.3,1)' });
+  }
+
+  /** 盤面の外接四角（rotWrap の座標）。火の粉や花火を盤面の上に散らすため */
+  boardBox() {
+    const c = this.cell;
+    const pts = [[0, 0], [SIZE, 0], [0, SIZE]].map(([x, r]) => this.localToWrap(x * c, r * c));
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  }
+
+  /**
+   * 連鎖の文字の後ろに回る光線（段階が上がるほど派手に。最高段階は虹色）。
+   * 色は文字のグラデーションに合わせる（Good 緑 / Great 水色 / Excellent 金 / Amazing 桃紫 / Unbelievable 虹）
+   */
+  textBurst(tier) {
+    const c = this.cell, x = this.wrapW / 2, y = this.wrap.clientHeight * 0.52 + c * 0.9;
+    let colors = [['green'], ['cyan'], ['yellow', 'orange'], ['purple', 'red'], ['red', 'yellow', 'cyan', 'purple']][Math.min(tier, 5) - 1];
+    if (this.q < 0.85) colors = colors.slice(0, 1 + (this.q >= 0.7));      // 重いときは重ねる枚数を減らす
+    const alpha = 0.75 / Math.sqrt(colors.length);           // 重ねる枚数が多いほど1枚ずつは薄く（白く飛ばない）
+    colors.forEach((color, i) => this.raysFx(x, y, color, {
+      n: 10 + tier * 2, len: c * (2 + tier * 0.35), width: c * (0.5 + tier * 0.06), life: 700 + tier * 60, spin: i % 2 ? -0.6 : 0.6, alpha,
+    }));
+    this.flareFx(x, y, colors[0], c * (2.2 + tier * 0.35), 520);
+    if (tier >= 4) this.particles.streaks(x, y, tier >= 5 ? RAINBOW[Math.floor(Math.random() * 7)] : 'yellow', this.qn(10 + tier * 2), c, { speed: [7, 13], life: [420, 700] });
+  }
+
+  /** コンボが続いている間、盤面から火の粉が立ちのぼる（level 0〜1） */
+  embers(level) {
+    if (level <= 0) return;
+    const b = this.boardBox(), c = this.cell;
+    const warm = ['orange', 'yellow', 'red'];
+    const n = this.qn(2 + level * 6);
+    const w = b.x1 - b.x0;
+    for (let i = 0; i < n; i++) this.particles.embers(b.x0 + w * 0.15, b.y0, b.x1 - w * 0.15, b.y0 + (b.y1 - b.y0) * 0.6, warm[i % 3], 1, c);
+  }
+
+  /** 花火を n 発、盤面の上に少しずつ時間をずらして打ち上げる */
+  fireworks(n = 5, gap = 140) {
+    n = Math.max(2, this.qn(n));
+    const gen = this.fxGen, b = this.boardBox(), c = this.cell;
+    const top = this.cellCenter(this.goalPos()).y + c * 1.5;          // ゴールの少し下〜盤面の中ほどまで
+    for (let i = 0; i < n; i++) {
+      setTimeout(() => {
+        if (gen !== this.fxGen) return;                     // リスタートしたら打ち切る
+        const x = b.x0 + c * 1.5 + Math.random() * (b.x1 - b.x0 - c * 3);
+        const y = top + Math.random() * (b.y0 + (b.y1 - b.y0) * 0.45 - top);
+        const color = RAINBOW[(i * 3) % RAINBOW.length];
+        this.flareFx(x, y, color, c * 3.2, 520);
+        this.particles.firework(x, y, color, c);
+        this.sfx?.step?.(3 + (i % 5));
+      }, i * gap);
+    }
+  }
+
+  /** 全消し: 虹色の光線が盤面の中心から回り、花火が連発する */
+  allClearBlast() {
+    const c = this.cell, b = this.boardBox();
+    const x = (b.x0 + b.x1) / 2, y = (b.y0 + b.y1) / 2;
+    ['red', 'yellow', 'green', 'cyan', 'purple'].forEach((color, i) => this.raysFx(x, y, color, {
+      n: 12, len: c * 4.2, width: c * 0.7, life: 1100, spin: i % 2 ? -0.7 : 0.7,
+    }));
+    this.flareFx(x, y, 'yellow', c * 7, 800);
+    [0, 160, 320].forEach((d, i) => setTimeout(() => this.particles.wave(x, y, RAINBOW[i * 2], c * 1.6), d));
+    this.flash(0.3, 'yellow');
+    this.punch(0.045, 320);
+    this.fireworks(7, 150);
   }
 
   /** 流れる先頭ブロックが残す光の粒 */
@@ -608,6 +804,8 @@ export class Renderer {
     this.fxLayer.innerHTML = '';
     this.fx2.innerHTML = '';
     this.particles.clear();
+    this.fxGen = (this.fxGen || 0) + 1;
+    for (const a of this._spriteAnims ?? []) a.finish();
     this.setFever(0);
     this.setDanger(0);
     this.els.clear();

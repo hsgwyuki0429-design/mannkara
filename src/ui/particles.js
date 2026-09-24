@@ -7,8 +7,18 @@
  * 座標は rotWrap 内の px（回転しない座標）。canvas は rotWrap より margin だけ大きく取り、
  * 盤面の外へ飛び出す粒も切れないようにする。毎フレーム消して描き直すのは、粒がいる範囲（前のフレームと
  * 今のフレームの外接四角）だけにする（canvas 全体を毎回塗り直すと、それだけで重い）。
+ *
+ * 光るもの（光の筋・火の粉・光の尾）は加算合成で重ねて「焼けるような」明るさを出す。
+ * 形のある粒（色の粒・破片・輪）は普通に塗る。加算は光のにじみだけに使うので、青い背景の上でも色が濁らない。
+ * 大きくて形の変わらない光（フレア・放射状の光線）はここでは描かない（renderer が DOM の1枚絵を
+ * 拡大・回転・透明度だけで動かす。毎フレーム描き直さないので、大きくても軽い）。
  */
-const MAX_PARTICLES = 600;
+const MAX_PARTICLES = 700;
+/** 加算合成で描く種類 */
+const ADDITIVE = new Set(['streak', 'ember', 'trail']);
+/** 花火などで使う7色（ブロックと同じ色） */
+export const RAINBOW = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
+const TAU = Math.PI * 2;
 const easeOut2 = (t) => 1 - (1 - t) * (1 - t);        // CSS ease-out 相当
 const easeOut3 = (t) => 1 - Math.pow(1 - t, 3);       // cubic-bezier(.2,.7,.3,1) 相当
 
@@ -24,6 +34,16 @@ export class Particles {
     this.raf = 0;
     this.margin = 0;
     this.dirty = null;       // 前のフレームで描いた範囲（canvas の px）
+    this.frameMs = 16.7;     // 粒を描いている間の1フレームの時間（なめらかに平均）
+    this.lastNow = 0;
+  }
+
+  /**
+   * 演出の量の目安（1 = 全部出す … 0.25 = 最小限）。粒を描いている間のフレーム時間から決める。
+   * 遅い端末や重い場面では自動で粒や光を減らし、画面がカクつかないようにする
+   */
+  get quality() {
+    return Math.max(0.25, Math.min(1, 1 - (this.frameMs - 20) / 26));
   }
 
   /** rotWrap の大きさに合わせる（margin = はみ出してよい幅 px） */
@@ -79,6 +99,38 @@ export class Particles {
   /** 流れるブロックが残す光の尾 */
   trail(x, y, color, cell) { this.add({ kind: 'trail', x, y, color, size: cell * 0.55, life: 340 }); }
 
+  /**
+   * 飛び散る光の筋。進む向きに細長く伸び、空気抵抗で減速しながら縮んで消える。
+   * dir を中心に spread の範囲へ飛ぶ（spread = TAU なら全方向）。speed はマス/秒。
+   */
+  streaks(x, y, color, n, cell, { dir = 0, spread = TAU, speed = [5, 11], life = [380, 620], len = 1 } = {}) {
+    for (let i = 0; i < n; i++) {
+      const a = dir + (spread >= TAU ? (TAU * (i + Math.random() * 0.8)) / n : (Math.random() - 0.5) * spread);
+      const v = cell * (speed[0] + Math.random() * (speed[1] - speed[0]));
+      this.add({
+        kind: 'streak', x, y, color, vx: Math.cos(a) * v, vy: Math.sin(a) * v, k: 4.5,
+        len: cell * len * (0.7 + Math.random() * 0.6), width: cell * 0.2, life: life[0] + Math.random() * (life[1] - life[0]),
+      });
+    }
+  }
+  /** ゆらゆら立ちのぼる火の粉（範囲 x0〜x1, y0〜y1 の中から） */
+  embers(x0, y0, x1, y1, color, n, cell) {
+    for (let i = 0; i < n; i++) {
+      this.add({
+        kind: 'ember', x: x0 + Math.random() * (x1 - x0), y: y0 + Math.random() * (y1 - y0), color,
+        rise: cell * (1.2 + Math.random() * 1.6), wob: cell * 0.25, ph: Math.random() * TAU,
+        size: cell * (0.28 + Math.random() * 0.22), life: 900 + Math.random() * 700,
+      });
+    }
+  }
+  /** 花火: 光の筋 + 色の粒 + 輪（フレアは renderer 側） */
+  firework(x, y, color, cell) {
+    const q = this.quality;
+    this.streaks(x, y, color, Math.round(16 * q), cell, { speed: [6, 12], life: [520, 800], len: 1.1 });
+    this.burst(x, y, color, Math.round(10 * q), cell);
+    this.wave(x, y, color, cell);
+  }
+
   add(p) {
     if (this.list.length >= MAX_PARTICLES) return;
     p.t0 = performance.now();
@@ -88,6 +140,9 @@ export class Particles {
 
   /* ---------- 描画 ---------- */
   frame(now) {
+    // 1回だけの大きな引っかかり（手駒の計算・タブの切り替えなど）は数えない。続けて遅いときだけ減らす
+    if (this.lastNow) { const dt = now - this.lastNow; if (dt < 100) this.frameMs += (dt - this.frameMs) * 0.08; }
+    this.lastNow = now;
     const { ctx, dpr, margin } = this;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (this.dirty) { const d = this.dirty; ctx.clearRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0); }
@@ -96,12 +151,17 @@ export class Particles {
     this.box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     let alive = 0;
     for (const p of this.list) {
-      const t = Math.min(1, (now - p.t0) / p.life);
-      if (t >= 1) continue;
+      p.t = Math.min(1, (now - p.t0) / p.life);
+      if (p.t >= 1) continue;
       this.list[alive++] = p;
-      this.draw(p, t);
     }
     this.list.length = alive;
+    // 形のある粒を先に普通に塗り、光るものをその上に加算で重ねる
+    ctx.globalCompositeOperation = 'source-over';
+    for (const p of this.list) if (!ADDITIVE.has(p.kind)) this.draw(p, p.t);
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of this.list) if (ADDITIVE.has(p.kind)) this.draw(p, p.t);
+    ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     const b = this.box, W = this.canvas.width, H = this.canvas.height;
     this.dirty = alive ? {
@@ -109,6 +169,7 @@ export class Particles {
       x1: Math.min(W, Math.ceil((b.x1 + margin) * dpr) + 2), y1: Math.min(H, Math.ceil((b.y1 + margin) * dpr) + 2),
     } : null;
     this.raf = alive ? requestAnimationFrame((t) => this.frame(t)) : 0;
+    if (!alive) this.lastNow = 0;
   }
 
   /** 中心 (x, y)・半径 r の範囲に描いたことを記録する */
@@ -119,6 +180,13 @@ export class Particles {
     if (x + r > b.x1) b.x1 = x + r;
     if (y + r > b.y1) b.y1 = y + r;
   }
+
+  /** 回転した座標系で描くための transform（(x, y) を原点、angle の向きを +x に） */
+  at(x, y, angle) {
+    const { dpr, margin } = this, c = Math.cos(angle) * dpr, s = Math.sin(angle) * dpr;
+    this.ctx.setTransform(c, s, -s, c, (x + margin) * dpr, (y + margin) * dpr);
+  }
+  unrotate() { const { dpr, margin } = this; this.ctx.setTransform(dpr, 0, 0, dpr, margin * dpr, margin * dpr); }
 
   draw(p, t) {
     const ctx = this.ctx;
@@ -164,6 +232,21 @@ export class Particles {
       ctx.globalAlpha = 1 - e;
       ctx.drawImage(this.sprite('trail', p.color), p.x - r / 2, p.y - r / 2, r, r);
       this.mark(p.x, p.y, r / 2);
+    } else if (p.kind === 'streak') {
+      const sec = (t * p.life) / 1000, f = Math.exp(-p.k * sec);
+      const x = p.x + (p.vx * (1 - f)) / p.k, y = p.y + (p.vy * (1 - f)) / p.k;
+      const len = p.len * (0.35 + 0.65 * f), w = p.width * (1 - 0.5 * t);
+      ctx.globalAlpha = 1 - t * t;
+      this.at(x, y, Math.atan2(p.vy, p.vx));
+      ctx.drawImage(this.sprite('streak', p.color), -len / 2, -w / 2, len, w);
+      this.unrotate();
+      this.mark(x, y, len / 2);
+    } else if (p.kind === 'ember') {
+      const x = p.x + Math.sin(p.ph + t * 7) * p.wob, y = p.y - p.rise * t;
+      const r = p.size * (1 - 0.4 * t);
+      ctx.globalAlpha = Math.sin(Math.PI * t) * 0.9;
+      ctx.drawImage(this.sprite('glow', p.color), x - r / 2, y - r / 2, r, r);
+      this.mark(x, y, r / 2);
     }
   }
 
@@ -190,8 +273,12 @@ export class Particles {
     let img = this.sprites.get(key);
     if (img) return img;
     const c = this.color(name);
-    const S = 48;
     img = document.createElement('canvas');
+    if (kind === 'streak') {
+      this.sprites.set(key, img);
+      return this.longSprite(img, kind, c);
+    }
+    const S = kind === 'glow' ? 64 : 48;
     img.width = img.height = S;
     const g = img.getContext('2d');
     const glow = (inner, outer) => {
@@ -216,6 +303,14 @@ export class Particles {
       grd.addColorStop(0, c.hi); grd.addColorStop(0.5, c.col); grd.addColorStop(1, c.lo);
       g.fillStyle = grd;
       roundRect(g, S * 0.19, S * 0.19, S * 0.62, S * 0.62, S * 0.14);
+    } else if (kind === 'glow') {               // 中心だけ白く、外側は色でぼんやり（フレア・火の粉）
+      const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+      grd.addColorStop(0, 'rgba(255,255,255,.6)');         // 加算で重なっても真っ白に飛ばないよう控えめに
+      grd.addColorStop(0.12, rgba(c.hi, 0.6));
+      grd.addColorStop(0.35, rgba(c.col, 0.35));
+      grd.addColorStop(1, rgba(c.col, 0));
+      g.fillStyle = grd;
+      g.fillRect(0, 0, S, S);
     } else if (kind === 'trail') {              // 中心が白い丸い光
       const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
       grd.addColorStop(0, '#fff'); grd.addColorStop(0.45 / 0.7 * 0.5, c.col); grd.addColorStop(1, 'rgba(0,0,0,0)');
@@ -225,6 +320,30 @@ export class Particles {
     this.sprites.set(key, img);
     return img;
   }
+}
+
+/** 光の筋の sprite: 白い芯の細長い楕円 */
+Particles.prototype.longSprite = function (img, kind, c) {
+  const W = 64, H = 16;
+  img.width = W; img.height = H;
+  const g = img.getContext('2d');
+  g.translate(W / 2, H / 2);
+  g.scale(W / H, 1);
+  const grd = g.createRadialGradient(0, 0, 0, 0, 0, H / 2);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.3, rgba(c.hi, 0.9));
+  grd.addColorStop(0.6, rgba(c.col, 0.45));
+  grd.addColorStop(1, rgba(c.col, 0));
+  g.fillStyle = grd;
+  g.fillRect(-H / 2, -H / 2, H, H);
+  return img;
+};
+
+/** '#rrggbb' → 'rgba(r,g,b,a)' */
+function rgba(hex, a) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  if (!m) return `rgba(255,255,255,${a})`;
+  return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})`;
 }
 
 function roundRect(g, x, y, w, h, r) {
