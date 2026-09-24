@@ -1,5 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609231014';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609240056';
+import { Particles } from './particles.js?v=202609240056';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -7,6 +8,13 @@ const STRETCH_Y = 1.04;
 const LANE_SQUASH = 0.86 / STRETCH_Y;
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * CSS アニメーションを最初から再生し直すため、要素を中身のない複製に差し替える。
+ * （クラスを外して offsetWidth を読む方法は毎回ページ全体の強制レイアウトになり、連鎖中のカクつきの原因になる）
+ */
+const fresh = (el) => { const n = el.cloneNode(false); el.replaceWith(n); return n; };
+/** Web Animations の keyframes に、CSS の animation-timing-function と同じく区間ごとの easing を付ける */
+const eased = (frames, easing) => frames.map((f, i) => (i < frames.length - 1 ? { easing, ...f } : f));
 const easeInOut = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
 const easeOut = (p) => 1 - Math.pow(1 - p, 2.2);
 
@@ -54,6 +62,8 @@ export class Renderer {
     this.fx2 = document.createElement('div');
     this.fx2.className = 'layer fx2';
     this.wrap.appendChild(this.fx2);
+    // 光の粒・破片・輪は数が多いので DOM ではなく1枚の canvas に描く（長い連鎖でカクつかないように）
+    this.particles = new Particles(this.wrap);
     this.comboPop = document.createElement('div');
     this.comboPop.className = 'combo-pop';
     this.wrap.appendChild(this.comboPop);
@@ -102,6 +112,7 @@ export class Renderer {
       left: g.x + (cell - gs) / 2 + 'px', top: g.y + (cell - gs) / 2 + 'px',
       width: gs + 'px', height: gs + 'px',
     });
+    this.particles.fit(wrapW, wrapH, cell * 2);          // ゴールの輪や飛び散る粒が届く範囲まで
     this.drawStatic();
     if (this._board) this.syncBoard(this._board, 0);
   }
@@ -235,28 +246,17 @@ export class Renderer {
       ring.className = `cell land-ring c-${block.color}`;
       ring.style.transform = `translate(${x * c}px,${r * c}px)`;
       ring.style.animationDelay = i * 18 + 'ms';
-      this.fxLayer.appendChild(ring);
-      setTimeout(() => ring.remove(), 520);
+      this.addFx(this.fxLayer, ring, 520);
     });
     // 光の粒（ピースの中心から）
     if (placed.length) {
       const mx = placed.reduce((a, p) => a + p.x, 0) / placed.length;
       const my = placed.reduce((a, p) => a + p.r, 0) / placed.length;
       const color = placed[0].block.color;
-      for (let k = 0; k < 10; k++) {
-        const d = document.createElement('div');
-        d.className = `spark c-${color}`;
-        const a = (Math.PI * 2 * k) / 10 + Math.random() * 0.5;
-        const dist = c * (0.9 + Math.random() * 0.9);
-        d.style.setProperty('--dx', Math.cos(a) * dist + 'px');
-        d.style.setProperty('--dy', Math.sin(a) * dist + 'px');
-        d.style.left = (mx + 0.5) * c + 'px';
-        d.style.top = (my + 0.5) * c + 'px';
-        this.fxLayer.appendChild(d);
-        setTimeout(() => d.remove(), 560);
-      }
+      const q = this.localToWrap((mx + 0.5) * c, (my + 0.5) * c);
+      this.particles.sparks(q.x, q.y, color, 10, c);
     }
-    this.pf.classList.remove('land'); void this.pf.offsetWidth; this.pf.classList.add('land');
+    this.bounce([[0, 1], [0.35, 1.008], [0.7, 0.998], [1, 1]], 240);
   }
 
   /* ---------- ドラッグ中のプレビュー ---------- */
@@ -326,10 +326,17 @@ export class Renderer {
   /** 盤面が混んでピンチのときだけ、画面の縁がゆっくり脈打つ（0 = なし … 1 = 最大） */
   setDanger(level) {
     this.dangerEl.style.opacity = Math.max(0, Math.min(1, level));
+    this.dangerEl.classList.toggle('off', !(level > 0));
   }
 
   /* ---------- ライン発動（マンカラ） ---------- */
   goalPos() { return this.pos(SIZE, SIZE); }
+
+  /** 演出用の要素を layer に足し、ms 後に消す */
+  addFx(layer, el, ms) {
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), ms);
+  }
 
   /** スナップショット Map<id,{x,r,color}> の位置へ全ブロックを即座に合わせる（載っていないブロックは触らない） */
   applySnapshot(snap) {
@@ -437,43 +444,49 @@ export class Renderer {
         }
       });
     }
-    goals.forEach((g) => this.goalIn(g.b, chain));
+    if (goals.length) this.goalIn(goals.map((g) => g.b), chain);     // 同時に着くブロックの演出はまとめて1回
     for (const m of moves) { this.manual.delete(m.b.id); m.el.classList.remove('travel'); }
     this.applySnapshot(after);
-    this.pf.classList.remove('thump'); void this.pf.offsetWidth; this.pf.classList.add('thump');
+    this.bounce([[0, 1], [0.3, 1.012], [0.6, 0.997], [1, 1]], 220);
   }
 
-  goalIn(block, chain) {
-    const el = this.els.get(block.id);
-    if (el) {
+  /** ブロック（1個または同時に着く複数個）がゴールに入る。演出と音はまとめて1回 */
+  goalIn(blocks, chain) {
+    const list = Array.isArray(blocks) ? blocks : [blocks];
+    for (const block of list) {
+      const el = this.els.get(block.id);
+      if (!el) continue;
       el.style.setProperty('--t', '0ms');
       el.classList.add('fly');
       setTimeout(() => this.removeEl(block.id), 220);
     }
-    this.burst(this.goalPos(), block.color, 9 + Math.min(chain, 8) * 2);
-    this.shatter(this.goalPos(), block.color, 5 + Math.min(chain, 6));
-    this.wave(this.goalPos(), block.color);
+    const color = list[0].color, more = Math.min(list.length - 1, 4);
+    this.burst(this.goalPos(), color, 9 + Math.min(chain, 8) * 2 + more * 3);
+    this.shatter(this.goalPos(), color, 5 + Math.min(chain, 6) + more);
+    this.wave(this.goalPos(), color);
     this.hitGoal(chain);
   }
 
   hitGoal(chain) {
-    this.goal.classList.remove('hit'); void this.goal.offsetWidth; this.goal.classList.add('hit');
+    this._goalHit?.cancel();
+    const base = '0 0 6px rgba(34,211,214,.35),inset 0 0 6px rgba(34,211,214,.25)';
+    this._goalHit = this.goal.animate(eased([
+      { transform: 'none', boxShadow: base },
+      { transform: 'scale(1.2)', boxShadow: '0 0 30px rgba(34,211,214,.95),inset 0 0 6px rgba(34,211,214,.25)', offset: 0.35 },
+      { transform: 'none', boxShadow: base },
+    ], 'ease-out'), { duration: 320 });
     this.sfx?.goal(chain);
   }
 
+  /** 盤面がぽんと弾む（[offset, scale] の並び, ms）。クラスの付け外しと強制レイアウトを使わない */
+  bounce(frames, dur) {
+    this._bounce?.cancel();
+    this._bounce = this.pf.animate(eased(frames.map(([offset, v]) => ({ offset, scale: `${v}` })), 'ease-out'), { duration: dur });
+  }
+
   burst(p, color = 'yellow', n = 9) {
-    for (let i = 0; i < n; i++) {
-      const d = document.createElement('div');
-      d.className = `particle c-${color}`;
-      const a = (Math.PI * 2 * i) / n + Math.random() * 0.6;
-      const dist = this.cell * (0.7 + Math.random() * 1.3);
-      d.style.setProperty('--dx', Math.cos(a) * dist + 'px');
-      d.style.setProperty('--dy', Math.sin(a) * dist + 'px');
-      d.style.left = p.x + this.cell / 2 + 'px';
-      d.style.top = p.y + this.cell / 2 + 'px';
-      this.fxLayer.appendChild(d);
-      setTimeout(() => d.remove(), 650);
-    }
+    const q = this.cellCenter(p);
+    this.particles.burst(q.x, q.y, color, n, this.cell);
   }
 
   /** マス中心のローカル px -> rotWrap 内の座標 */
@@ -487,8 +500,7 @@ export class Renderer {
       d.className = `cell line-flash c-${color}`;
       d.style.transform = `translate(${x * c}px,${r * c}px)`;
       d.style.animationDelay = i * 12 + 'ms';
-      this.fxLayer.appendChild(d);
-      setTimeout(() => d.remove(), 460 + i * 12);
+      this.addFx(this.fxLayer, d, 460 + i * 12);
     });
     const beam = document.createElement('div');
     beam.className = `beam c-${color} ${kind}`;
@@ -496,8 +508,7 @@ export class Renderer {
     Object.assign(beam.style, kind === 'col'
       ? { left: fixed + 'px', top: 0, width: c + 'px', height: n * c + 'px' }
       : { left: 0, top: fixed + 'px', width: n * c + 'px', height: c + 'px' });
-    this.fxLayer.appendChild(beam);
-    setTimeout(() => beam.remove(), 420);
+    this.addFx(this.fxLayer, beam, 420);
     this.shake(Math.min(2 + chain * 1.2, 11), 180 + Math.min(chain, 8) * 20);
     if (chain >= 3) this.flash(chain >= 6 ? 0.32 : 0.2, color);
   }
@@ -505,42 +516,19 @@ export class Renderer {
   /** 流れる先頭ブロックが残す光の粒 */
   trail(p, color) {
     const q = this.cellCenter(p);
-    const d = document.createElement('div');
-    d.className = `trail c-${color}`;
-    d.style.left = q.x + 'px'; d.style.top = q.y + 'px';
-    this.fx2.appendChild(d);
-    setTimeout(() => d.remove(), 360);
+    this.particles.trail(q.x, q.y, color, this.cell);
   }
 
-  /** ブロックの破片が弾け、重力で落ちていく（画面の上下で動かすので回転しないレイヤーに描く） */
+  /** ブロックの破片が弾け、重力で落ちていく */
   shatter(p, color, n = 6) {
-    const q = this.cellCenter(p), c = this.cell;
-    for (let i = 0; i < n; i++) {
-      const d = document.createElement('div');
-      d.className = `shard c-${color}`;
-      const size = c * (0.18 + Math.random() * 0.2);
-      Object.assign(d.style, { left: q.x + 'px', top: q.y + 'px', width: size + 'px', height: size + 'px' });
-      this.fx2.appendChild(d);
-      const vx = (Math.random() - 0.5) * c * 5, vy = -c * (2 + Math.random() * 3), g = c * 11;
-      const rot = (Math.random() - 0.5) * 900, T = 0.7 + Math.random() * 0.25;
-      const frames = [];
-      for (let k = 0; k <= 8; k++) {
-        const t = (T * k) / 8;
-        frames.push({ transform: `translate(${vx * t}px,${vy * t + 0.5 * g * t * t}px) rotate(${rot * t}deg) scale(${1 - 0.5 * k / 8})`,
-          opacity: k < 5 ? 1 : 1 - (k - 4) / 4 });
-      }
-      d.animate(frames, { duration: T * 1000, easing: 'linear' }).onfinish = () => d.remove();
-    }
+    const q = this.cellCenter(p);
+    this.particles.shatter(q.x, q.y, color, n, this.cell);
   }
 
   /** ゴールから広がる衝撃波の輪 */
   wave(p, color) {
     const q = this.cellCenter(p);
-    const d = document.createElement('div');
-    d.className = `wave c-${color}`;
-    d.style.left = q.x + 'px'; d.style.top = q.y + 'px';
-    this.fx2.appendChild(d);
-    setTimeout(() => d.remove(), 560);
+    this.particles.wave(q.x, q.y, color, this.cell);
   }
 
   /** 盤面が揺れる（強さ px, 長さ ms） */
@@ -569,8 +557,7 @@ export class Renderer {
     d.className = 'float-score' + (chain >= 5 ? ' hot' : chain >= 3 ? ' warm' : '');
     d.textContent = '+' + value.toLocaleString('en-US');
     d.style.left = q.x + 'px'; d.style.top = q.y - this.cell * 0.6 + 'px';
-    this.fx2.appendChild(d);
-    setTimeout(() => d.remove(), 900);
+    this.addFx(this.fx2, d, 900);
   }
 
   /** 画面中央から紙吹雪（新記録など） */
@@ -597,10 +584,8 @@ export class Renderer {
 
   /** 連続発動（COMBO）の表示。盤面の上に炎色の文字 */
   showCombo(n) {
-    const el = this.comboPop;
+    const el = this.comboPop = fresh(this.comboPop);
     el.innerHTML = `COMBO<b>${n}</b>`;
-    el.className = 'combo-pop';
-    void el.offsetWidth;
     el.className = `combo-pop show${n >= 5 ? ' hot' : ''}`;
   }
 
@@ -608,20 +593,21 @@ export class Renderer {
   setFever(level) {
     this.feverEl.style.opacity = Math.max(0, Math.min(1, level));
     this.feverEl.classList.toggle('max', level >= 1);
+    this.feverEl.classList.toggle('off', !(level > 0));
   }
 
   /** 中央に出る大きな文字（Combo / Chain） */
   showText(html, cls = '') {
-    this.pop.innerHTML = html;
-    this.pop.className = 'pop';
-    void this.pop.offsetWidth;
-    this.pop.className = `pop show ${cls}`;
+    const el = this.pop = fresh(this.pop);
+    el.innerHTML = html;
+    el.className = `pop show ${cls}`;
   }
 
   reset() {
     this.blockLayer.innerHTML = '';
     this.fxLayer.innerHTML = '';
     this.fx2.innerHTML = '';
+    this.particles.clear();
     this.setFever(0);
     this.setDanger(0);
     this.els.clear();

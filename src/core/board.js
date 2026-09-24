@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells, KINDS } from './constants.js?v=202609231014';
+import { SIZE, isInside, lineCells, KINDS, MAX_BLOCKS } from './constants.js?v=202609240056';
 
 let nextBlockId = 1;
 export function createBlock(color) {
@@ -98,6 +98,8 @@ export class Board {
     for (const { block } of this.entries()) if (block) n++;
     return n;
   }
+  /** 埋まり具合（連鎖が終わった盤面に残せる最大 28 個に対する割合） */
+  fillRate() { return this.totalBlocks() / MAX_BLOCKS; }
   *entries() {
     for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) {
       const block = this.get(x, r);

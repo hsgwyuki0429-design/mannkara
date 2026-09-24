@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609231014';
-import { Board } from '../core/board.js?v=202609231014';
-import { resolveChains } from '../core/mancala.js?v=202609231014';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609231014';
-import { Renderer, delay } from './renderer.js?v=202609231014';
-import { Sfx } from './sfx.js?v=202609231014';
+import { Game } from '../core/game.js?v=202609240056';
+import { Board } from '../core/board.js?v=202609240056';
+import { resolveChains } from '../core/mancala.js?v=202609240056';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609240056';
+import { Renderer, delay } from './renderer.js?v=202609240056';
+import { Sfx } from './sfx.js?v=202609240056';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -89,6 +89,11 @@ async function playTurn(turn) {
     showScore(step.score, true);
     await delay(ANIM.betweenChains / sp);
   }
+  if (turn.allClear) {
+    renderer.confetti();
+    renderer.showText('ALL CLEAR!', 't5');
+    sfx.fanfare();
+  }
   showScore(turn.score);
   updateDanger();
   if (turn.gameOver) {
@@ -132,7 +137,16 @@ function showScore(v, bump = false) {
     if (p < 1) rollRaf = requestAnimationFrame(frame);
   };
   frame(t0);
-  if (bump) { s.classList.remove('bump'); void s.offsetWidth; s.classList.add('bump'); }
+  if (bump) {
+    // クラスの付け外し + offsetWidth は強制レイアウトになるので Web Animations で弾ませる
+    const base = '0 3px 3px rgba(0,0,0,.18),0 0 0 rgba(255,230,120,0)';
+    s.__bump?.cancel();
+    s.__bump = s.animate([
+      { transform: 'none', textShadow: base, easing: 'cubic-bezier(.3,1.6,.5,1)' },
+      { transform: 'scale(1.14)', textShadow: '0 3px 3px rgba(0,0,0,.18),0 0 22px rgba(255,230,120,.9)', offset: 0.35, easing: 'cubic-bezier(.3,1.6,.5,1)' },
+      { transform: 'none', textShadow: base },
+    ], { duration: 300 });
+  }
   // ベストスコアを超えた瞬間（ゲーム中に1回だけ）
   if (!bestCelebrated && best > 0 && v > best) {
     bestCelebrated = true;

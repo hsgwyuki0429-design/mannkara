@@ -1,8 +1,10 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609231014';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609231014';
-import { Piece, PieceGenerator, SHAPES } from '../src/core/pieces.js?v=202609231014';
-import { Game, isSolvable } from '../src/core/game.js?v=202609231014';
-import { isInside, lineCells, SIZE } from '../src/core/constants.js?v=202609231014';
+import { Board, createBlock } from '../src/core/board.js?v=202609240056';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240056';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240056';
+import { Game, isSolvable } from '../src/core/game.js?v=202609240056';
+import { planAllClear } from '../src/core/planner.js?v=202609240056';
+import * as Sim from '../src/core/sim.js?v=202609240056';
+import { isInside, lineCells, SIZE, MAX_BLOCKS } from '../src/core/constants.js?v=202609240056';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -251,20 +253,43 @@ console.log('長い連鎖（穴あきラインを押し込みで埋めていく�
   eq(ok && checked > 50, true, `縦横入れ替えで対称な連鎖になる（${checked}盤面）`);
 }
 
-console.log('手駒: テトロミノのみ');
+console.log('手駒: テトロミノ + ブロックブラストの形');
 {
-  eq(SHAPES.length, 19, 'テトロミノの全向き 19 種');
-  eq(SHAPES.every((s) => s.cells.length === 4), true, 'すべて4マス');
-  eq([...new Set(SHAPES.map((s) => s.type))].sort().join(''), 'IJLOSTZ', '7種類');
+  const types = (list) => [...new Set(list.map((s) => s.type))].sort().join(' ');
+  eq(SHAPES.filter((s) => s.cells.length === 4 && 'IOTSZJL'.includes(s.type) && s.type.length === 1).length, 19, 'テトロミノの全向き 19 種');
+  eq(types(SHAPES), 'Dot I I2 I3 I5 J L O O3 R S T V3 V5 Z', '15種類');
+  eq(SHAPES.find((s) => s.name === 'O30').cells.length, 9, '3×3');
+  eq(SHAPES.filter((s) => s.type === 'V5').every((s) => s.cells.length === 5), true, '大きいL は5マス');
+  const norm = (cells) => cells.map(([x, y]) => `${x},${y}`).sort().join(' ');
+  eq(new Set(SHAPES.map((s) => norm(s.cells))).size, SHAPES.length, '同じ形の向きが重複していない');
+  eq(new Set(SHAPES.map((s) => s.name)).size, SHAPES.length, '名前が重複していない');
+  eq(SHAPES.every((s) => s.cells.some(([x]) => x === 0) && s.cells.some(([, y]) => y === 0)), true, 'セルは左上に詰めてある');
+  eq(SHAPES.every((s) => new Piece(s.name).width + new Piece(s.name).height <= 8), true, 'どの形も三角形の盤面に入る');
   const gen = new PieceGenerator(() => 0);
   eq(gen.spawnTray(3).map((p) => p.name), ['I0','I0','I0'], 'J: 同じ形が複数出てもよい');
   let seed = 3; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const g2 = new PieceGenerator(rnd), cnt = {};
-  for (let i = 0; i < 14000; i++) { const t = g2.next().type; cnt[t] = (cnt[t] || 0) + 1; }
-  eq(Object.values(cnt).every((v) => v > 1700 && v < 2300), true, `7種類がほぼ均等 ${JSON.stringify(cnt)}`);
+  const g2 = new PieceGenerator(rnd), cnt = {}, N = 40000;
+  for (let i = 0; i < N; i++) { const t = g2.next().type; cnt[t] = (cnt[t] || 0) + 1; }
+  const total = Object.values(TYPE_WEIGHTS).reduce((a, b) => a + b, 0);
+  const off = Object.entries(TYPE_WEIGHTS).filter(([t, w]) => Math.abs((cnt[t] || 0) / N - w / total) > 0.006).map(([t]) => t);
+  eq(off, [], `種類ごとの出現率が重みどおり ${JSON.stringify(cnt)}`);
 }
 
-console.log('連鎖ピース: 約10% の確率で、置けば発動が起きるテトロミノ');
+console.log('探索用の軽い盤面（sim.js）は本体と同じ結果になる');
+{
+  let seed = 31, ok = true;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let t = 0; t < 400 && ok; t++) {
+    const b = new Board(), p = rnd();
+    for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && rnd() < p) b.set(x, r, createBlock('x'));
+    const s = Sim.fromBoard(b);
+    const n = Sim.resolveAll(s);
+    if (n !== resolveChains(b).length || Sim.keyOf(s) !== Sim.keyOf(Sim.fromBoard(b)) || Sim.blocks(s) !== b.totalBlocks()) ok = false;
+  }
+  eq(ok, true, 'ランダム400盤面で連鎖数と最後の盤面が一致');
+}
+
+console.log('連鎖ピース: 約10% の確率で、置けば発動が起きる形');
 {
   let seed = 9; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd });
@@ -287,6 +312,7 @@ console.log('連鎖ピース: 約10% の確率で、置けば発動が起きる�
   // 確率: spawnTray で通常抽選(next)を通らなかった枠 = 連鎖ピースとして選ばれた枠
   let total = 0;
   const g3 = new Game({ random: rnd }); g3.board = g.board.clone();
+  g3.allClearTray = () => null;                // 全消しのチャンスは別に確かめる
   const origNext = g3.generator.next.bind(g3.generator);
   let naturalCount = 0;
   g3.generator.next = () => { naturalCount++; return origNext(); };
@@ -295,7 +321,7 @@ console.log('連鎖ピース: 約10% の確率で、置けば発動が起きる�
   eq(rate > 0.085 && rate < 0.115, true, `連鎖ピースの割合 ${(rate * 100).toFixed(1)}%`);
 }
 
-console.log('トレイ保証: 必ず1つは置ける / 9割は3つとも置ける');
+console.log('トレイ保証: 8割未満は必ず3つとも置ける / 8割以上は5割が生き残れる、残りはランダム');
 {
   // 置ける場所が限られた盤面: 右上の角まわりだけ空ける
   const b = new Board();
@@ -306,22 +332,159 @@ console.log('トレイ保証: 必ず1つは置ける / 9割は3つとも置け�
   // I横 を置くと横8 が揃って発動し、スペースが空くので2つ目以降も置ける可能性がある
   eq(typeof isSolvable(b, [new Piece('I0'), new Piece('O0'), new Piece('T0')]), 'boolean', '連鎖込みで判定できる');
 }
+/** ブロックが lo〜hi 個で、どのラインも満杯でない（発動が起きない）盤面を作る */
+function boardWithBlocks(rnd, lo, hi) {
+  const cells = [];
+  for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r)) cells.push([x, r]);
+  for (;;) {
+    const target = lo + Math.floor(rnd() * (hi - lo + 1));
+    const b = new Board();
+    for (const [x, r] of [...cells].sort(() => rnd() - 0.5)) {
+      if (b.totalBlocks() >= target) break;
+      b.set(x, r, createBlock('x'));
+      if (b.fullLines().length) b.set(x, r, null);
+    }
+    if (b.totalBlocks() === target) return b;
+  }
+}
+{
+  eq(MAX_BLOCKS, 28, '連鎖が終わった盤面に残せるのは最大 28 個（16本すべてに空きが要る）');
+  let seed = 19, max = 0; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let t = 0; t < 300; t++) {
+    const b = new Board();
+    for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && rnd() < 0.9) b.set(x, r, createBlock('x'));
+    resolveChains(b);
+    max = Math.max(max, b.totalBlocks());
+  }
+  eq(max <= MAX_BLOCKS, true, `ランダムに埋めて連鎖させた盤面も 28 個以下（最大 ${max}）`);
+}
 {
   let seed = 21; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  let trays = 0, oneFits = 0, solvable = 0, unavoidable = 0;
-  for (let t = 0; t < 250; t++) {
+  let trays = 0, solvable = 0, unavoidable = 0;
+  for (let t = 0; t < 200; t++) {
     const g = new Game({ random: rnd });
-    // ランダムに埋めた盤面（発動が起きない状態まで解決しておく）
-    for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && rnd() < 0.6) g.board.set(x, r, createBlock('x'));
-    resolveChains(g.board);
+    g.board = boardWithBlocks(rnd, 6, 22);                 // 埋まり具合 2割超〜8割未満
     if (!SHAPES.some((sh) => g.board.fits(new Piece(sh.name)))) { unavoidable++; continue; }
     const tray = g.spawnTray();
     trays++;
-    if (tray.some((p) => g.board.fits(p))) oneFits++;
     if (isSolvable(g.board, tray)) solvable++;
   }
-  eq(oneFits, trays, `必ず1つ以上置ける (${oneFits}/${trays})`);
-  eq(solvable / trays >= 0.9, true, `3つとも置ける割合 ${(solvable / trays * 100).toFixed(0)}% (>= 90%)`);
+  eq(solvable, trays, `8割未満: 3つとも置ける (${solvable}/${trays})`);
+}
+{
+  let seed = 23; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  let trays = 0, solvable = 0, randomTrays = 0, randomSolvable = 0;
+  for (let t = 0; t < 300; t++) {
+    const g = new Game({ random: rnd });
+    g.board = boardWithBlocks(rnd, 23, 27);                // 8割以上
+    // 3つとも置けるトレイが作れる盤面だけで数える
+    if (!Array.from({ length: 30 }, () => g.drawTray()).some((tr) => isSolvable(g.board, tr))) continue;
+    const tray = g.spawnTray();
+    trays++;
+    if (isSolvable(g.board, tray)) solvable++;
+    const rt = g.drawTray();
+    randomTrays++;
+    if (isSolvable(g.board, rt)) randomSolvable++;
+  }
+  const rate = solvable / trays, base = randomSolvable / randomTrays;
+  const expect = 0.5 + 0.5 * base;          // 5割は保証 + 残り5割のランダムがたまたま置ける分
+  eq(Math.abs(rate - expect) < 0.12, true,
+    `8割以上: 生き残れる割合 ${(rate * 100).toFixed(0)}%（期待 ${(expect * 100).toFixed(0)}%、ランダムだけなら ${(base * 100).toFixed(0)}%、${trays}盤面）`);
+}
+
+console.log('全消しのチャンス: 2割以下（5個以下）の盤面で約20%、6個置いたところで全消しできる手駒');
+{
+  let seed = 41; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const seq = planAllClear(new Board(), { depth: 6, random: rnd, budgetMs: 1000 });
+  eq(seq?.length, 6, '空の盤面から6手の手順が見つかる');
+  const b = new Board(), left = [];
+  for (const m of seq) {
+    const p = new Piece(m.name);
+    if (!b.canPlace(p, m.ox, m.oy)) { left.push('x'); break; }
+    b.place(p, m.ox, m.oy);
+    resolveChains(b);
+    left.push(b.totalBlocks());
+  }
+  eq(left.at(-1) === 0 && left.slice(0, -1).every((n) => n > 0), true, `本体で置いても6個目でちょうど全消し（残り ${left.join(' → ')}）`);
+  eq(seq.filter((m) => m.name.startsWith('Dot')).length <= 1, true, '1マスの形は1個まで');
+}
+{
+  // ブロックが少し残った盤面から: 見つかった手順は本体でも全消しになる
+  let seed = 43, found = 0, ok = true;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let t = 0; t < 20; t++) {
+    const b = boardWithBlocks(rnd, 1, 5);                // 2割以下
+    const seq = planAllClear(b, { depth: 6, random: rnd, budgetMs: 200 });
+    if (!seq) continue;
+    found++;
+    const c = b.clone();
+    for (const m of seq) { c.place(new Piece(m.name), m.ox, m.oy); resolveChains(c); }
+    if (c.totalBlocks() !== 0) ok = false;
+  }
+  eq(ok && found > 0, true, `残りがある盤面でも手順どおりなら全消し (${found}/20 で手順あり)`);
+}
+/** pieces を順番自由で全部置いて、最後の盤面が goal(sim) を満たす置き方 [{slot, ox, oy}] を探す */
+function findPlay(board, tray, goal) {
+  const rec = (s, rest) => {
+    if (!rest.length) return goal(s) ? [] : null;
+    for (const [k, { slot, piece }] of rest.entries()) {
+      for (const [ox, oy] of Sim.placements(s, piece.cells)) {
+        const b = Sim.cloneSim(s); Sim.place(b, piece.cells, ox, oy); Sim.resolveAll(b);
+        const tail = rec(b, rest.filter((_, j) => j !== k));
+        if (tail) return [{ slot, ox, oy }, ...tail];
+      }
+    }
+    return null;
+  };
+  return rec(Sim.fromBoard(board), tray.map((piece, slot) => ({ slot, piece })));
+}
+{
+  let seed = 47; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game({ random: rnd });
+  g.board = new Board(); g.plan = null; g.wantAllClear = true;      // チャンスを引いた状態
+  g.tray = g.spawnTray();
+  eq(!!g.plan && g.tray.length === 3, true, '1回目の3つを配り、2回目は計画として持つ');
+  const first = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) === g.plan.key);
+  let last = null;
+  for (const m of first ?? []) last = g.placePiece(m.slot, m.ox, m.oy);
+  eq(!!last?.refilled, true, '1回目を計画どおりに置き切れる');
+  const second = findPlay(g.board, g.tray, (s) => Sim.blocks(s) === 0);
+  for (const m of second ?? []) last = g.placePiece(m.slot, m.ox, m.oy);
+  eq([!!second, last?.allClear, g.board.totalBlocks()], [true, true, 0], '2回目の3つで全消し（turn.allClear）');
+}
+{
+  // 計画と違う置き方をしたときは、今の盤面から3つで全消しできる組を探し直す（見つかれば配る）
+  let seed = 53, replanned = 0, ok = true;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let t = 0; t < 15; t++) {
+    const g = new Game({ random: rnd });
+    g.board = boardWithBlocks(rnd, 1, 4);
+    g.plan = { key: -1, rest: [] };
+    const tray = g.spawnTray();
+    const seq = findPlay(g.board, tray, (s) => Sim.blocks(s) === 0);
+    if (seq) replanned++;
+  }
+  eq(replanned > 0, true, `探し直した3つで全消しできる (${replanned}/15)`);
+}
+{
+  // 確率: 空の盤面（2割以下）で補充するたびに約20%
+  let seed = 59, plans = 0;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game({ random: rnd }), N = 300;
+  for (let i = 0; i < N; i++) {
+    g.board = new Board(); g.plan = null; g.wantAllClear = false;
+    g.spawnTray();
+    if (g.plan) plans++;
+  }
+  eq(plans / N > 0.15 && plans / N < 0.25, true, `全消しの手駒になる割合 ${(plans / N * 100).toFixed(0)}%`);
+  // 2割を超える盤面では起きない
+  let over = 0;
+  for (let i = 0; i < 100; i++) {
+    g.board = boardWithBlocks(rnd, 6, 14); g.plan = null; g.wantAllClear = false;
+    g.spawnTray();
+    if (g.plan) over++;
+  }
+  eq(over, 0, '2割を超える盤面では全消しの手駒は出ない');
 }
 
 console.log('ゲーム進行');
