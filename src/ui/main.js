@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609240056';
-import { Board } from '../core/board.js?v=202609240056';
-import { resolveChains } from '../core/mancala.js?v=202609240056';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609240056';
-import { Renderer, delay } from './renderer.js?v=202609240056';
-import { Sfx } from './sfx.js?v=202609240056';
+import { Game } from '../core/game.js?v=202609240125';
+import { Board } from '../core/board.js?v=202609240125';
+import { resolveChains } from '../core/mancala.js?v=202609240125';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609240125';
+import { Renderer, delay } from './renderer.js?v=202609240125';
+import { Sfx } from './sfx.js?v=202609240125';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();

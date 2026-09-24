@@ -1,5 +1,5 @@
-import { Piece, SHAPES } from './pieces.js?v=202609240056';
-import * as Sim from './sim.js?v=202609240056';
+import { Piece, SHAPES } from './pieces.js?v=202609240125';
+import * as Sim from './sim.js?v=202609240125';
 
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 const CELLS = Object.fromEntries(SHAPES.map((s) => [s.name, new Piece(s.name).cells]));
@@ -27,6 +27,40 @@ export function solvable(s, names) {
   }
   return false;
 }
+
+/**
+ * 手駒を全部置き切る「置き方」を数える。数えるのは置き終えた盤面（連鎖後）の種類の数で、
+ * 置く順番を入れ替えただけで同じ結果になるものは1通りと数える（プレイヤーから見て同じ手なので）。
+ * cap 通り見つかった時点で打ち切る。{ count, ends: Set<盤面のキー> } を返す。
+ */
+export function countWays(s, names, cap = Infinity) {
+  const ends = new Set(), seen = new Set();
+  const rec = (st, rest) => {
+    if (ends.size >= cap) return;
+    const key = Sim.keyOf(st);
+    if (!rest.length) { ends.add(key); return; }
+    const memo = key + '|' + rest.join(',');             // 同じ盤面・同じ残りの形は1回だけ調べる
+    if (seen.has(memo)) return;
+    seen.add(memo);
+    for (let i = 0; i < rest.length; i++) {
+      if (i > 0 && rest[i] === rest[i - 1]) continue;     // 同じ形は1回試せば十分（rest は並べ替え済み）
+      const others = rest.filter((_, j) => j !== i);
+      const cells = CELLS[rest[i]];
+      for (const [ox, oy] of Sim.placements(st, cells)) {
+        const b = Sim.cloneSim(st);
+        Sim.place(b, cells, ox, oy);
+        Sim.resolveAll(b);
+        rec(b, others);
+        if (ends.size >= cap) return;
+      }
+    }
+  };
+  rec(s, [...names].sort());
+  return { count: ends.size, ends };
+}
+
+/** 形 name を盤面のどこに置けるかの数 */
+export const spots = (s, name) => Sim.placements(s, CELLS[name]).length;
 
 /**
  * 全消しの手順を探す。
