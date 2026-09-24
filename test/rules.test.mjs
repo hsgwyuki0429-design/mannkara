@@ -1,10 +1,10 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609240056';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240056';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240056';
-import { Game, isSolvable } from '../src/core/game.js?v=202609240056';
-import { planAllClear } from '../src/core/planner.js?v=202609240056';
-import * as Sim from '../src/core/sim.js?v=202609240056';
-import { isInside, lineCells, SIZE, MAX_BLOCKS } from '../src/core/constants.js?v=202609240056';
+import { Board, createBlock } from '../src/core/board.js?v=202609240125';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240125';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240125';
+import { Game, isSolvable } from '../src/core/game.js?v=202609240125';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609240125';
+import * as Sim from '../src/core/sim.js?v=202609240125';
+import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609240125';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -309,19 +309,18 @@ console.log('連鎖ピース: 約10% の確率で、置けば発動が起きる�
     return false;
   });
   eq(ok, true, '選ばれる向きは必ず発動を起こせる');
-  // 確率: spawnTray で通常抽選(next)を通らなかった枠 = 連鎖ピースとして選ばれた枠
+  // 確率: 1回の抽選(drawTray)で通常抽選(next)を通らなかった枠 = 連鎖ピースとして選ばれた枠
   let total = 0;
   const g3 = new Game({ random: rnd }); g3.board = g.board.clone();
-  g3.allClearTray = () => null;                // 全消しのチャンスは別に確かめる
   const origNext = g3.generator.next.bind(g3.generator);
   let naturalCount = 0;
   g3.generator.next = () => { naturalCount++; return origNext(); };
-  for (let i = 0; i < 4000; i++) { g3.spawnTray(); total += 3; }
+  for (let i = 0; i < 4000; i++) { g3.drawTray(); total += 3; }
   const rate = (total - naturalCount) / total;
   eq(rate > 0.085 && rate < 0.115, true, `連鎖ピースの割合 ${(rate * 100).toFixed(1)}%`);
 }
 
-console.log('トレイ保証: 8割未満は必ず3つとも置ける / 8割以上は5割が生き残れる、残りはランダム');
+console.log('トレイ保証: 埋まり具合に関係なく必ず詰まない置き方がある / 置き方の数は埋まるほど減る');
 {
   // 置ける場所が限られた盤面: 右上の角まわりだけ空ける
   const b = new Board();
@@ -359,37 +358,139 @@ function boardWithBlocks(rnd, lo, hi) {
   eq(max <= MAX_BLOCKS, true, `ランダムに埋めて連鎖させた盤面も 28 個以下（最大 ${max}）`);
 }
 {
-  let seed = 21; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  let trays = 0, solvable = 0, unavoidable = 0;
-  for (let t = 0; t < 200; t++) {
-    const g = new Game({ random: rnd });
-    g.board = boardWithBlocks(rnd, 6, 22);                 // 埋まり具合 2割超〜8割未満
-    if (!SHAPES.some((sh) => g.board.fits(new Piece(sh.name)))) { unavoidable++; continue; }
-    const tray = g.spawnTray();
-    trays++;
-    if (isSolvable(g.board, tray)) solvable++;
+  // 置き方の数え方: 置き終えた盤面（連鎖後）の種類の数。すべての順番・場所を素直に試す参照実装と比べる
+  const brute = (s, names) => {
+    const ends = new Set();
+    const rec = (st, rest) => {
+      if (!rest.length) { ends.add(Sim.keyOf(st)); return; }
+      rest.forEach((n, i) => {
+        const cells = new Piece(n).cells;
+        for (const [ox, oy] of Sim.placements(st, cells)) {
+          const b = Sim.cloneSim(st); Sim.place(b, cells, ox, oy); Sim.resolveAll(b);
+          rec(b, rest.filter((_, j) => j !== i));
+        }
+      });
+    };
+    rec(s, names);
+    return ends.size;
+  };
+  let seed = 17, same = true, nonzero = 0;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const small = SHAPES.filter((sh) => sh.cells.length <= 4).map((sh) => sh.name);
+  for (let t = 0; t < 25; t++) {
+    const s = Sim.fromBoard(boardWithBlocks(rnd, 18, 26));
+    const names = [0, 1, 2].map(() => small[Math.floor(rnd() * small.length)]);
+    const c = countWays(s, names).count;
+    if (c !== brute(s, names)) same = false;
+    if (c) nonzero++;
   }
-  eq(solvable, trays, `8割未満: 3つとも置ける (${solvable}/${trays})`);
+  eq(same && nonzero > 5, true, `置き方の数は、全部の順番・場所を試した参照実装と一致（25盤面, うち ${nonzero} 盤面で1通り以上）`);
+  const empty = Sim.fromBoard(new Board());
+  eq(countWays(empty, ['O30']).count, spots(empty, 'O30'), '1つだけなら置ける場所の数と同じ');
+  eq(countWays(Sim.fromBoard(new Board()), ['Dot0', 'Dot0', 'Dot0'], 50).count, 50, 'cap で打ち切る');
+  eq(targetWays(0) > targetWays(0.5) && targetWays(0.5) > targetWays(0.8) && targetWays(1) === 1, true,
+    `置き方の目標は埋まるほど減る（空 ${targetWays(0)} / 半分 ${targetWays(0.5)} / 8割 ${targetWays(0.8)} / 満杯 ${targetWays(1)}）`);
 }
 {
-  let seed = 23; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  let trays = 0, solvable = 0, randomTrays = 0, randomSolvable = 0;
-  for (let t = 0; t < 300; t++) {
+  let seed = 21; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const byFill = [[1, 6], [10, 14], [19, 23], [24, 27]].map(([lo, hi]) => {
+    let trays = 0, solvable = 0; const ways = [];
+    for (let t = 0; t < 80; t++) {
+      const g = new Game({ random: rnd });
+      g.allClearTray = () => null; g.searchTight = () => null;       // ふつうの決め方だけを見る
+      g.board = boardWithBlocks(rnd, lo, hi);
+      if (!SHAPES.some((sh) => g.board.fits(new Piece(sh.name)))) continue;
+      const tray = g.spawnTray();
+      trays++;
+      const w = countWays(Sim.fromBoard(g.board), tray.map((p) => p.name), 400).count;
+      if (w > 0) solvable++;
+      ways.push(w);
+    }
+    ways.sort((a, b) => a - b);
+    return { lo, hi, trays, solvable, median: ways[ways.length >> 1] };
+  });
+  for (const f of byFill) eq(f.solvable, f.trays, `ブロック ${f.lo}〜${f.hi} 個: 必ず詰まない置き方がある (${f.solvable}/${f.trays})`);
+  const med = byFill.slice(0, 3).map((f) => f.median);
+  eq(med[0] > med[1] && med[1] > med[2], true, `置き方の数（中央値）は埋まるほど減る ${byFill.map((f) => `${f.lo}〜${f.hi}個: ${f.median}`).join(' / ')}`);
+}
+
+console.log('ときどき「1つずつなら置けるのに、3つとも置ける置き方は1〜2通り」の組み合わせ');
+{
+  let seed = 29, found = 0, ok = true, tries = 0;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let t = 0; t < 20; t++) {
     const g = new Game({ random: rnd });
-    g.board = boardWithBlocks(rnd, 23, 27);                // 8割以上
-    // 3つとも置けるトレイが作れる盤面だけで数える
-    if (!Array.from({ length: 30 }, () => g.drawTray()).some((tr) => isSolvable(g.board, tr))) continue;
-    const tray = g.spawnTray();
-    trays++;
-    if (isSolvable(g.board, tray)) solvable++;
-    const rt = g.drawTray();
-    randomTrays++;
-    if (isSolvable(g.board, rt)) randomSolvable++;
+    g.board = boardWithBlocks(rnd, 3, 12);
+    const s = Sim.fromBoard(g.board);
+    tries++;
+    const pick = g.searchTight(s);
+    if (!pick) continue;
+    found++;
+    const names = pick.tray.map((p) => p.name);
+    const w = countWays(s, names).count;
+    if (!(w >= 1 && w <= 2) || !names.every((n) => spots(s, n) >= TIGHT_MIN_SPOTS)) ok = false;
   }
-  const rate = solvable / trays, base = randomSolvable / randomTrays;
-  const expect = 0.5 + 0.5 * base;          // 5割は保証 + 残り5割のランダムがたまたま置ける分
-  eq(Math.abs(rate - expect) < 0.12, true,
-    `8割以上: 生き残れる割合 ${(rate * 100).toFixed(0)}%（期待 ${(expect * 100).toFixed(0)}%、ランダムだけなら ${(base * 100).toFixed(0)}%、${trays}盤面）`);
+  eq(ok && found > 0, true, `置き方は1〜2通り・どの形も1つずつなら ${TIGHT_MIN_SPOTS} か所以上に置ける (${found}/${tries} 盤面で見つかった)`);
+}
+{
+  // 補充のたびに約10%（見つからなければ次の補充で探し直すので、出る割合もおよそ10%）
+  let seed = 31, tight = 0, n = 0;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game({ random: rnd });
+  g.allClearTray = () => null;
+  for (let i = 0; i < 300; i++) {
+    g.board = boardWithBlocks(rnd, 3, 12); g.history = new Set();
+    g.spawnTray(); n++;
+    if (g.lastLineup.kind === 'tight') tight++;
+  }
+  eq(tight / n > 0.05 && tight / n < 0.15, true, `置き方の少ない組み合わせの割合 ${(tight / n * 100).toFixed(0)}%`);
+  let high = 0;
+  for (let i = 0; i < 60; i++) { g.board = boardWithBlocks(rnd, 17, 27); g.spawnTray(); if (g.lastLineup.kind === 'tight') high++; }
+  eq(high, 0, '6割以上埋まっているときは出さない（ふつうの目標がもともと少ない）');
+}
+
+console.log('詰む組み合わせは「8割以上・詰まない置き方が1通りだけ・置くと前の盤面に戻る」ときだけ');
+{
+  let seed = 37; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // 置き方が1通りだけの組み合わせがある、8割以上の盤面を探す
+  let setup = null;
+  for (let t = 0; t < 400 && !setup; t++) {
+    const g = new Game({ random: rnd });
+    g.board = boardWithBlocks(rnd, 23, 27);
+    const s = Sim.fromBoard(g.board);
+    for (let k = 0; k < 30 && !setup; k++) {
+      const tray = g.drawTray(), w = countWays(s, tray.map((p) => p.name));
+      if (w.count === 1) setup = { g, tray, end: [...w.ends][0] };
+    }
+  }
+  eq(!!setup, true, '（前提）8割以上で置き方1通りの組み合わせがある盤面');
+  const { g, tray, end } = setup;
+  const s = Sim.fromBoard(g.board);
+  g.allClearTray = () => null;
+  g.drawTray = ((orig) => function () { return this.onlyThis ? this.onlyThis.map((p) => new Piece(p.name)) : orig.call(this); })(g.drawTray);
+  // その組み合わせしか引けないとき: 置き終えた盤面が初めてなら、詰まない（その組み合わせ）を配る
+  g.onlyThis = tray; g.history = new Set();
+  let dealt = g.spawnTray();
+  eq([g.lastLineup.kind, countWays(s, dealt.map((p) => p.name)).count], ['normal', 1], 'ループしないなら、置き方1通りでも詰まない組み合わせを配る');
+  // 置き終えた盤面が前に配った時の盤面と同じ（ループ）なら、詰む組み合わせを配る
+  g.history = new Set([end]);
+  g.drawTray = ((orig) => { let n = 0; return function () { return n++ < 40 ? this.onlyThis.map((p) => new Piece(p.name)) : (this.onlyThis = null, orig.call(this)); }; })(g.drawTray);
+  dealt = g.spawnTray();
+  eq(g.lastLineup.kind, 'stuck', 'ループするなら詰む組み合わせを配ってよい');
+  eq(countWays(s, dealt.map((p) => p.name), 1).count === 0 && dealt.some((p) => g.board.fits(p)), true, '配ったのは詰む（でも1つは置ける）組み合わせ');
+  // 8割未満なら、ループしても詰む組み合わせは配らない
+  const low = new Game({ random: rnd });
+  low.allClearTray = () => null; low.searchTight = () => null;
+  low.board = boardWithBlocks(rnd, 10, 14);
+  const ls = Sim.fromBoard(low.board);
+  let only = null;
+  for (let k = 0; k < 400 && !only; k++) { const tr = low.drawTray(); const w = countWays(ls, tr.map((p) => p.name)); if (w.count === 1) only = { tr, w }; }
+  if (only) {
+    low.drawTray = function () { return only.tr.map((p) => new Piece(p.name)); };
+    low.history = new Set(only.w.ends);
+    const d = low.spawnTray();
+    eq(countWays(ls, d.map((p) => p.name), 1).count, 1, '8割未満ならループしても詰まない組み合わせを配る');
+  }
 }
 
 console.log('全消しのチャンス: 2割以下（5個以下）の盤面で約20%、6個置いたところで全消しできる手駒');

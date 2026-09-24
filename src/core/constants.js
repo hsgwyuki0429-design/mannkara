@@ -42,12 +42,33 @@ export const TRAY_SIZE = 3;
 /** 手駒1つごとに「置けば発動が起きる形」を選ぶ確率 */
 export const CHAIN_PIECE_RATE = 0.1;
 /**
- * 新しいトレイの決め方（埋まり具合 = Board.fillRate = ブロック数 / 28）:
- *  - HARD_FILL 未満: 必ず「順番と場所を選べば3つとも置ける」（詰まない手順が1つ以上ある）組み合わせ
- *  - HARD_FILL 以上: HARD_SOLVABLE_RATE の確率で「うまい手順なら生き残れる」組み合わせ、残りは完全にランダム
+ * 新しいトレイの決め方（埋まり具合 f = Board.fillRate = ブロック数 / 28）:
+ *  - 埋まり具合に関係なく、必ず「順番と場所を選べば3つとも置ける」＝詰まない置き方が1つ以上ある組み合わせ
+ *  - 置き方の数（置き終えた盤面の種類。countWays）は埋まり具合に比例して桁で減らす:
+ *    目標 = WAYS_MAX^(1 - f)（空 300 → 半分 17 → 8割 3 → 満杯 1）。候補をいくつか抽選し、目標に一番近いものを配る
+ *  - 埋まり具合が TIGHT_MAX_FILL 未満（そんなに埋まっていない）でも、補充のたびに TIGHT_RATE の確率で
+ *    「置き方が1〜2通りしかない」組み合わせ。大きい形で押し込むのではなく、1つずつなら TIGHT_MIN_SPOTS か所以上に
+ *    置ける形だけで作る（1つずつなら置けるのに、3つとも置ける置き方はほとんど無い）。
+ *    見つからなければ次の補充でもう一度探す。それ以上埋まっていると、ふつうの目標がもともと 1〜十数通り
+ *  - 詰む組み合わせを配ってよいのは、埋まり具合が HARD_FILL 以上で、見つかった詰まない組み合わせが
+ *    どれも置き方1通りだけ、かつその置き方だと置き終えた盤面が前に配った時の盤面と同じになる（ループする）ときだけ
  */
+export const WAYS_MAX = 300;
+/** 目標の何倍以内なら、その候補で決める */
+export const WAYS_TOLERANCE = 2;
+export const TIGHT_RATE = 0.1;
+export const TIGHT_MAX_FILL = 0.6;         // ブロック 16 個まで
+export const TIGHT_MIN_SPOTS = 4;
+export const TIGHT_MAX_WAYS = 2;
+/** 置き方の少ない組み合わせ探し: 1つずつ形を入れ替えて置き方を減らしていく。数えるのは TIGHT_CAP 通りまで */
+export const TIGHT_CAP = 15;
+export const TIGHT_BUDGET_MS = 20;
 export const HARD_FILL = 0.8;              // ブロック 23 個以上
-export const HARD_SOLVABLE_RATE = 0.5;
+/** 候補の抽選の上限（数と時間） */
+export const LINEUP_CANDIDATES = 40;
+export const LINEUP_BUDGET_MS = 25;
+/** 埋まり具合 f のときの置き方の数の目標 */
+export const targetWays = (f) => Math.max(1, Math.round(Math.pow(WAYS_MAX, 1 - Math.min(1, Math.max(0, f)))));
 /**
  * 全消しのチャンス: 埋まり具合が ALL_CLEAR_FILL 以下（ブロック 5 個以下）のとき、ALL_CLEAR_RATE の確率で
  * 「ALL_CLEAR_PIECES 個（トレイ2回ぶん）置いたところで全消しできる」ように2回ぶんの手駒を計算して配る。

@@ -1,19 +1,23 @@
-import { Board } from './board.js?v=202609240056';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609240056';
-import { ScoreManager } from './score.js?v=202609240056';
-import { nextActivation, lineMoves } from './mancala.js?v=202609240056';
-import { solvable, planAllClear, keyAfter } from './planner.js?v=202609240056';
-import * as Sim from './sim.js?v=202609240056';
+import { Board } from './board.js?v=202609240125';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609240125';
+import { ScoreManager } from './score.js?v=202609240125';
+import { nextActivation, lineMoves } from './mancala.js?v=202609240125';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609240125';
+import * as Sim from './sim.js?v=202609240125';
 import {
-  TRAY_SIZE, CHAIN_PIECE_RATE, HARD_FILL, HARD_SOLVABLE_RATE,
+  TRAY_SIZE, CHAIN_PIECE_RATE, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
+  TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
+  LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_FILL, ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609240056';
+} from './constants.js?v=202609240125';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
  * 流れ: 置く → 満杯のライン(縦/横)のうち最小番号を1本発動、を発動が無くなるまで繰り返す
  *       → スコア確定 → トレイ補充（3つ使い切ったら）→ ゲームオーバー判定
  */
+const now = () => (globalThis.performance?.now?.() ?? Date.now());
+
 export class Game {
   constructor({ random = Math.random, hooks = {} } = {}) {
     this.generator = new PieceGenerator(random);
@@ -26,6 +30,9 @@ export class Game {
     this.score = new ScoreManager();
     this.plan = null;             // 全消しの計画の続き { key: 1回目を置き終えた盤面, rest: 2回目の手駒 }
     this.wantAllClear = false;    // 全消しのチャンスを引いたが、まだ手順が見つかっていない
+    this.wantTight = false;       // 置き方の少ない組み合わせのチャンスを引いたが、まだ見つかっていない
+    this.history = new Set();     // これまでに手駒を配った時の盤面（ループの判定用）
+    this.lastLineup = null;       // 直前に配った手駒の決め方（デバッグ・テスト用）
     this.tray = this.spawnTray();
     this.gameOver = false;
   }
@@ -89,34 +96,119 @@ export class Game {
   }
 
   /**
-   * 新しいトレイを作る（仕様。埋まり具合 fill = Board.fillRate）:
+   * 新しいトレイを作る（仕様は constants.js の WAYS_MAX の説明）:
    *  - 全消しのチャンス（allClearTray）なら、計算した手駒
-   *  - HARD_FILL 以上: HARD_SOLVABLE_RATE の確率で「うまい順番と場所なら3つとも置ける」組み合わせ、
-   *    残りは条件なしのランダム
-   *  - HARD_FILL 未満: 必ず「順番と場所を選べば3つとも置ける」組み合わせ（詰まない手順が1つ以上ある）
-   * 3つとも置ける組み合わせが見つからない盤面では、せめて1つは置ける組み合わせにする。
+   *  - それ以外は必ず詰まない置き方が1つ以上ある組み合わせ。置き方の数は埋まり具合に比例して減らし、
+   *    ときどき（searchTight）「1つずつなら置ける場所は多いのに、3つとも置ける置き方は1〜2通り」の組み合わせ
+   *  - 例外: 埋まり具合が HARD_FILL 以上で、詰まない組み合わせが置き方1通りだけ・置くと前の盤面に戻る（ループ）なら、
+   *    詰む組み合わせを配る（同じ盤面を永遠にくり返さないように）
    */
   spawnTray() {
     const fill = this.board.fillRate();
+    const start = Sim.fromBoard(this.board);
+    this.history.add(Sim.keyOf(start));
     const planned = this.allClearTray(fill);
-    if (planned) return planned;
-    if (fill >= HARD_FILL && this.generator.random() >= HARD_SOLVABLE_RATE) return this.drawTray();
+    if (planned) { this.lastLineup = { kind: 'allClear' }; return planned; }
 
-    let fallback = null;
+    if (fill >= TIGHT_MAX_FILL) this.wantTight = false;
+    else this.wantTight ||= this.generator.random() < TIGHT_RATE;
+    let pick = this.wantTight ? this.searchTight(start) : null;
+    if (pick) this.wantTight = false;                          // 見つからなければ次の補充でもう一度
+    pick ??= this.searchTray(start, fill);
+    if (!pick) { this.lastLineup = { kind: 'rescue' }; return this.rescueTray(start); }
+    if (fill >= HARD_FILL && pick.count === 1 && pick.loopOnly && !pick.escape) {
+      const stuck = this.stuckTray(start);
+      if (stuck) { this.lastLineup = { ...pick, kind: 'stuck' }; return stuck; }
+    }
+    this.lastLineup = pick;
+    return pick.tray;
+  }
+
+  /**
+   * 候補を抽選して、置き方の数が目標（targetWays）に一番近い組み合わせを選ぶ。
+   * 置き終えた盤面がどれも前に配った時の盤面と同じ（ループ）になる候補は、ほかに候補があれば選ばない。
+   * 詰まない候補が1つも無ければ null。
+   * 返り値 { kind, tray, count, target, loopOnly, escape: ループしない詰まない候補があったか }
+   */
+  searchTray(start, fill) {
+    const target = targetWays(fill);
+    const cap = Math.min(WAYS_MAX, Math.ceil(target * WAYS_TOLERANCE) + 1);
+    const deadline = now() + LINEUP_BUDGET_MS;
+    let best = null, escape = false;
+    for (let i = 0; i < LINEUP_CANDIDATES && (i < 3 || now() < deadline); i++) {
+      const tray = this.drawTray();
+      const { count, ends } = countWays(start, tray.map((p) => p.name), cap);
+      if (!count) continue;
+      const loopOnly = this.loops(ends);
+      if (!loopOnly) escape = true;
+      const score = Math.abs(Math.log(count / target)) + (loopOnly ? 10 : 0);
+      if (!best || score < best.score) best = { kind: 'normal', tray, count, target, loopOnly, score };
+      if (!loopOnly && count <= target * WAYS_TOLERANCE && count * WAYS_TOLERANCE >= target) break;
+    }
+    return best && { ...best, escape };
+  }
+
+  /**
+   * 「1つずつなら置ける場所は多い（TIGHT_MIN_SPOTS か所以上）のに、3つとも置ける置き方は TIGHT_MAX_WAYS 通り以下」
+   * の組み合わせを探す。ランダムに引くとほとんど出ないので、1つずつ形を入れ替え、置き方が減る（増えない）なら
+   * 採用する、をくり返す（行き詰まったら最初からやり直す）。TIGHT_BUDGET_MS で見つからなければ null。
+   */
+  searchTight(start) {
+    const ok = SHAPES.filter((s) => spots(start, s.name) >= TIGHT_MIN_SPOTS);
+    if (!ok.length) return null;
+    const pick = () => this.generator.pick(ok).name;
+    const ways = (names) => countWays(start, names, TIGHT_CAP);
+    const deadline = now() + TIGHT_BUDGET_MS;
+    let best = null;
+    while (now() < deadline && !(best?.count === 1)) {
+      let cur = Array.from({ length: TRAY_SIZE }, pick), w = ways(cur);
+      if (!w.count) continue;
+      for (let it = 0; it < 60 && w.count > 1 && now() < deadline; it++) {
+        const cand = [...cur];
+        cand[Math.floor(this.generator.random() * TRAY_SIZE)] = pick();
+        const cw = ways(cand);
+        if (cw.count >= 1 && cw.count <= w.count) { cur = cand; w = cw; }
+      }
+      if (w.count <= TIGHT_MAX_WAYS && !this.loops(w.ends) && (!best || w.count < best.count)) best = { names: cur, ...w };
+    }
+    if (!best) return null;
+    return { kind: 'tight', tray: this.deal(best.names.map((name) => ({ name }))), count: best.count, target: 1, loopOnly: false, escape: true };
+  }
+
+  /** 置き終えた盤面がどれも、これまでに手駒を配った時の盤面と同じか（＝同じ局面のくり返し） */
+  loops(ends) {
+    for (const k of ends) if (!this.history.has(k)) return false;
+    return true;
+  }
+
+  /**
+   * 抽選で詰まない組み合わせが見つからなかったとき: 置ける形だけから組み直し、
+   * それでもだめなら小さい形の組み合わせを順に全部試す。どうやっても無ければ（本当に詰んだ盤面）1つは置ける組み合わせ。
+   */
+  rescueTray(start) {
+    const placeable = SHAPES.filter((s) => Sim.fits(start, new Piece(s.name).cells));
+    if (!placeable.length) return this.drawTray();           // 何も入らない＝詰み
+    const ok = (names) => countWays(start, names, 1).count > 0;
+    for (let tries = 0; tries < TRAY_RETRIES; tries++) {
+      const names = Array.from({ length: TRAY_SIZE }, () => this.generator.pick(placeable).name);
+      if (ok(names)) return this.deal(names.map((name) => ({ name })));
+    }
+    const small = [...placeable].sort((a, b) => a.cells.length - b.cells.length).slice(0, 10).map((s) => s.name);
+    for (let i = 0; i < small.length; i++) for (let j = i; j < small.length; j++) for (let k = j; k < small.length; k++) {
+      const names = [small[i], small[j], small[k]];
+      if (ok(names)) return this.deal(names.map((name) => ({ name })));
+    }
+    return [new Piece(this.generator.pick(placeable).name), ...this.drawTray().slice(1)];
+  }
+
+  /** 詰む組み合わせ（ただし1つは置ける）。見つからなければ null */
+  stuckTray(start) {
     for (let tries = 0; tries < TRAY_RETRIES; tries++) {
       const tray = this.drawTray();
-      if (!tray.some((p) => this.board.fits(p))) continue;
-      if (isSolvable(this.board, tray)) return tray;
-      fallback ??= tray;
+      if (!tray.some((p) => Sim.fits(start, p.cells))) continue;
+      if (countWays(start, tray.map((p) => p.name), 1).count === 0) return tray;
     }
-    // 抽選で見つからなければ、置ける形だけから組み直す
-    const placeable = SHAPES.filter((s) => this.board.fits(new Piece(s.name)));
-    if (!placeable.length) return this.drawTray();           // 何も入らない＝詰み
-    for (let tries = 0; tries < TRAY_RETRIES; tries++) {
-      const tray = Array.from({ length: TRAY_SIZE }, () => new Piece(this.generator.pick(placeable).name));
-      if (isSolvable(this.board, tray)) return tray;
-    }
-    return fallback ?? [new Piece(this.generator.pick(placeable).name), ...this.drawTray().slice(1)];
+    return null;
   }
 
   /**
