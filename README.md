@@ -48,6 +48,11 @@
 - ゴール: 衝撃波の輪・重力で落ちる破片・得点が浮かぶ。スコアは数字がくるくる増える
 - 2連鎖以上で `Good! → Great! → Excellent! → Amazing! → Unbelievable!`（段階ごとに色と和音が派手に）
 - 盤面が空になったら `ALL CLEAR!` と紙吹雪・ファンファーレ
+- 長い連鎖でもカクつかないように:
+  - 光の粒・破片・衝撃波の輪・光の尾は DOM 要素ではなく1枚の canvas に描く（`src/ui/particles.js`。粒がいる範囲だけ描き直す）
+  - 同時にゴールへ入るブロックの演出と音は1回にまとめる
+  - アニメーションのやり直しに `offsetWidth` を読む強制レイアウトは使わない（Web Animations か要素の差し替え）
+  - 背景の光（コンボ・ピンチ）は opacity と scale だけを動かす（filter や box-shadow を毎フレーム動かさない）
 - 連続発動ターンは `COMBO n`。続くほど背景が光って脈打つ
 - ゲーム中にベストスコアを超えた瞬間に紙吹雪とファンファーレ
 
@@ -70,6 +75,6 @@
 ```
 src/core/   constants.js board.js pieces.js mancala.js score.js game.js   … ルール（DOM非依存）
             sim.js planner.js                                            … 手駒を決めるための探索（軽い盤面・全消しの計画）
-src/ui/     renderer.js main.js sfx.js styles.css                         … 描画・入力・音
+src/ui/     renderer.js particles.js main.js sfx.js styles.css            … 描画・入力・音
 test/       rules.test.mjs
 ```

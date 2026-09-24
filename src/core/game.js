@@ -1,13 +1,13 @@
-import { Board } from './board.js?v=202609240026';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609240026';
-import { ScoreManager } from './score.js?v=202609240026';
-import { nextActivation, lineMoves } from './mancala.js?v=202609240026';
-import { solvable, planAllClear, keyAfter } from './planner.js?v=202609240026';
-import * as Sim from './sim.js?v=202609240026';
+import { Board } from './board.js?v=202609240056';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609240056';
+import { ScoreManager } from './score.js?v=202609240056';
+import { nextActivation, lineMoves } from './mancala.js?v=202609240056';
+import { solvable, planAllClear, keyAfter } from './planner.js?v=202609240056';
+import * as Sim from './sim.js?v=202609240056';
 import {
   TRAY_SIZE, CHAIN_PIECE_RATE, HARD_FILL, HARD_SOLVABLE_RATE,
   ALL_CLEAR_FILL, ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609240026';
+} from './constants.js?v=202609240056';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。

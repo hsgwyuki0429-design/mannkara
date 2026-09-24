@@ -1,10 +1,10 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609240026';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240026';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240026';
-import { Game, isSolvable } from '../src/core/game.js?v=202609240026';
-import { planAllClear } from '../src/core/planner.js?v=202609240026';
-import * as Sim from '../src/core/sim.js?v=202609240026';
-import { isInside, lineCells, SIZE, MAX_BLOCKS } from '../src/core/constants.js?v=202609240026';
+import { Board, createBlock } from '../src/core/board.js?v=202609240056';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240056';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240056';
+import { Game, isSolvable } from '../src/core/game.js?v=202609240056';
+import { planAllClear } from '../src/core/planner.js?v=202609240056';
+import * as Sim from '../src/core/sim.js?v=202609240056';
+import { isInside, lineCells, SIZE, MAX_BLOCKS } from '../src/core/constants.js?v=202609240056';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
