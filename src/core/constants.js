@@ -78,10 +78,12 @@ export const ALL_CLEAR_FILL = 0.2;
 export const ALL_CLEAR_RATE = 0.2;
 export const ALL_CLEAR_PIECES = 6;
 /**
- * 盤面が空のとき（ゲーム開始・全消しの直後）は EMPTY_ALL_CLEAR_RATE の確率で、配る3つを置き切ったところで
- * もう一度全消しになる組み合わせにする（既存の形から。1マスの形はなるべく使わない）。空の盤面では上の6個の計画は使わない
+ * 盤面が空のとき（ゲーム開始・全消しの直後）は EMPTY_ALL_CLEAR_RATE の確率で、手順集（allclear-library.js）から
+ * 「6個以上（主に9個）をこの順番・この場所に置くと、最後の1個でちょうど全消し」の手順を選び、3個ずつ配る。
+ * 手順どおりの盤面になっていないと（違う置き方をしたら）そこで計画はおしまい（探し直さない）。
+ * 空の盤面では上の6個の計画は使わない
  */
-export const EMPTY_ALL_CLEAR_RATE = 0.4;
+export const EMPTY_ALL_CLEAR_RATE = 0.6;
 /** 全消しの手順探しにかける時間の上限（ms）。見つからなければ普通の手駒にする */
 export const ALL_CLEAR_BUDGET_MS = 40;
 /** 条件を満たすトレイを探す抽選回数の上限 */

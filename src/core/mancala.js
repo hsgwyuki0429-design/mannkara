@@ -1,5 +1,5 @@
-import { Board } from './board.js?v=202609240209';
-import { KIND_PRIORITY } from './constants.js?v=202609240209';
+import { Board } from './board.js?v=202609240234';
+import { KIND_PRIORITY } from './constants.js?v=202609240234';
 
 /**
  * ライン(kind, n) の発動を1move ずつ進めるジェネレータ。縦列・横列で完全に同じ処理。
