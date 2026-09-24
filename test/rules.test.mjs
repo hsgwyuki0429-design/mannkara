@@ -1,10 +1,10 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609240125';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240125';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240125';
-import { Game, isSolvable } from '../src/core/game.js?v=202609240125';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609240125';
-import * as Sim from '../src/core/sim.js?v=202609240125';
-import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609240125';
+import { Board, createBlock } from '../src/core/board.js?v=202609240209';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240209';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240209';
+import { Game, isSolvable } from '../src/core/game.js?v=202609240209';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609240209';
+import * as Sim from '../src/core/sim.js?v=202609240209';
+import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609240209';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -542,8 +542,12 @@ function findPlay(board, tray, goal) {
 {
   let seed = 47; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd });
-  g.board = new Board(); g.plan = null; g.wantAllClear = true;      // チャンスを引いた状態
-  g.tray = g.spawnTray();
+  // ブロックが少し残った盤面でチャンスを引いた状態（空の盤面は別の決め方）
+  for (let tries = 0; tries < 30; tries++) {
+    g.board = boardWithBlocks(rnd, 1, 3); g.plan = null; g.wantAllClear = true;
+    g.tray = g.spawnTray();
+    if (g.plan) break;
+  }
   eq(!!g.plan && g.tray.length === 3, true, '1回目の3つを配り、2回目は計画として持つ');
   const first = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) === g.plan.key);
   let last = null;
@@ -568,16 +572,16 @@ function findPlay(board, tray, goal) {
   eq(replanned > 0, true, `探し直した3つで全消しできる (${replanned}/15)`);
 }
 {
-  // 確率: 空の盤面（2割以下）で補充するたびに約20%
-  let seed = 59, plans = 0;
+  // 確率: 2割以下（空ではない）の盤面で補充するたびに約20%でチャンス（手順が見つかるまで次の補充でも探す）
+  let seed = 59, chances = 0;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd }), N = 300;
   for (let i = 0; i < N; i++) {
-    g.board = new Board(); g.plan = null; g.wantAllClear = false;
+    g.board = boardWithBlocks(rnd, 1, 5); g.plan = null; g.wantAllClear = false;
     g.spawnTray();
-    if (g.plan) plans++;
+    if (g.plan || g.wantAllClear) chances++;
   }
-  eq(plans / N > 0.15 && plans / N < 0.25, true, `全消しの手駒になる割合 ${(plans / N * 100).toFixed(0)}%`);
+  eq(chances / N > 0.15 && chances / N < 0.25, true, `全消しのチャンスを引く割合 ${(chances / N * 100).toFixed(0)}%`);
   // 2割を超える盤面では起きない
   let over = 0;
   for (let i = 0; i < 100; i++) {
@@ -586,6 +590,33 @@ function findPlay(board, tray, goal) {
     if (g.plan) over++;
   }
   eq(over, 0, '2割を超える盤面では全消しの手駒は出ない');
+}
+{
+  // 盤面が空のときは約40%で「この3つを置き切ると全消し」の組み合わせ
+  let seed = 61, hits = 0, ok = true, dots = 0;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game({ random: rnd }), N = 300;
+  for (let i = 0; i < N; i++) {
+    g.board = new Board(); g.plan = null; g.wantAllClear = false;
+    const tray = g.spawnTray();
+    if (g.lastLineup.kind !== 'allClear') continue;
+    hits++;
+    if (g.plan) ok = false;                                      // 3つで完結する（2回目の計画は持たない）
+    if (hits <= 30) {
+      const play = findPlay(g.board, tray, (s) => Sim.blocks(s) === 0);
+      if (!play) ok = false;
+      if (tray.some((p) => p.type === 'Dot')) dots++;
+    }
+  }
+  eq(hits / N > 0.33 && hits / N < 0.47, true, `空の盤面で全消しの組み合わせになる割合 ${(hits / N * 100).toFixed(0)}%`);
+  eq(ok, true, '配った3つを置き切ると全消しできる（30組で確認）');
+  eq(dots <= 3, true, `1マスの形はなるべく使わない（30組中 ${dots} 組）`);
+  // 実際に置いて全消しになる
+  g.board = new Board();
+  for (let k = 0; k < 20 && g.lastLineup?.kind !== 'allClear'; k++) { g.board = new Board(); g.plan = null; g.tray = g.spawnTray(); }
+  let last = null;
+  for (const m of findPlay(g.board, g.tray, (s) => Sim.blocks(s) === 0) ?? []) last = g.placePiece(m.slot, m.ox, m.oy);
+  eq(last?.allClear, true, '3つ目で ALL CLEAR（turn.allClear）');
 }
 
 console.log('ゲーム進行');

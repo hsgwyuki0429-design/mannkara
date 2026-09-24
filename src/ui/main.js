@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609240125';
-import { Board } from '../core/board.js?v=202609240125';
-import { resolveChains } from '../core/mancala.js?v=202609240125';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609240125';
-import { Renderer, delay } from './renderer.js?v=202609240125';
-import { Sfx } from './sfx.js?v=202609240125';
+import { Game } from '../core/game.js?v=202609240209';
+import { Board } from '../core/board.js?v=202609240209';
+import { resolveChains } from '../core/mancala.js?v=202609240209';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609240209';
+import { Renderer, delay } from './renderer.js?v=202609240209';
+import { Sfx } from './sfx.js?v=202609240209';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -76,6 +76,7 @@ async function playTurn(turn) {
     renderer.setFever((turn.streak - 1) / 5);
     if (turn.streak >= 2) { renderer.showCombo(turn.streak); sfx.combo(turn.streak); }
   } else renderer.setFever(0);
+  let shownTier = 0;                                       // このターンで光線を出した褒め言葉の段階
   for (const [i, step] of turn.steps.entries()) {
     const sp = speeds[i] * backlog();
     if (i === 0) await renderer.charge(step.kind, step.n, step.stack[0]?.color, 70 / backlog());
@@ -83,13 +84,16 @@ async function playTurn(turn) {
     const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
     if (step.chain >= 2) {
       renderer.showText(`${step.chain} CHAIN<small>${praise}</small>`, `t${tier}`);
+      if (tier > shownTier) { shownTier = tier; renderer.textBurst(tier); }   // 段階が上がった時だけ（毎回だと光りっぱなしになる）
       sfx.praise(tier);
     }
+    if (turn.streak >= 3 && i % 2 === 0) renderer.embers(Math.min(1, (turn.streak - 2) / 5));
     if (step.gained) renderer.floatScore(step.gained, step.chain);
     showScore(step.score, true);
     await delay(ANIM.betweenChains / sp);
   }
   if (turn.allClear) {
+    renderer.allClearBlast();
     renderer.confetti();
     renderer.showText('ALL CLEAR!', 't5');
     sfx.fanfare();
@@ -151,6 +155,7 @@ function showScore(v, bump = false) {
   if (!bestCelebrated && best > 0 && v > best) {
     bestCelebrated = true;
     renderer.confetti();
+    renderer.fireworks(4, 180);
     renderer.showText('NEW BEST!', 't5');
     sfx.fanfare();
     document.querySelector('.best-pill')?.classList.add('beat');
@@ -191,7 +196,6 @@ function renderTray(enter = false) {
     if (enter) slot.style.setProperty('animation-delay', `${i * 50}ms`);
     if (piece) {
       const s = trayCellSize(piece, slotBox);
-      if (!game.board.fits(piece)) slot.classList.add('nofit');
       const box = document.createElement('div');
       box.className = 'piece';
       box.style.width = piece.width * s + 'px';

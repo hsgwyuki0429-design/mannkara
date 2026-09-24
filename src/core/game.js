@@ -1,15 +1,15 @@
-import { Board } from './board.js?v=202609240125';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609240125';
-import { ScoreManager } from './score.js?v=202609240125';
-import { nextActivation, lineMoves } from './mancala.js?v=202609240125';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609240125';
-import * as Sim from './sim.js?v=202609240125';
+import { Board } from './board.js?v=202609240209';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609240209';
+import { ScoreManager } from './score.js?v=202609240209';
+import { nextActivation, lineMoves } from './mancala.js?v=202609240209';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609240209';
+import * as Sim from './sim.js?v=202609240209';
 import {
   TRAY_SIZE, CHAIN_PIECE_RATE, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
-  ALL_CLEAR_FILL, ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609240125';
+  ALL_CLEAR_FILL, ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
+} from './constants.js?v=202609240209';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -215,6 +215,7 @@ export class Game {
    * 全消しのチャンス。埋まり具合が ALL_CLEAR_FILL 以下のとき ALL_CLEAR_RATE の確率で、
    * 「ALL_CLEAR_PIECES 個（トレイ2回ぶん）置いたところで全消しできる」手順を計算し、その1回目を配る。
    * 2回目は、計画どおりの盤面になっていれば計画の続きを、違っていれば今の盤面から3つで全消しできる組を探し直して配る。
+   * 盤面が空のときは別扱いで、EMPTY_ALL_CLEAR_RATE の確率で「この3つを置き切ると全消し」の組み合わせを配る。
    * 該当しない・手順が見つからないときは null（普通の手駒にする）。
    */
   allClearTray(fill) {
@@ -225,6 +226,13 @@ export class Game {
       if (Sim.keyOf(Sim.fromBoard(this.board)) === plan.key) return this.deal(plan.rest);
       const seq = planAllClear(this.board, { depth: TRAY_SIZE, random, budgetMs: ALL_CLEAR_BUDGET_MS });
       if (seq) return this.deal(seq);
+    }
+    if (this.board.totalBlocks() === 0) {
+      this.wantAllClear = false;
+      if (random() >= EMPTY_ALL_CLEAR_RATE) return null;
+      const opts = { depth: TRAY_SIZE, random, budgetMs: ALL_CLEAR_BUDGET_MS };
+      const seq = planAllClear(this.board, { ...opts, avoid: ['Dot'] }) ?? planAllClear(this.board, opts);
+      return seq ? this.deal(seq) : null;
     }
     if (fill > ALL_CLEAR_FILL) { this.wantAllClear = false; return null; }
     this.wantAllClear ||= random() < ALL_CLEAR_RATE;
