@@ -1,5 +1,5 @@
-import { Piece, SHAPES } from './pieces.js?v=202609240308';
-import * as Sim from './sim.js?v=202609240308';
+import { Piece, SHAPES } from './pieces.js?v=202609240336';
+import * as Sim from './sim.js?v=202609240336';
 
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 const CELLS = Object.fromEntries(SHAPES.map((s) => [s.name, new Piece(s.name).cells]));
@@ -67,14 +67,16 @@ export const spots = (s, name) => Sim.placements(s, CELLS[name]).length;
  * 今の盤面から depth 個のピースを順に置き、ちょうど depth 個目で盤面が空になる手順を返す
  * （途中で空になる手順は使わない。全消しは最後の見せ場にする）。
  * ビームサーチを、揺らぎを変えながら budgetMs の間くり返す。avoid に挙げた種類（'Dot' など）は使わない。
+ * depth の代わりに depths（手数の候補の配列）を渡すと、くり返すたびに候補からランダムに選ぶ。
  * 見つかれば [{ name, ox, oy }, …]、見つからなければ null。
  */
-export function planAllClear(board, { depth, random = Math.random, budgetMs = 40, beam = 10, sample = 10, avoid = [] } = {}) {
+export function planAllClear(board, { depth, depths = [depth], random = Math.random, budgetMs = 40, beam = 10, sample = 10, avoid = [] } = {}) {
   const deadline = now() + budgetMs;
   const start = Sim.fromBoard(board);
   const ok = (name) => !avoid.includes(TYPE_OF[name]);
   do {
-    const seq = beamSearch(start, depth, random, beam, sample, deadline, ok);
+    const d = depths[Math.floor(random() * depths.length)];
+    const seq = beamSearch(start, d, random, beam, sample, deadline, ok);
     if (seq) return seq;
   } while (now() < deadline);
   return null;
