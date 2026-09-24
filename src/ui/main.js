@@ -1,9 +1,9 @@
-import { Game } from '../core/game.js?v=202609231014';
-import { Board } from '../core/board.js?v=202609231014';
-import { resolveChains } from '../core/mancala.js?v=202609231014';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609231014';
-import { Renderer, delay } from './renderer.js?v=202609231014';
-import { Sfx } from './sfx.js?v=202609231014';
+import { Game } from '../core/game.js?v=202609240026';
+import { Board } from '../core/board.js?v=202609240026';
+import { resolveChains } from '../core/mancala.js?v=202609240026';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609240026';
+import { Renderer, delay } from './renderer.js?v=202609240026';
+import { Sfx } from './sfx.js?v=202609240026';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -88,6 +88,11 @@ async function playTurn(turn) {
     if (step.gained) renderer.floatScore(step.gained, step.chain);
     showScore(step.score, true);
     await delay(ANIM.betweenChains / sp);
+  }
+  if (turn.allClear) {
+    renderer.confetti();
+    renderer.showText('ALL CLEAR!', 't5');
+    sfx.fanfare();
   }
   showScore(turn.score);
   updateDanger();

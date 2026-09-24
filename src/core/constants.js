@@ -11,6 +11,14 @@ export const SIZE = 8;
 export const KINDS = ['col', 'row'];
 
 export const isInside = (x, r) => x >= 0 && r >= 0 && x < SIZE && r < SIZE && x + r <= SIZE - 1;
+/** 盤面のマス数（36） */
+export const CELL_COUNT = (SIZE * (SIZE + 1)) / 2;
+/**
+ * 連鎖が終わった盤面に残せるブロックの最大数（28）。
+ * 縦8本・横8本のどれも満杯ではない＝16本すべてに空きが要り、1つの空きは縦横1本ずつしか受け持てないので、
+ * 空きは最低 8 マス。埋まり具合（Board.fillRate）はこれに対する割合で測る（36 マスに対する割合だと 78% が上限になる）。
+ */
+export const MAX_BLOCKS = CELL_COUNT - SIZE;
 
 /** ライン(kind, n) のマスを slot 順（0 = 斜辺側の端）で返す */
 export function lineCells(kind, n) {
@@ -31,10 +39,25 @@ export const KIND_PRIORITY = { col: 0, row: 1 };
 
 // ===== トレイ =====
 export const TRAY_SIZE = 3;
-/** 手駒1つごとに「置けば発動が起きるテトロミノ」を選ぶ確率 */
+/** 手駒1つごとに「置けば発動が起きる形」を選ぶ確率 */
 export const CHAIN_PIECE_RATE = 0.1;
-/** 新しいトレイが「順番と場所を選べば3つとも置ける」組み合わせになる確率（残りは1つ以上置けるだけ保証） */
-export const SOLVABLE_TRAY_RATE = 0.9;
+/**
+ * 新しいトレイの決め方（埋まり具合 = Board.fillRate = ブロック数 / 28）:
+ *  - HARD_FILL 未満: 必ず「順番と場所を選べば3つとも置ける」（詰まない手順が1つ以上ある）組み合わせ
+ *  - HARD_FILL 以上: HARD_SOLVABLE_RATE の確率で「うまい手順なら生き残れる」組み合わせ、残りは完全にランダム
+ */
+export const HARD_FILL = 0.8;              // ブロック 23 個以上
+export const HARD_SOLVABLE_RATE = 0.5;
+/**
+ * 全消しのチャンス: 埋まり具合が ALL_CLEAR_FILL 以下（ブロック 5 個以下）のとき、ALL_CLEAR_RATE の確率で
+ * 「ALL_CLEAR_PIECES 個（トレイ2回ぶん）置いたところで全消しできる」ように2回ぶんの手駒を計算して配る。
+ * 手順が見つからなかったときは、次の補充でもう一度探す。
+ */
+export const ALL_CLEAR_FILL = 0.2;
+export const ALL_CLEAR_RATE = 0.2;
+export const ALL_CLEAR_PIECES = 6;
+/** 全消しの手順探しにかける時間の上限（ms）。見つからなければ普通の手駒にする */
+export const ALL_CLEAR_BUDGET_MS = 40;
 /** 条件を満たすトレイを探す抽選回数の上限 */
 export const TRAY_RETRIES = 40;
 
