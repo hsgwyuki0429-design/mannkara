@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells } from './constants.js?v=202609240234';
+import { SIZE, isInside, lineCells } from './constants.js?v=202609240308';
 
 /**
  * 探索用の軽い盤面（手駒の組み合わせ探索・全消しの計画で何万回も試すため）。
@@ -39,6 +39,9 @@ function empty(s, i) {
   s[cntAt(0, COL_OF(i))]--;
   s[cntAt(1, ROW_OF(i))]--;
 }
+
+/** ライン(kind 'col' | 'row', n) にあるブロックの数 */
+export const lineCount = (s, kind, n) => s[cntAt(kind === 'col' ? 0 : 1, n)];
 
 export function blocks(s) {
   let n = 0;
