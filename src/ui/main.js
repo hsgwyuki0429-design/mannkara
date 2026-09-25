@@ -1,10 +1,10 @@
-import { Game } from '../core/game.js?v=202609251235';
-import { Board } from '../core/board.js?v=202609251235';
-import { resolveChains } from '../core/mancala.js?v=202609251235';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251235';
-import { Renderer, delay } from './renderer.js?v=202609251235';
-import { Sfx } from './sfx.js?v=202609251235';
-import { Scenes } from './scenes.js?v=202609251235';
+import { Game } from '../core/game.js?v=202609251248';
+import { Board } from '../core/board.js?v=202609251248';
+import { resolveChains } from '../core/mancala.js?v=202609251248';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251248';
+import { Renderer, delay } from './renderer.js?v=202609251248';
+import { Sfx } from './sfx.js?v=202609251248';
+import { Scenes } from './scenes.js?v=202609251248';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -193,7 +193,7 @@ function updateHud() { cancelAnimationFrame(rollRaf); shownScore = game.score.sc
  * 225° 回転して表示するので、w×h の形は画面上で (w+h)/√2 マス四方になる。
  */
 function trayCellSize(piece, box) {
-  const room = Math.min(box.width, box.height) - 18;
+  const room = Math.min(box.width, box.height) - 10;
   return Math.max(10, Math.min(renderer.cell, Math.floor((room * Math.SQRT2) / (piece.width + piece.height))));
 }
 /** 225° 回転した形の、画面上でマスが占める範囲の中心（形の外接四角の中心からのずれ, px） */
@@ -451,7 +451,6 @@ function restart() {
   updateHint();
 }
 applyMode();
-$('btnRestart').addEventListener('click', restart);
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); restart(); });
 window.addEventListener('resize', () => renderTray());
 restart();
