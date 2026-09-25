@@ -129,10 +129,10 @@ button{font-family:inherit;cursor:pointer;}
 .block.pop-in{animation:landFlash 360ms ease-out var(--d,0ms) both;}
 @keyframes land{0%{scale:1.22}45%{scale:.9}72%{scale:1.04}100%{scale:1}}
 @keyframes landFlash{0%{filter:brightness(2.1) saturate(.7)}100%{filter:none}}
-/* 着地したマスに広がる光の輪と粒 */
-.land-ring{border-radius:18%;box-shadow:0 0 0 2px color-mix(in srgb,var(--col),#fff 55%),0 0 12px var(--col);
+/* 着地したマスにふわっと広がる丸い光（線の輪は使わない） */
+.land-ring{border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--col),#fff 55%) 0,color-mix(in srgb,var(--col) 55%,transparent) 42%,transparent 70%);
   animation:ring 480ms ease-out both;pointer-events:none;}
-@keyframes ring{0%{opacity:.95;scale:.85}100%{opacity:0;scale:1.45}}
+@keyframes ring{0%{opacity:.9;scale:.7}100%{opacity:0;scale:1.7}}
 .block.travel{z-index:5;filter:brightness(1.12) drop-shadow(0 0 6px var(--col));}
 .block.flash{filter:brightness(2.2) saturate(.6);}
 .block.fly::before,.block.fly::after{opacity:0;scale:.4;}
@@ -205,31 +205,22 @@ button{font-family:inherit;cursor:pointer;}
 /* ---- 発動・ゴールの演出 ---- */
 .fx2{z-index:7;overflow:visible;}
 .fx-canvas{position:absolute;z-index:7;pointer-events:none;}
-/* 大きな光（フレア・放射状の光線）: 1枚絵を transform と opacity だけで動かす（毎フレーム描き直さない） */
-.fx-flare,.fx-rays{position:absolute;left:0;top:0;pointer-events:none;opacity:0;transform-origin:50% 50%;}
-.fx-flare{border-radius:50%;}
-.fx-flare{width:96px;height:96px;}
-.fx-rays{width:160px;height:160px;background:center/100% 100% no-repeat;}
-.fx-flare{background:radial-gradient(circle,rgba(255,255,255,.85),color-mix(in srgb,var(--hi) 80%,transparent) 12%,
+/* 大きな丸い光（フレア）: 1枚絵を transform と opacity だけで動かす（毎フレーム描き直さない） */
+.fx-flare{position:absolute;left:0;top:0;width:96px;height:96px;border-radius:50%;pointer-events:none;opacity:0;transform-origin:50% 50%;
+  background:radial-gradient(circle,rgba(255,255,255,.85),color-mix(in srgb,var(--hi) 80%,transparent) 12%,
   color-mix(in srgb,var(--col) 48%,transparent) 32%,color-mix(in srgb,var(--col) 14%,transparent) 50%,transparent 68%);}
-/* 光線は renderer.drawRays が canvas に1回だけ描く */
-.line-flash{border-radius:18%;background:color-mix(in srgb,var(--col),#fff 60%);box-shadow:0 0 14px 4px var(--col),inset 0 0 8px var(--col);
-  animation:lineFlash 440ms ease-out both;}
-@keyframes lineFlash{0%{opacity:0;scale:.6}15%{opacity:1;scale:1.12}100%{opacity:0;scale:1}}
-.beam{position:absolute;pointer-events:none;border-radius:999px;mix-blend-mode:screen;
-  background:linear-gradient(var(--dir,90deg),transparent,color-mix(in srgb,var(--col),#fff 60%) 35%,#fff 50%,color-mix(in srgb,var(--col),#fff 60%) 65%,transparent);
-  box-shadow:0 0 24px 6px var(--col);animation:beam 400ms ease-out both;}
-.beam.row{--dir:0deg;}
-.beam.col{animation-name:beamCol;}
-@keyframes beam{0%{opacity:1;scale:1 .1}40%{opacity:1;scale:1 1.5}100%{opacity:0;scale:1 2.4}}
-@keyframes beamCol{0%{opacity:1;scale:.1 1}40%{opacity:1;scale:1.5 1}100%{opacity:0;scale:2.4 1}}
+/* 発動したラインの各マスが、丸い光の玉になってぽんと膨らんで消える */
+.line-flash{border-radius:50%;background:radial-gradient(circle,#fff 0,color-mix(in srgb,var(--col),#fff 55%) 30%,color-mix(in srgb,var(--col) 60%,transparent) 55%,transparent 72%);
+  animation:lineFlash 460ms cubic-bezier(.2,.8,.3,1) both;}
+@keyframes lineFlash{0%{opacity:0;scale:.3}18%{opacity:1;scale:1.35}100%{opacity:0;scale:1.8}}
 .float-score{position:absolute;translate:-50% -50%;font-weight:900;font-size:calc(var(--cell) * .62);color:#fff;white-space:nowrap;
   -webkit-text-stroke:1.2px rgba(20,20,80,.5);paint-order:stroke fill;text-shadow:0 2px 0 rgba(0,0,0,.25);
   animation:floatUp 880ms cubic-bezier(.2,.8,.3,1) forwards;pointer-events:none;}
 .float-score.warm{color:var(--gold);font-size:calc(var(--cell) * .75);}
 .float-score.hot{color:#ff7ad0;font-size:calc(var(--cell) * .9);text-shadow:0 0 12px rgba(255,90,200,.8);}
 @keyframes floatUp{0%{opacity:0;scale:.5}15%{opacity:1;scale:1.25}30%{scale:1}75%{opacity:1}100%{opacity:0;translate:-50% calc(-50% - var(--cell) * 1.8)}}
-.confetti{position:absolute;width:9px;height:14px;margin:-7px -4px;border-radius:2px;background:var(--col);pointer-events:none;}
+.confetti{position:absolute;width:11px;height:11px;margin:-5.5px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle at 35% 32%,var(--hi),var(--col) 55%,var(--lo));}   /* 丸い紙吹雪（左上から光） */
 #screenFlash{position:fixed;inset:0;z-index:25;pointer-events:none;opacity:0;
   background:radial-gradient(circle at 50% 45%,color-mix(in srgb,var(--col,#fff),#fff 65%),color-mix(in srgb,var(--col,#fff),transparent 55%) 55%,transparent 85%);}
 /* コンボが続くほど背景が光って脈打つ。色は1色に偏らないよう、色の違う3枚をゆっくり順に重ね替える（明るさは一定）。
@@ -258,24 +249,24 @@ button{font-family:inherit;cursor:pointer;}
 #fever.off,#fever.off::before,#fever.off::after,#danger.off::before{animation-play-state:paused;}
 #app{z-index:1;}
 /* ---- 画面全体の演出（scenes.js） ----
-   奥（盤面の後ろ）: 色の変化 #sceneTint・光の放射 #sceneBurst・海と星 #sceneBack / 手前: 風船 #sceneFront
-   色の変化と光の放射は1回だけ描いた絵を opacity と transform だけで動かす */
-#sceneBack,#sceneFront{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;}
-#sceneBack{z-index:0;}
+   奥（盤面の後ろ）: 色の変化 #sceneTint・光の玉とぼかしの丸 #sceneStars / 手前（盤面の前）: 全消しの演出 #sceneFront
+   色の変化は1回だけ描いた 400px の絵を拡大し、opacity と transform だけで動かす */
+#sceneFront,#sceneSea{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:24;}
+#sceneIris{position:fixed;left:0;top:0;width:400px;height:400px;border-radius:50%;z-index:24;pointer-events:none;transform:scale(0);}
+#sceneIrisFx{position:fixed;inset:0;z-index:24;pointer-events:none;overflow:hidden;}
 #sceneStars{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
 .scene-star{position:absolute;left:0;top:0;width:64px;height:64px;background:center/100% 100% no-repeat;opacity:0;}
-#sceneFront{z-index:24;}
-/* 色の変化と光の放射は 400px の絵を拡大して使う（画面より大きい絵をそのまま作ると、高解像度の画面で描く量が桁違いに増える） */
+/* 色の変化は 400px の絵を拡大して使う（画面より大きい絵をそのまま作ると、高解像度の画面で描く量が桁違いに増える） */
 #sceneTint{position:fixed;left:50%;top:50%;width:400px;height:400px;margin:-200px 0 0 -200px;z-index:0;pointer-events:none;opacity:0;}
 #sceneTint.t-sea{background:radial-gradient(closest-side,rgba(90,235,255,.85),rgba(40,170,240,.55) 45%,rgba(30,110,220,.35) 75%,transparent);}
 /* 暖色は青の上に薄く重ねると灰色に濁るので、夕焼けのように濃い色を画面の下（または中心）から広げる。
    大きな絵（200vmax）の中で、画面は縦 25%〜75% の範囲に当たる */
 #sceneTint.t-gold{background:radial-gradient(closest-side,rgba(255,222,110,.95),rgba(255,166,70,.85) 18%,rgba(255,104,140,.5) 36%,transparent 56%);}
+#sceneTint.t-bubble{background:radial-gradient(closest-side,rgba(200,245,255,.9),rgba(150,190,255,.6) 30%,rgba(230,160,255,.4) 55%,transparent 78%);}
+#sceneTint.t-candy{background:radial-gradient(closest-side,rgba(255,236,160,.9),rgba(255,160,200,.62) 30%,rgba(160,140,255,.38) 56%,transparent 78%);}
 #sceneTint.t-amazing{background:radial-gradient(closest-side,rgba(255,150,225,.9),rgba(190,90,255,.55) 42%,rgba(90,80,255,.3) 72%,transparent);}
 #sceneTint.t-warm{background:linear-gradient(to top,transparent 23%,rgba(255,150,70,.95) 25%,rgba(255,96,110,.72) 38%,rgba(210,70,190,.3) 52%,transparent 64%);}
 #sceneTint.t-rainbow{background:center/100% 100% no-repeat;}   /* 絵は scenes.rainbowImage */
-#sceneBurst{position:fixed;left:0;top:0;width:400px;height:400px;z-index:0;pointer-events:none;opacity:0;
-  background:center/100% 100% no-repeat;}   /* 絵は scenes.burstImage */
 .best-pill.beat{border-color:var(--gold);box-shadow:0 0 14px rgba(255,213,74,.7);animation:beat 1.2s ease-in-out infinite;}
 @keyframes beat{50%{box-shadow:0 0 22px rgba(255,213,74,1)}}
 @media (prefers-reduced-motion: reduce){#fever,#fever::before,#fever::after,#danger::before,.hi,.goal.ready,.hint{animation:none}}

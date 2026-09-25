@@ -94,6 +94,17 @@ export class Sfx {
   pop(i = 0)    { this.noise({ dur: 0.08, gain: 0.4, from: 2500, to: 900, q: 0.7 });
                   this.tone(note(i + 2, 523.25), { dur: 0.12, gain: 0.2, type: 'triangle' });
                   this.vibe(10); }
+  // シャボン玉: ぷくぷくと上がっていく小さな音
+  bubbles()     { for (let k = 0; k < 7; k++) this.tone(note(k, 659), { dur: 0.08, gain: 0.1, type: 'sine', at: k * 0.09, slide: 1.3 });
+                  this.noise({ dur: 0.7, gain: 0.12, from: 1200, to: 2600, q: 2 }); this.vibe([0, 20, 20, 20]); }
+  blip()        { this.tone(1400 + Math.random() * 500, { dur: 0.04, gain: 0.06, slide: 1.4 }); }
+  // ガムボール: ころころと降ってくる音
+  rattle()      { for (let k = 0; k < 10; k++) this.tone(note(k % 6, 523.25), { dur: 0.05, gain: 0.08, type: 'triangle', at: 0.15 + k * 0.07 }); }
+  tick(n = 1)   { if (this._tickAt && this.ctx && this.ctx.currentTime - this._tickAt < 0.05) return;
+                  this._tickAt = this.ctx?.currentTime; this.tone(900 + Math.random() * 400, { dur: 0.03, gain: 0.05 * Math.min(3, n), type: 'triangle' }); }
+  // まんまる: ふわっと広がる（close なら閉じる）音
+  swoosh(close = false) { this.noise({ dur: 0.55, gain: 0.35, from: close ? 1800 : 300, to: close ? 300 : 1800, q: 0.8 });
+                  if (!close) [0, 4, 7, 12].forEach((k, i) => this.tone(523.25 * Math.pow(2, k / 12), { dur: 0.5, gain: 0.1, type: 'triangle', at: 0.15 + i * 0.06 })); }
   // ブロックが列に入って止まった: 小さなコツッ
   settle(i = 0) { this.tone(note(i, 784), { dur: 0.05, gain: 0.12, type: 'triangle' }); }
   over()        { this.tone(392, { dur: 0.7, type: 'sawtooth', gain: 0.25, slide: 0.25 }); this.vibe([0, 60, 50, 140]); }

@@ -1,10 +1,10 @@
-import { Game } from '../core/game.js?v=202609251214';
-import { Board } from '../core/board.js?v=202609251214';
-import { resolveChains } from '../core/mancala.js?v=202609251214';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251214';
-import { Renderer, delay } from './renderer.js?v=202609251214';
-import { Sfx } from './sfx.js?v=202609251214';
-import { Scenes } from './scenes.js?v=202609251214';
+import { Game } from '../core/game.js?v=202609251235';
+import { Board } from '../core/board.js?v=202609251235';
+import { resolveChains } from '../core/mancala.js?v=202609251235';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251235';
+import { Renderer, delay } from './renderer.js?v=202609251235';
+import { Sfx } from './sfx.js?v=202609251235';
+import { Scenes } from './scenes.js?v=202609251235';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -115,10 +115,9 @@ async function playTurn(turn) {
     await delay(ANIM.betweenChains / sp);
   }
   if (turn.allClear) {
-    scenes.allClear();
+    // 盤面の前に出る全消しの演出（4種類から前回と違うもの）。文字もその中で出すので、中央の文字は出さない
+    scenes.allClear(boardCenter());
     renderer.allClearBlast();
-    renderer.confetti();
-    renderer.showText('ALL CLEAR!', 't5');
     sfx.fanfare();
   }
   showScore(turn.score);

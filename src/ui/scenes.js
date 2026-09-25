@@ -1,24 +1,38 @@
 /**
  * 画面全体の演出（シーン）。盤面の外側まで使う、大きな色の変化のための層。
  *
- *  - 奥の canvas（#sceneBack, 盤面やトレイの後ろ）: 下からせり上がる海、泡、光の差し込み
- *  - #sceneStars（奥）: 立ちのぼる星・火の粉（小さな絵を transform と opacity だけで動かす）
- *  - 手前の canvas（#sceneFront, 盤面の前）: 文字の書かれた風船、風船が割れた破片、波の泡の線、衝撃波の輪
- *  - #sceneTint / #sceneBurst（奥）: 画面全体の色の変化と、回る光の放射。1回だけ描いた絵を
- *    transform と opacity だけで動かす（毎フレーム描き直さないので、画面いっぱいでも軽い）
+ *  - #sceneTint（奥）: 画面全体の色の変化。1回だけ描いた 400px の絵を拡大し、opacity と transform だけで動かす
+ *  - #sceneStars（奥）: 立ちのぼる光の玉・大きなぼかしの丸（小さな絵を transform と opacity だけで動かす）
+ *  - #sceneFront（手前, 盤面の前）: 全消しの演出（海・シャボン玉・ガムボール・まんまる）、文字の風船や玉、はじけた粒
  *
- * 何も動いていない間は requestAnimationFrame を止める。色はブロックの7色と、海の青緑だけを使う。
+ * 形はすべて丸（線・細長い光・光線は使わない）。色はブロックの7色と海の青緑だけ。
+ * 何も動いていない間は requestAnimationFrame を止め、手前の canvas も描き直さない。
  */
 const TAU = Math.PI * 2;
 const RAINBOW = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
 const easeOut3 = (t) => 1 - Math.pow(1 - t, 3);
 const easeIn3 = (t) => t * t * t;
 const clamp01 = (t) => Math.max(0, Math.min(1, t));
-/** 行き過ぎてから戻る（風船が浮かび上がって止まるとき） */
-const easeOutBack = (t) => { const c = 1.4; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+/** 行き過ぎてから戻る（浮かび上がって止まる・ぽんと出てくる） */
+const easeOutBack = (t, c = 1.4) => 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
+/** 床で弾む（ガムボールが落ちて積もる） */
+function easeOutBounce(t) {
+  const n = 7.5625, d = 2.75;
+  if (t < 1 / d) return n * t * t;
+  if (t < 2 / d) return n * (t -= 1.5 / d) * t + 0.75;
+  if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + 0.9375;
+  return n * (t -= 2.625 / d) * t + 0.984375;
+}
 
 /** 海の色（上から: 水面の明るい青緑 → 中ほどの水色 → 深い青。背景の青と馴染む明るさ） */
-const SEA = { surface: 'rgba(118,232,255,.92)', mid: 'rgba(40,178,236,.9)', deep: 'rgba(24,92,210,.94)', back: 'rgba(66,196,245,.55)' };
+const SEA = { surface: 'rgba(118,232,255,.93)', mid: 'rgba(40,178,236,.92)', deep: 'rgba(24,92,210,.95)', back: 'rgba(66,196,245,.6)' };
+/** 「まんまる」の配色（どれもブロックの色の組み合わせ） */
+const IRIS = [
+  ['rgba(255,226,120,.97)', 'rgba(255,150,80,.96)', 'rgba(255,90,150,.96)'],       // 夕焼け
+  ['rgba(150,245,215,.97)', 'rgba(60,210,255,.96)', 'rgba(70,110,255,.96)'],        // 南の海
+  ['rgba(240,170,255,.97)', 'rgba(180,90,255,.96)', 'rgba(255,100,190,.96)'],       // ぶどう
+];
+const ALL_CLEAR_KINDS = ['sea', 'bubbles', 'gumballs', 'iris'];
 
 export class Scenes {
   constructor({ sfx, colorOf, quality = () => 1 } = {}) {
@@ -34,20 +48,20 @@ export class Scenes {
       return el;
     };
     this.tint = mk('div', 'sceneTint', app);
-    this.burst = mk('div', 'sceneBurst', app);
     this.starLayer = mk('div', 'sceneStars', app);
-    this.back = mk('canvas', 'sceneBack', app);
+    // 盤面の前: まんまるの丸（DOM の丸を拡大するだけ）→ 海（解像度を下げた canvas）→ 文字や粒（canvas）の順に重ねる
+    this.irisEl = mk('div', 'sceneIris');
+    this.irisFx = mk('div', 'sceneIrisFx');
+    this.seaCanvas = mk('canvas', 'sceneSea');
+    this.sctx = this.seaCanvas.getContext('2d');
     this.front = mk('canvas', 'sceneFront');
-    this.bctx = this.back.getContext('2d');
     this.fctx = this.front.getContext('2d');
     this.sprites = new Map();
-    this.water = null;
-    this.balloons = [];
-    this.bits = [];          // 風船の破片・光の粒（手前）
-    this.bubbles = [];       // 海の中の泡（奥）
-    this.rings = [];         // 衝撃波の輪（手前）
+    this.actors = [];        // 毎フレーム描くもの。draw(now) が false を返したら消える
+    this.bits = [];          // はじけた粒・水しぶき（丸）
     this.raf = 0;
     this.gen = 0;
+    this.last = null;        // 前回の全消しの演出（続けて同じものにしない）
     this.fit();
     window.addEventListener('resize', () => this.fit());
   }
@@ -55,21 +69,21 @@ export class Scenes {
   fit() {
     const W = window.innerWidth, H = window.innerHeight;
     this.W = W; this.H = H;
-    // 奥の海はなめらかなグラデーションだけなので解像度 1 で十分（画素が多いほど重い）
-    this.back.width = Math.round(W); this.back.height = Math.round(H);
     this.fdpr = Math.min(1.5, window.devicePixelRatio || 1);
     this.front.width = Math.round(W * this.fdpr); this.front.height = Math.round(H * this.fdpr);
+    // 海はなめらかなグラデーションなので解像度 1 で十分（画面いっぱいを毎フレーム塗るので、画素が少ないほど軽い）
+    this.seaCanvas.width = Math.round(W); this.seaCanvas.height = Math.round(H);
+    this.dirty = true;
   }
 
   clear() {
     this.gen++;
-    this.water = null;
-    this.balloons.length = this.bits.length = this.bubbles.length = this.rings.length = 0;
-    this.bctx.clearRect(0, 0, this.back.width, this.back.height);
+    this.actors.length = this.bits.length = 0;
     this.fctx.setTransform(1, 0, 0, 1, 0, 0);
     this.fctx.clearRect(0, 0, this.front.width, this.front.height);
-    for (const a of [this._tintAnim, this._burstAnim, this._tintSpin]) a?.cancel();
-    this.starLayer.innerHTML = '';
+    this.sctx.clearRect(0, 0, this.seaCanvas.width, this.seaCanvas.height);
+    this._tintAnim?.cancel(); this._tintSpin?.cancel(); this._irisAnim?.cancel();
+    this.starLayer.innerHTML = this.irisFx.innerHTML = '';
   }
 
   /* =====================================================================
@@ -77,31 +91,34 @@ export class Scenes {
    * ===================================================================== */
 
   /**
-   * 全消し: 海が下からせり上がり、文字の風船（ALL CLEAR）が浮かんできて、ひとつずつ割れる。
-   * 最後に海が引いていく（約3.8秒。ゲームは止めない）
+   * 全消し: 4種類の演出から、前回と違うものを選ぶ（盤面の前に出る。ゲームは止めない。どれも約3.8秒）
+   *  - sea      海が下からせり上がり、文字の風船が浮かんで割れ、海が引いていく
+   *  - bubbles  虹色のシャボン玉がたくさん浮かび、文字のシャボン玉が割れて水滴になる
+   *  - gumballs つやつやの玉が降ってきて弾みながら積もり、文字の玉が乗り、床が抜けて落ちていく
+   *  - iris     盤面の中心から大きな丸が広がって画面が染まり、丸いシールの文字が弾んで出て、丸が縮んで戻る
    */
-  allClear() {
-    const now = performance.now();
-    this.wash('sea', 3400, 0.5);
-    this.sunburst('sea', 3200, 0.45);
-    this.water = { t0: now, peak: 0.6, drainAt: 2750, end: 3850, ph: Math.random() * TAU, lastSplash: 0 };
-    this.sfx?.wave?.();
-    this.spell('ALL CLEAR', { at: 260, popAt: 2350, row: 0.2 });
+  allClear(center, kind) {
+    const pool = ALL_CLEAR_KINDS.filter((k) => k !== this.last);
+    kind ??= pool[Math.floor(Math.random() * pool.length)];
+    this.last = kind;
+    center ??= { x: this.W / 2, y: this.H * 0.5 };
+    ({ sea: () => this.sea(), bubbles: () => this.bubbles(), gumballs: () => this.gumballs(), iris: () => this.iris(center) })[kind]();
     this.kick();
+    return kind;
   }
 
-  /** 新記録: 金色に色が変わり、風船の NEW BEST が浮かんで割れる */
+  /** 新記録: 金色〜夕焼け色に染まり、ぼかしの丸が広がり、風船の NEW BEST が浮かんで割れる */
   newBest() {
     this.wash('gold', 2600, 0.62);
-    this.sunburst('gold', 2600, 0.5);
-    this.spell('NEW BEST', { at: 120, popAt: 1900, row: 0.3 });
+    this.bokeh('gold', 12);
+    this.spell('NEW BEST', { style: 'balloon', at: 120, popAt: 1900, row: 0.3 });
     this.rise('gold', 18);
     this.kick();
   }
 
   /**
-   * 大きな連鎖（褒め言葉が Amazing 以上）: 画面全体の色が段階の色に染まり、光の放射が回って、
-   * 下から星が立ちのぼる。Unbelievable（tier 5）は虹色で、衝撃波の輪も広がる
+   * 大きな連鎖（褒め言葉が Amazing 以上）: 画面全体が段階の色に染まり、大きなぼかしの丸が広がり、
+   * 下から光の玉が立ちのぼる。Unbelievable（tier 5）は虹色で、光の玉の輪も広がる
    */
   bigChain(tier, center) {
     const now = performance.now();
@@ -111,13 +128,13 @@ export class Scenes {
     // 画面いっぱいの半透明の層は、遅い端末では合成が重いので省く（演出の量 quality が下がっているとき）
     const q = this.quality();
     if (q >= 0.45) this.wash(kind, 1400, tier >= 5 ? 0.5 : 0.42);
-    if (q >= 0.6) this.sunburst(kind, 1500, 0.55, center);
+    if (q >= 0.6) this.bokeh(kind, tier >= 5 ? 12 : 9, center);
     this.rise(tier >= 5 ? 'rainbow' : 'purple', tier >= 5 ? 22 : 16);
-    if (tier >= 5 && center) this.ring(center.x, center.y, 'yellow');
+    if (tier >= 5 && center) this.bloomRing(center.x, center.y, 'yellow');
     this.kick();
   }
 
-  /** コンボが5の倍数に届いた: 暖色に染まり、画面の下から火の粉が立ちのぼる */
+  /** コンボが5の倍数に届いた: 夕焼けのように画面の下から暖色に染まり、火の粉が立ちのぼる */
   comboWave() {
     if (this.quality() >= 0.45) this.wash('warm', 1500, 0.6);
     this.rise('warm', 20);
@@ -125,7 +142,325 @@ export class Scenes {
   }
 
   /* =====================================================================
-   * 部品
+   * 全消し 1: 海
+   * ===================================================================== */
+  sea() {
+    const t0 = performance.now(), gen = this.gen;
+    const w = { t0, peak: 0.62, drainAt: 2750, end: 3850, ph: Math.random() * TAU, lastSplash: 0, bubbles: [] };
+    this.wash('sea', 3400, 0.45);
+    this.bokeh('sea', 10);
+    this.sfx?.wave?.();
+    this.spell('ALL CLEAR', { style: 'balloon', at: 260, popAt: 2350, row: 0.2 });
+    this.actors.push({ draw: (now) => gen === this.gen && this.drawSea(w, now) });
+  }
+
+  /** 海の水位（画面の高さに対する割合）。ばねのように行き過ぎて揺れ戻り、最後に引いていく */
+  seaLevel(w, ms) {
+    const p = ms / 1000;
+    let lvl = w.peak * (1 - Math.exp(-4.5 * p) * Math.cos(6 * p));
+    if (ms > w.drainAt) {
+      const q = clamp01((ms - w.drainAt) / (w.end - w.drainAt - 100));
+      lvl = lvl * (1 - easeIn3(q)) - 0.06 * q;
+    }
+    return lvl;
+  }
+
+  drawSea(w, now) {
+    const ms = now - w.t0, f = this.sctx;
+    f.clearRect(0, 0, this.seaCanvas.width, this.seaCanvas.height);
+    if (ms > w.end) return false;
+    const W = this.W, H = this.H, q = this.quality();
+    const lvl = this.seaLevel(w, ms), prev = this.seaLevel(w, Math.max(0, ms - 16));
+    const speed = Math.abs(lvl - prev) * 60;                  // 水位の変わる速さ（揺れの大きさに使う）
+    const base = H * (1 - lvl), amp = 7 + Math.min(18, speed * 60), t = ms / 1000, step = 14;
+    const surf = (x, off = 0, a = amp) => base + off
+      + a * Math.sin(x * 0.018 + t * 2.6 + w.ph) + a * 0.55 * Math.sin(x * 0.041 - t * 3.7 + w.ph * 2);
+    const fillWave = (off, a, style) => {
+      f.beginPath();
+      f.moveTo(0, H);
+      for (let x = 0; x <= W + step; x += step) f.lineTo(x, surf(x, off, a) + (off ? 4 * Math.sin(x * 0.03 + t * 5) : 0));
+      f.lineTo(W, H);
+      f.closePath();
+      f.fillStyle = style;
+      f.fill();
+    };
+    // 奥の波（少し高く、薄い）と手前の海
+    fillWave(-12, amp * 0.8, SEA.back);
+    const top = base - amp * 1.6, g = f.createLinearGradient(0, top, 0, Math.max(top + 1, H));
+    g.addColorStop(0, SEA.surface); g.addColorStop(0.28, SEA.mid); g.addColorStop(1, SEA.deep);
+    fillWave(0, amp, g);
+
+    // 水の中でゆらめく丸い光（光の差し込みの代わり）
+    if (q >= 0.5) {
+      f.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 5; i++) {
+        const cx = ((i + 0.5) / 5) * W + Math.sin(t * 0.8 + i * 1.9) * 30, cy = base + H * (0.12 + 0.07 * (i % 3)) + Math.sin(t * 1.3 + i) * 12;
+        const r = 40 + (i % 3) * 18;
+        f.globalAlpha = 0.18;
+        f.drawImage(this.sprite('glow', 'cyan'), cx - r, cy - r, r * 2, r * 2);
+      }
+      f.globalCompositeOperation = 'source-over';
+      f.globalAlpha = 1;
+    }
+
+    // 水面の泡の列（白い線の代わりに、丸い泡が水面に沿って並ぶ）
+    for (let x = 6; x <= W; x += 16) {
+      const y = surf(x) + 1, r = 3 + 1.8 * Math.sin(x * 0.21 + t * 4);
+      f.fillStyle = 'rgba(255,255,255,.75)';
+      f.beginPath(); f.arc(x, y, Math.max(1.2, r), 0, TAU); f.fill();
+    }
+
+    // 泡: 水の中で生まれて、ゆらゆら上がり、水面で消える
+    if (lvl > 0.05 && Math.random() < 0.8 * q) w.bubbles.push({ x: Math.random() * W, y: H + 10, r: 2 + Math.random() * 5, v: 70 + Math.random() * 110, ph: Math.random() * TAU, t0: now });
+    let alive = 0;
+    for (const bb of w.bubbles) {
+      const s = (now - bb.t0) / 1000, y = bb.y - bb.v * s, x = bb.x + Math.sin(bb.ph + s * 4) * 6;
+      if (y < surf(x) + bb.r) continue;
+      w.bubbles[alive++] = bb;
+      f.drawImage(this.bubble(), x - bb.r, y - bb.r, bb.r * 2, bb.r * 2);
+    }
+    w.bubbles.length = alive;
+
+    // 勢いよく上がった直後の水しぶき（丸い水滴）
+    if (speed > 0.02 && now - w.lastSplash > 70 && q >= 0.4) {
+      w.lastSplash = now;
+      for (let k = 0; k < 3; k++) {
+        const x = Math.random() * W;
+        this.bits.push({ kind: 'drop', t0: now, life: 650, x, y: surf(x), vx: (Math.random() - 0.5) * 120, vy: -(160 + Math.random() * 220), g: 900, size: 3 + Math.random() * 3 });
+      }
+    }
+    return true;
+  }
+
+  /* =====================================================================
+   * 全消し 2: シャボン玉
+   * ===================================================================== */
+  bubbles() {
+    const t0 = performance.now(), gen = this.gen, q = this.quality();
+    this.wash('bubble', 3500, 0.5);
+    this.bokeh('bubble', 10);
+    this.sfx?.bubbles?.();
+    const list = [];
+    const n = Math.round(46 * q) + 10;
+    for (let i = 0; i < n; i++) {
+      const r = 10 + Math.pow(Math.random(), 1.8) * 48;
+      list.push({ x: Math.random() * this.W, r, t0: t0 + Math.random() * 2600, v: 90 + (60 - r) * 2.2 + Math.random() * 60,
+        wob: 8 + Math.random() * 14, ph: Math.random() * TAU, popY: Math.random() < 0.3 ? this.H * (0.15 + Math.random() * 0.5) : -1e9 });
+    }
+    this.actors.push({ draw: (now) => gen === this.gen && this.drawBubbles(list, now) });
+    this.spell('ALL CLEAR', { style: 'bubble', at: 180, popAt: 2400, row: 0.3 });
+  }
+
+  drawBubbles(list, now) {
+    const f = this.fctx, H = this.H;
+    let alive = 0;
+    for (const b of list) {
+      const s = (now - b.t0) / 1000;
+      if (s < 0) { list[alive++] = b; continue; }
+      const y = H + b.r - b.v * s, x = b.x + Math.sin(b.ph + s * 2.4) * b.wob;
+      if (y < -b.r) continue;
+      if (y < b.popY) { this.splash(x, y, b.r, 'cyan'); this.sfx?.blip?.(); continue; }   // ときどき途中でぱちんと割れる
+      list[alive++] = b;
+      const sq = 1 + 0.05 * Math.sin(s * 5 + b.ph);            // ふるふると形が揺れる
+      f.drawImage(this.bubble(), x - b.r * sq, y - b.r / sq, b.r * 2 * sq, (b.r * 2) / sq);
+    }
+    list.length = alive;
+    return alive > 0;
+  }
+
+  /* =====================================================================
+   * 全消し 3: ガムボール
+   * ===================================================================== */
+  gumballs() {
+    const t0 = performance.now(), gen = this.gen, q = this.quality(), W = this.W, H = this.H;
+    this.wash('candy', 3600, 0.4);
+    const R = Math.max(14, Math.min(30, W / 14)), dy = R * 1.72;
+    const rows = Math.max(3, Math.round((H * 0.34) / dy)), balls = [];
+    for (let row = 0; row < rows; row++) {
+      const off = row % 2 ? R : 0;
+      for (let x = R + off; x <= W - R + 1; x += R * 2) {
+        if (q < 0.6 && Math.random() < 0.35) continue;
+        balls.push({ x: x + (Math.random() - 0.5) * 2, y: H - R - row * dy, r: R * (0.92 + Math.random() * 0.1),
+          color: RAINBOW[Math.floor(Math.random() * RAINBOW.length)], t0: t0 + row * 150 + Math.random() * 180,
+          from: -R - Math.random() * H * 0.3, dur: 620 + Math.random() * 220, landed: false });
+      }
+    }
+    const top = H - R - rows * dy;                            // 積もった玉のいちばん上
+    const exitAt = t0 + 2750;
+    this.actors.push({ draw: (now) => gen === this.gen && this.drawGumballs(balls, now, exitAt) });
+    this.spell('ALL CLEAR', { style: 'ball', at: 700 + rows * 60, popAt: 2450, row: (top - R * 1.1) / H, drop: true });
+    this.sfx?.rattle?.();
+  }
+
+  drawGumballs(balls, now, exitAt) {
+    const f = this.fctx, H = this.H;
+    let alive = 0, landedNow = 0;
+    for (const b of balls) {
+      if (now < b.t0) { balls[alive++] = b; continue; }
+      let y;
+      const p = clamp01((now - b.t0) / b.dur);
+      y = b.from + (b.y - b.from) * easeOutBounce(p);
+      if (p >= 1 && !b.landed) { b.landed = true; landedNow++; }
+      if (now > exitAt) {                                    // 床が抜けて、左右の端から順に落ちていく
+        const s = (now - exitAt - Math.abs(b.x - this.W / 2) * 0.6) / 1000;
+        if (s > 0) y = b.y + 0.5 * 2600 * s * s;
+      }
+      if (y - b.r > H) continue;
+      balls[alive++] = b;
+      f.drawImage(this.ball(b.color), b.x - b.r, y - b.r, b.r * 2, b.r * 2);
+    }
+    balls.length = alive;
+    if (landedNow) this.sfx?.tick?.(landedNow);
+    return alive > 0;
+  }
+
+  /* =====================================================================
+   * 全消し 4: まんまる（盤面の中心から丸が広がって画面が染まる）
+   * ===================================================================== */
+  iris(center) {
+    const t0 = performance.now(), gen = this.gen, q = this.quality();
+    const theme = IRIS[Math.floor(Math.random() * IRIS.length)];
+    const rMax = Math.hypot(Math.max(center.x, this.W - center.x), Math.max(center.y, this.H - center.y)) + 30;
+    // 大きな丸は 400px の DOM の丸を拡大するだけ（毎フレーム描き直さない）
+    const el = this.irisEl, k = rMax / 200;
+    el.style.background = `radial-gradient(circle,${theme[0]} 0,${theme[1]} 45%,${theme[2]} 100%)`;
+    const at = (sc) => `translate(${center.x - 200}px,${center.y - 200}px) scale(${sc * k})`;
+    this._irisAnim?.cancel();
+    this._irisAnim = el.animate([
+      { transform: at(0), easing: 'cubic-bezier(.3,1.35,.5,1)' },
+      { transform: at(1), offset: 700 / 3650 },
+      { transform: at(1.015), offset: 1500 / 3650 },
+      { transform: at(1), offset: 2950 / 3650, easing: 'cubic-bezier(.55,0,.9,.4)' },
+      { transform: at(0) },
+    ], { duration: 3650 });
+    // 中心から広がっていく明るい丸（波紋を線ではなく、ぼかした丸で）と、丸のふちの柔らかい光
+    for (let i = 0; i < 6; i++) {
+      this.sprite2dom('soft', 'white', center.x, center.y, rMax * 1.9, [{ o: 0.32, s: 0.05 }, { o: 0, s: 1 }], 1400, 350 + i * 450, this.irisFx);
+    }
+    this.sprite2dom('soft', 'white', center.x, center.y, rMax * 2.3, [{ o: 0.55, s: 0.1 }, { o: 0, s: 1 }], 800, 0, this.irisFx);
+    const dots = Array.from({ length: Math.round(34 * q) + 8 }, (_, i) => ({
+      a: Math.random() * TAU, r0: 20 + Math.random() * 60, v: 0.6 + Math.random() * 0.9, size: 3 + Math.random() * 7,
+      color: i % 3 ? RAINBOW[i % RAINBOW.length] : 'white', t0: t0 + 250 + Math.random() * 1600,
+    }));
+    const it = { t0, cx: center.x, cy: center.y, dots, rMax };
+    this.sfx?.swoosh?.();
+    setTimeout(() => { if (gen === this.gen) this.sfx?.swoosh?.(true); }, 2950);
+    this.actors.push({ draw: (now) => gen === this.gen && this.drawIris(it, now) });
+    this.spell('ALL CLEAR', { style: 'sticker', at: 420, popAt: 2350, row: Math.max(0.22, (center.y - 110) / this.H) });
+  }
+
+  /** 丸の半径（DOM の丸のアニメーションと同じ動き。水玉をこの丸の中だけに描くため） */
+  irisRadius(it, ms) {
+    if (ms < 700) return it.rMax * easeOutBack(clamp01(ms / 700), 1.1);
+    if (ms < 2950) return it.rMax;
+    return it.rMax * (1 - easeIn3(clamp01((ms - 2950) / 650)));
+  }
+
+  /** くるくる外へ広がる水玉（丸の中だけ） */
+  drawIris(it, now) {
+    const ms = now - it.t0;
+    if (ms > 3650) return false;
+    const f = this.fctx, R = Math.max(0, this.irisRadius(it, ms));
+    if (R < 1) return ms < 700;
+    for (const d of it.dots) {
+      const s = (now - d.t0) / 1000;
+      if (s < 0 || s > 2.2) continue;
+      const r = d.r0 + s * 140 * d.v, a = d.a + s * 1.4 * d.v;
+      if (r > R) continue;
+      const x = it.cx + Math.cos(a) * r, y = it.cy + Math.sin(a) * r * 0.9;
+      f.globalAlpha = Math.min(1, s * 4) * (1 - s / 2.2);
+      f.fillStyle = d.color === 'white' ? 'rgba(255,255,255,.95)' : this.colorOf(d.color).hi;
+      f.beginPath(); f.arc(x, y, d.size, 0, TAU); f.fill();
+    }
+    f.globalAlpha = 1;
+    return true;
+  }
+
+  /* =====================================================================
+   * 文字（風船・シャボン玉・ガムボール・丸いシール）
+   * ===================================================================== */
+
+  /**
+   * 文字を1つずつ丸いもの（style）にして並べる。空白は間を空ける。at ms 後から少しずつずらして出し、
+   * popAt ms 後から左から順にはじける。row は止まる高さ（画面の上からの割合）。drop なら上から落ちてくる
+   */
+  spell(text, { style = 'balloon', at = 0, popAt = 2000, row = 0.22, drop = false } = {}) {
+    const now = performance.now(), gen = this.gen;
+    const chars = [...text];
+    const slot = Math.min(50, (Math.min(this.W, 560) - 24) / chars.length);
+    const x0 = this.W / 2 - (slot * chars.length) / 2 + slot / 2;
+    const items = [];
+    let k = 0;
+    chars.forEach((ch, i) => {
+      if (ch === ' ') return;
+      items.push({
+        ch, color: RAINBOW[(k * 2 + 1) % RAINBOW.length], x: x0 + i * slot, size: slot * (style === 'balloon' ? 0.96 : 0.9),
+        yT: this.H * row + (k % 2 ? 8 : -6), t0: now + at + k * 70, popAt: now + popAt + k * 85, ph: Math.random() * TAU, k,
+      });
+      k++;
+    });
+    this.actors.push({ draw: (t) => gen === this.gen && this.drawLetters(items, style, drop, t) });
+    this.kick();
+  }
+
+  drawLetters(items, style, drop, now) {
+    const f = this.fctx, H = this.H;
+    let alive = 0;
+    for (const it of items) {
+      if (now >= it.popAt) { this.popLetter(it, style, now); continue; }
+      items[alive++] = it;
+      if (now < it.t0) continue;
+      const t = clamp01((now - it.t0) / (style === 'sticker' ? 520 : drop ? 720 : 1250));
+      const bob = Math.sin(now * 0.0032 + it.ph) * 4 * t;
+      let x = it.x + Math.sin(now * 0.0021 + it.ph) * 3, y, sc = 1;
+      if (style === 'sticker') { y = it.yT + bob; sc = easeOutBack(t, 2.2); }                 // その場でぽんと出る
+      else if (drop) y = -it.size + (it.yT + it.size) * easeOutBounce(t);                   // 上から落ちて弾む
+      else y = H + it.size + (it.yT - H - it.size) * easeOutBack(t) + bob;                  // 下から浮かんでくる
+      if (drop) x = it.x;
+      it.cx = x; it.cy = y;
+      const w = it.size * sc;
+      if (style === 'balloon') {
+        const h = w * 1.25;
+        // ひもの代わりに、小さな丸が3つ連なってぶら下がる
+        for (let j = 1; j <= 3; j++) {
+          const sw = Math.sin(now * 0.004 + it.ph + j * 0.6) * 3 * j;
+          f.fillStyle = `rgba(255,255,255,${0.75 - j * 0.15})`;
+          f.beginPath(); f.arc(x + sw, y + h * 0.52 + j * w * 0.16, w * (0.07 - j * 0.012), 0, TAU); f.fill();
+        }
+        f.drawImage(this.balloon(it.color, it.ch), x - w / 2, y - h / 2, w, h);
+      } else if (style === 'bubble') {
+        f.drawImage(this.letterBubble(it.color, it.ch), x - w / 2, y - w / 2, w, w);
+      } else if (style === 'ball') {
+        f.drawImage(this.letterBall(it.color, it.ch), x - w / 2, y - w / 2, w, w);
+      } else {
+        f.drawImage(this.sticker(it.color, it.ch), x - w / 2, y - w / 2, w, w);
+      }
+    }
+    items.length = alive;
+    return alive > 0;
+  }
+
+  /** 文字がはじける: 丸い粒が飛び散り、ふわっと光り、ポンと鳴る（割れるごとに音が上がる） */
+  popLetter(it, style, now) {
+    if (it.cx == null) return;
+    this.splash(it.cx, it.cy, it.size * 0.5, style === 'bubble' ? 'cyan' : it.color, style === 'bubble');
+    this.sfx?.pop?.(it.k);
+  }
+
+  /** 丸い粒をはじけさせる（water なら水滴、そうでなければ色の粒）＋ふわっとした光 */
+  splash(x, y, r, color, water = false) {
+    const now = performance.now(), n = Math.round(10 * this.quality()) + 4;
+    for (let i = 0; i < n; i++) {
+      const a = (TAU * i) / n + Math.random() * 0.4, v = 140 + Math.random() * 200 + r * 3;
+      this.bits.push({ kind: water ? 'drop' : 'bead', t0: now, life: 650 + Math.random() * 300, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, g: 700,
+        size: Math.max(2, r * (0.12 + Math.random() * 0.12)), color });
+    }
+    this.bits.push({ kind: 'flash', t0: now, life: 280, x, y, size: r * 2.6, color });
+    this.kick();
+  }
+
+  /* =====================================================================
+   * 部品（奥の層）
    * ===================================================================== */
 
   /** 画面全体の色（kind ごとの1枚絵）を opacity だけで出して消す。rainbow はゆっくり回す */
@@ -146,269 +481,82 @@ export class Scenes {
     }
   }
 
-  /** 回る光の放射（1回だけ描いた絵を拡大・回転）。center は画面座標。省略時は画面の中ほど */
-  sunburst(kind, dur, alpha, center) {
-    const el = this.burst;
-    el.className = '';
-    el.style.backgroundImage = `url(${this.burstImage(kind)})`;
-    const x = center?.x ?? this.W / 2, y = center?.y ?? this.H * 0.45;
-    const r0 = Math.random() * 360, k = (1.7 * Math.max(this.W, this.H)) / 400;
-    const at = (rot, sc) => `translate(${x - 200}px,${y - 200}px) rotate(${rot}deg) scale(${sc * k})`;
-    this._burstAnim?.cancel();
-    this._burstAnim = el.animate([
-      { opacity: 0, transform: at(r0, 0.6) },
-      { opacity: alpha, transform: at(r0 + 12, 0.95), offset: 0.2 },
-      { opacity: alpha * 0.7, transform: at(r0 + 40, 1.05), offset: 0.7 },
-      { opacity: 0, transform: at(r0 + 60, 1.12) },
-    ], { duration: this.reduced ? dur * 0.6 : dur, easing: 'cubic-bezier(.2,.7,.3,1)' });
-  }
-
-  /**
-   * 画面の下から星（または火の粉）が立ちのぼる。星は1回だけ描いた小さな絵を transform と opacity だけで動かす
-   * （画面いっぱいの canvas を毎フレーム描き直すより、ずっと軽い）
-   */
-  rise(kind, n) {
+  /** 大きなぼかしの丸（ボケ）がふわっと広がって消える（放射状の光線の代わり）。center の近くほど多い */
+  bokeh(kind, n, center) {
     n = Math.round(n * this.quality());
-    const colors = kind === 'rainbow' ? RAINBOW : kind === 'warm' ? ['orange', 'yellow', 'red'] : kind === 'gold' ? ['yellow', 'orange'] : ['purple', 'red', 'cyan'];
-    const gen = this.gen;
+    const colors = { rainbow: RAINBOW, gold: ['yellow', 'orange', 'red'], amazing: ['purple', 'red', 'blue'],
+      sea: ['cyan', 'blue', 'green'], bubble: ['cyan', 'purple', 'blue'] }[kind] ?? RAINBOW;
+    const cx = center?.x ?? this.W / 2, cy = center?.y ?? this.H * 0.45;
     for (let i = 0; i < n; i++) {
-      const color = colors[i % colors.length], star = kind !== 'warm' && Math.random() < 0.6;
-      const size = 20 + Math.random() * 28, life = 1300 + Math.random() * 900, delay = Math.random() * 500;
-      const x = Math.random() * this.W, y = this.H * (0.72 + Math.random() * 0.35), rise = this.H * (0.35 + Math.random() * 0.35);
-      const wob = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 16);
-      const d = document.createElement('div');
-      d.className = 'scene-star';
-      d.style.backgroundImage = `url(${this.spriteUrl(star ? 'star' : 'glow', color)})`;
-      this.starLayer.appendChild(d);
-      const tf = (dx, dy, sc) => `translate(${x - 32 + dx}px,${y - 32 + dy}px) scale(${(sc * size) / 64})`;
-      d.animate([
-        { opacity: 0, transform: tf(0, 0, 0.6) },
-        { opacity: 1, transform: tf(wob, -rise * 0.35, 1), offset: 0.3 },
-        { opacity: 0.7, transform: tf(-wob * 0.5, -rise * 0.75, 0.9), offset: 0.7 },
-        { opacity: 0, transform: tf(wob * 0.3, -rise, 0.7) },
-      ], { duration: life, delay, easing: 'ease-out', fill: 'backwards' }).onfinish = () => d.remove();
-      if (gen !== this.gen) d.remove();
+      const a = Math.random() * TAU, dist = Math.pow(Math.random(), 0.7) * Math.max(this.W, this.H) * 0.55;
+      const x = cx + Math.cos(a) * dist, y = cy + Math.sin(a) * dist, size = 90 + Math.random() * 170;
+      this.sprite2dom('soft', colors[i % colors.length], x, y, size, [
+        { o: 0, s: 0.4 }, { o: 0.55, s: 1, at: 0.35 }, { o: 0, s: 1.25 },
+      ], 1300 + Math.random() * 700, Math.random() * 400);
     }
   }
 
-  /** 画面いっぱいに広がる衝撃波の輪 */
-  ring(x, y, color) {
-    this.rings.push({ t0: performance.now(), life: 800, x, y, color, r1: Math.hypot(this.W, this.H) * 0.7 });
+  /** 画面の下から光の玉（または火の粉）が立ちのぼる */
+  rise(kind, n) {
+    n = Math.round(n * this.quality());
+    const colors = kind === 'rainbow' ? RAINBOW : kind === 'warm' ? ['orange', 'yellow', 'red'] : kind === 'gold' ? ['yellow', 'orange'] : ['purple', 'red', 'cyan'];
+    for (let i = 0; i < n; i++) {
+      const size = 20 + Math.random() * 28, x = Math.random() * this.W, y = this.H * (0.72 + Math.random() * 0.35);
+      const rise = this.H * (0.35 + Math.random() * 0.35), wob = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 16);
+      this.sprite2dom('glow', colors[i % colors.length], x, y, size, [
+        { o: 0, s: 0.6 }, { o: 1, s: 1, dx: wob, dy: -rise * 0.35, at: 0.3 },
+        { o: 0.7, s: 0.9, dx: -wob * 0.5, dy: -rise * 0.75, at: 0.7 }, { o: 0, s: 0.7, dx: wob * 0.3, dy: -rise },
+      ], 1300 + Math.random() * 900, Math.random() * 500);
+    }
   }
 
-  /**
-   * 文字を1つずつ風船にして、下から浮かび上がらせる（空白は間を空ける）。
-   * at ms 後から少しずつずらして打ち上げ、popAt ms 後から左から順に割る。row は止まる高さ（画面の上からの割合）
-   */
-  spell(text, { at = 0, popAt = 2000, row = 0.22 } = {}) {
-    const now = performance.now();
-    const chars = [...text];
-    const slot = Math.min(50, (Math.min(this.W, 560) - 24) / chars.length);
-    const x0 = this.W / 2 - (slot * chars.length) / 2 + slot / 2;
-    let k = 0;
-    chars.forEach((ch, i) => {
-      if (ch === ' ') return;
-      const color = RAINBOW[(k * 2 + 1) % RAINBOW.length];
-      this.balloons.push({
-        ch, color, x: x0 + i * slot, size: slot * 0.96,
-        yT: this.H * row + (k % 2 ? 8 : -6),                // 少しジグザグに並べる
-        t0: now + at + k * 70, popAt: now + popAt + k * 85, ph: Math.random() * TAU,
-      });
-      k++;
-    });
+  /** 小さな絵（64px）を画面座標 (x, y)・直径 size で、keys の透明度・拡大・移動の順に動かして消す */
+  sprite2dom(kind, color, x, y, size, keys, life, delay = 0, layer = this.starLayer) {
+    const d = document.createElement('div');
+    d.className = 'scene-star';
+    d.style.backgroundImage = `url(${this.spriteUrl(kind, color)})`;
+    layer.appendChild(d);
+    const tf = (dx = 0, dy = 0, sc = 1) => `translate(${x - 32 + dx}px,${y - 32 + dy}px) scale(${(sc * size) / 64})`;
+    d.animate(keys.map((k) => ({ opacity: k.o, transform: tf(k.dx, k.dy, k.s), ...(k.at != null ? { offset: k.at } : {}) })),
+      { duration: life, delay, easing: 'ease-out', fill: 'backwards' }).onfinish = () => d.remove();
+  }
+
+  /** 大きく広がるぼかしの丸（衝撃波の輪の代わり。線ではなく面で） */
+  bloomRing(x, y, color) {
+    const r1 = Math.hypot(this.W, this.H) * 0.6, t0 = performance.now(), gen = this.gen;
+    this.actors.push({ draw: (now) => {
+      if (gen !== this.gen) return false;
+      const t = Math.max(0, (now - t0) / 800);
+      if (t >= 1) return false;
+      const r = 30 + r1 * easeOut3(t), f = this.fctx;
+      f.globalAlpha = 0.45 * (1 - t);
+      f.drawImage(this.sprite('soft', color), x - r, y - r, r * 2, r * 2);
+      f.globalAlpha = 1;
+      return true;
+    } });
   }
 
   /* =====================================================================
-   * 描画
+   * 描画ループ
    * ===================================================================== */
   kick() { if (!this.raf) this.raf = requestAnimationFrame((t) => this.frame(t)); }
 
   frame(now) {
     this.raf = 0;
     now = Math.max(now, performance.now() - 1);        // rAF の時刻はフレームの始まりなので、直前に作った演出より前になることがある
-    const b = this.bctx, f = this.fctx;
-    // 前のフレームで何か描いた canvas だけを消す（何も無い canvas を毎フレーム消すと、それだけで画面全体の描き直しになる）
-    if (this.backDirty) b.clearRect(0, 0, this.back.width, this.back.height);
+    const f = this.fctx;
+    // 前のフレームで何か描いたときだけ消す（何も無い canvas を毎フレーム消すと、それだけで画面全体の描き直しになる）
     f.setTransform(1, 0, 0, 1, 0, 0);
-    if (this.frontDirty) f.clearRect(0, 0, this.front.width, this.front.height);
+    if (this.dirty) f.clearRect(0, 0, this.front.width, this.front.height);
     f.setTransform(this.fdpr, 0, 0, this.fdpr, 0, 0);
-    this.backDirty = !!this.water;
-    this.frontDirty = !!this.water || this.balloons.length + this.bits.length + this.rings.length > 0;
-
-    let busy = false;
-    if (this.water) busy = this.drawWater(now) || busy;
-    busy = this.drawBalloons(now) || busy;
-    busy = this.drawBits(now) || busy;
-    busy = this.drawRings(now) || busy;
-    b.globalAlpha = 1; f.globalAlpha = 1;
-    b.globalCompositeOperation = f.globalCompositeOperation = 'source-over';
-    if (busy) this.raf = requestAnimationFrame((t) => this.frame(t));
-  }
-
-  /** 海の水位（画面の高さに対する割合）。ばねのように行き過ぎて揺れ戻り、最後に引いていく */
-  level(w, ms) {
-    const p = ms / 1000;
-    let lvl = w.peak * (1 - Math.exp(-4.5 * p) * Math.cos(6 * p));
-    if (ms > w.drainAt) {
-      const q = clamp01((ms - w.drainAt) / (w.end - w.drainAt - 100));
-      lvl = lvl * (1 - easeIn3(q)) - 0.06 * q;
-    }
-    return lvl;
-  }
-
-  drawWater(now) {
-    const w = this.water, ms = now - w.t0;
-    if (ms > w.end) { this.water = null; return false; }
-    const b = this.bctx, f = this.fctx, W = this.W, H = this.H, q = this.quality();
-    const lvl = this.level(w, ms), prev = this.level(w, Math.max(0, ms - 16));
-    const speed = Math.abs(lvl - prev) * 60;                  // 水位の変わる速さ（揺れの大きさに使う）
-    const base = H * (1 - lvl);
-    const amp = 7 + Math.min(18, speed * 60);
-    const t = ms / 1000;
-    const surf = (x, off = 0, a = amp) => base + off
-      + a * Math.sin(x * 0.018 + t * 2.6 + w.ph) + a * 0.55 * Math.sin(x * 0.041 - t * 3.7 + w.ph * 2);
-    const step = 14;
-
-    // 奥の波（少し高く、薄い）
-    b.beginPath();
-    b.moveTo(0, H);
-    for (let x = 0; x <= W + step; x += step) b.lineTo(x, surf(x, -12, amp * 0.8) + 4 * Math.sin(x * 0.03 + t * 5));
-    b.lineTo(W, H);
-    b.closePath();
-    b.fillStyle = SEA.back;
-    b.fill();
-
-    // 手前の海
-    const top = base - amp * 1.6;
-    const g = b.createLinearGradient(0, top, 0, Math.max(top + 1, H));
-    g.addColorStop(0, SEA.surface);
-    g.addColorStop(0.28, SEA.mid);
-    g.addColorStop(1, SEA.deep);
-    b.beginPath();
-    b.moveTo(0, H);
-    for (let x = 0; x <= W + step; x += step) b.lineTo(x, surf(x));
-    b.lineTo(W, H);
-    b.closePath();
-    b.fillStyle = g;
-    b.fill();
-
-    // 水の中に差し込む光の筋（ゆっくり左右に揺れる）
-    if (q >= 0.5) {
-      b.save();
-      b.clip();
-      b.globalCompositeOperation = 'lighter';
-      for (let i = 0; i < 4; i++) {
-        const cx = ((i + 0.5) / 4) * W + Math.sin(t * 0.7 + i * 1.7) * 30;
-        const lg = b.createLinearGradient(0, base, 0, base + H * 0.5);
-        lg.addColorStop(0, 'rgba(255,255,255,.16)');
-        lg.addColorStop(1, 'rgba(255,255,255,0)');
-        b.fillStyle = lg;
-        b.beginPath();
-        b.moveTo(cx - 14, base - 10);
-        b.lineTo(cx + 22, base - 10);
-        b.lineTo(cx + 70, base + H * 0.5);
-        b.lineTo(cx - 10, base + H * 0.5);
-        b.closePath();
-        b.fill();
-      }
-      b.restore();
-    }
-
-    // 水面のきらめき（白い線）
-    b.beginPath();
-    for (let x = 0; x <= W + step; x += step) { const y = surf(x); if (x === 0) b.moveTo(x, y); else b.lineTo(x, y); }
-    b.strokeStyle = 'rgba(255,255,255,.7)';
-    b.lineWidth = 2.5;
-    b.stroke();
-
-    // 泡: 水の中で生まれて、ゆらゆら上がり、水面で消える
-    if (lvl > 0.05 && Math.random() < 0.8 * q) {
-      for (let k = 0; k < 1; k++) this.bubbles.push({ x: Math.random() * W, y: H + 10, r: 2 + Math.random() * 5, v: 70 + Math.random() * 110, ph: Math.random() * TAU, t0: now });
-    }
-    b.lineWidth = 1.3;
     let alive = 0;
-    for (const bb of this.bubbles) {
-      const s = (now - bb.t0) / 1000;
-      const y = bb.y - bb.v * s, x = bb.x + Math.sin(bb.ph + s * 4) * 6;
-      if (y < surf(x) + bb.r) continue;
-      this.bubbles[alive++] = bb;
-      b.strokeStyle = 'rgba(255,255,255,.6)';
-      b.beginPath(); b.arc(x, y, bb.r, 0, TAU); b.stroke();
-      b.fillStyle = 'rgba(255,255,255,.55)';
-      b.beginPath(); b.arc(x - bb.r * 0.35, y - bb.r * 0.35, bb.r * 0.3, 0, TAU); b.fill();
-    }
-    this.bubbles.length = alive;
-
-    // 波が盤面の上を通り過ぎる間だけ、手前にも泡の線を描く（せり上がる・引いていく勢いが見える）
-    if (speed > 0.01) {
-      const a = clamp01(speed * 40) * 0.55;
-      f.globalAlpha = a;
-      f.beginPath();
-      for (let x = 0; x <= W + step; x += step) { const y = surf(x); if (x === 0) f.moveTo(x, y); else f.lineTo(x, y); }
-      f.strokeStyle = '#fff';
-      f.lineWidth = 3;
-      f.stroke();
-      const fg = f.createLinearGradient(0, base - amp, 0, base + 40);
-      fg.addColorStop(0, 'rgba(160,240,255,.35)');
-      fg.addColorStop(1, 'rgba(160,240,255,0)');
-      f.lineTo(W, base + 40); f.lineTo(0, base + 40); f.closePath();
-      f.fillStyle = fg;
-      f.fill();
-      f.globalAlpha = 1;
-      // 勢いよく上がった直後の水しぶき
-      if (speed > 0.02 && now - w.lastSplash > 70 && q >= 0.4) {
-        w.lastSplash = now;
-        for (let k = 0; k < 3; k++) {
-          const x = Math.random() * W;
-          this.bits.push({ kind: 'drop', t0: now, life: 650, x, y: surf(x), vx: (Math.random() - 0.5) * 120, vy: -(160 + Math.random() * 220), g: 900, size: 3 + Math.random() * 3, color: 'cyan' });
-        }
-      }
-    }
-    return true;
-  }
-
-  drawBalloons(now) {
-    const f = this.fctx, H = this.H;
-    let alive = 0;
-    for (const bl of this.balloons) {
-      if (now >= bl.popAt) { this.pop(bl, now); continue; }
-      this.balloons[alive++] = bl;
-      if (now < bl.t0) continue;
-      const t = clamp01((now - bl.t0) / 1250);
-      const y = H + bl.size + (bl.yT - H - bl.size) * easeOutBack(t) + Math.sin(now * 0.0032 + bl.ph) * 4 * t;
-      const x = bl.x + Math.sin(now * 0.0021 + bl.ph) * 3;
-      const rot = Math.sin(now * 0.0026 + bl.ph) * 0.07 + (1 - t) * 0.12 * Math.sin(bl.ph);
-      const w = bl.size, h = w * 1.25;
-      bl.cx = x; bl.cy = y;
-      // ひも（下で少し遅れて揺れる）
-      f.strokeStyle = 'rgba(255,255,255,.75)';
-      f.lineWidth = 1.2;
-      f.beginPath();
-      const kx = x + Math.sin(rot) * h * 0.5, ky = y + h * 0.5;
-      f.moveTo(kx, ky);
-      f.quadraticCurveTo(kx + Math.sin(now * 0.004 + bl.ph) * 8, ky + h * 0.45, kx + Math.sin(now * 0.003 + bl.ph + 1) * 5, ky + h * 0.95);
-      f.stroke();
-      f.save();
-      f.translate(x, y);
-      f.rotate(rot);
-      f.drawImage(this.balloon(bl.color, bl.ch), -w / 2, -h / 2, w, h);
-      f.restore();
-    }
-    this.balloons.length = alive;
-    return alive > 0;
-  }
-
-  /** 風船が割れる: 風船の色の破片と白い光が飛び散り、ポンと鳴る */
-  pop(bl, now) {
-    if (bl.cx == null) return;
-    const q = this.quality(), n = Math.round(12 * q) + 4;
-    for (let i = 0; i < n; i++) {
-      const a = (TAU * i) / n + Math.random() * 0.4, v = 180 + Math.random() * 240;
-      this.bits.push({ kind: 'shard', t0: now, life: 700 + Math.random() * 300, x: bl.cx, y: bl.cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, g: 700,
-        size: bl.size * (0.1 + Math.random() * 0.12), rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 16, color: bl.color });
-    }
-    this.bits.push({ kind: 'flash', t0: now, life: 260, x: bl.cx, y: bl.cy, size: bl.size * 1.4, color: bl.color });
-    this.sfx?.pop?.(this._popIndex = ((this._popIndex ?? 0) + 1) % 8);
+    for (const a of this.actors) if (a.draw(now)) this.actors[alive++] = a;
+    this.actors.length = alive;
+    const bits = this.drawBits(now);
+    f.globalAlpha = 1;
+    f.globalCompositeOperation = 'source-over';
+    this.dirty = alive > 0 || bits;
+    if (this.dirty) this.raf = requestAnimationFrame((t) => this.frame(t));
   }
 
   drawBits(now) {
@@ -420,22 +568,15 @@ export class Scenes {
       this.bits[alive++] = p;
       const s = Math.max(0, now - p.t0) / 1000;
       const x = p.x + (p.vx ?? 0) * s, y = p.y + (p.vy ?? 0) * s + 0.5 * (p.g ?? 0) * s * s;
-      const c = this.colorOf(p.color);
-      if (p.kind === 'shard') {
+      if (p.kind === 'bead') {                                  // 色の丸い粒（つやつや）
         f.globalAlpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
-        f.save();
-        f.translate(x, y);
-        f.rotate(p.rot + p.vr * s);
-        f.fillStyle = c.col;
-        f.fillRect(-p.size / 2, -p.size * 0.35, p.size, p.size * 0.7);
-        f.fillStyle = c.hi;
-        f.fillRect(-p.size / 2, -p.size * 0.35, p.size, p.size * 0.22);
-        f.restore();
-      } else if (p.kind === 'drop') {
+        const r = p.size * (1 - 0.3 * t);
+        f.drawImage(this.ball(p.color), x - r, y - r, r * 2, r * 2);
+      } else if (p.kind === 'drop') {                           // 水滴
         f.globalAlpha = 1 - t;
-        f.fillStyle = 'rgba(210,248,255,.95)';
-        f.beginPath(); f.arc(x, y, p.size * (1 - 0.4 * t), 0, TAU); f.fill();
-      } else if (p.kind === 'flash') {
+        f.fillStyle = 'rgba(214,250,255,.95)';
+        f.beginPath(); f.arc(x, y, Math.max(0.5, p.size * (1 - 0.4 * t)), 0, TAU); f.fill();
+      } else if (p.kind === 'flash') {                          // ふわっとした光
         f.globalAlpha = (1 - t) * 0.9;
         const r = p.size * (0.4 + 0.8 * easeOut3(t));
         f.drawImage(this.sprite('glow', p.color), x - r, y - r, r * 2, r * 2);
@@ -446,163 +587,178 @@ export class Scenes {
     return alive > 0;
   }
 
-  drawRings(now) {
-    const f = this.fctx;
-    let alive = 0;
-    for (const r of this.rings) {
-      const t = Math.max(0, (now - r.t0) / r.life);
-      if (t >= 1) continue;
-      this.rings[alive++] = r;
-      const e = easeOut3(t), c = this.colorOf(r.color);
-      f.globalAlpha = (1 - t) * 0.55;
-      f.strokeStyle = c.rim;
-      f.lineWidth = 14 * (1 - t) + 2;
-      f.beginPath(); f.arc(r.x, r.y, 20 + r.r1 * e, 0, TAU); f.stroke();
-      f.globalAlpha = (1 - t) * 0.3;
-      f.strokeStyle = c.col;
-      f.lineWidth = 30 * (1 - t) + 4;
-      f.stroke();
-    }
-    this.rings.length = alive;
-    f.globalAlpha = 1;
-    return alive > 0;
-  }
-
   /* =====================================================================
    * 1回だけ描いておく絵
    * ===================================================================== */
 
-  /** 文字の書かれた風船（宝石と同じ、左上から光が当たる塗り） */
-  balloon(color, ch) {
-    const key = 'balloon:' + color + ':' + ch;
+  cached(key, make) {
     let img = this.sprites.get(key);
-    if (img) return img;
-    const c = this.colorOf(color), S = 2, W = 64 * S, H = 80 * S;
-    img = document.createElement('canvas');
-    img.width = W; img.height = H;
-    const g = img.getContext('2d');
-    g.scale(S, S);
-    // 本体
-    const body = g.createRadialGradient(22, 22, 3, 32, 34, 36);
-    body.addColorStop(0, c.hi);
-    body.addColorStop(0.45, c.col);
-    body.addColorStop(1, c.lo);
-    g.fillStyle = body;
-    g.beginPath();
-    g.moveTo(32, 66);
-    g.bezierCurveTo(12, 58, 4, 42, 5, 30);
-    g.bezierCurveTo(6, 13, 18, 3, 32, 3);
-    g.bezierCurveTo(46, 3, 58, 13, 59, 30);
-    g.bezierCurveTo(60, 42, 52, 58, 32, 66);
-    g.fill();
-    // ふちの明るい線（背景から浮かせる）
-    g.strokeStyle = 'rgba(255,255,255,.35)';
-    g.lineWidth = 1.2;
-    g.stroke();
-    // 結び目
-    g.fillStyle = c.lo;
-    g.beginPath(); g.moveTo(32, 64); g.lineTo(27.5, 71); g.lineTo(36.5, 71); g.closePath(); g.fill();
-    // つや
-    g.fillStyle = 'rgba(255,255,255,.55)';
-    g.beginPath(); g.ellipse(20, 19, 6.5, 9.5, -0.5, 0, TAU); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.8)';
-    g.beginPath(); g.ellipse(17.5, 14.5, 2.2, 3.2, -0.5, 0, TAU); g.fill();
-    // 文字
-    g.font = '900 31px Nunito, "M PLUS Rounded 1c", sans-serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.lineJoin = 'round';
-    g.strokeStyle = 'rgba(40,20,90,.35)';
-    g.lineWidth = 4;
-    g.strokeText(ch, 32, 36);
-    g.fillStyle = '#fff';
-    g.fillText(ch, 32, 36);
-    this.sprites.set(key, img);
+    if (!img) { img = make(); this.sprites.set(key, img); }
     return img;
   }
+  canvas(w, h = w) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
+  /** 宝石と同じ、左上から光が当たる丸い塗り */
+  gem(g, cx, cy, r, c) {
+    const body = g.createRadialGradient(cx - r * 0.32, cy - r * 0.36, r * 0.08, cx, cy, r);
+    body.addColorStop(0, c.hi); body.addColorStop(0.5, c.col); body.addColorStop(1, c.lo);
+    g.fillStyle = body;
+    g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.55)';
+    g.beginPath(); g.ellipse(cx - r * 0.38, cy - r * 0.42, r * 0.22, r * 0.32, -0.6, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.85)';
+    g.beginPath(); g.arc(cx - r * 0.45, cy - r * 0.52, r * 0.08, 0, TAU); g.fill();
+  }
+  letter(g, ch, cx, cy, size, fill = '#fff', stroke = 'rgba(40,20,90,.35)') {
+    g.font = `900 ${size}px Nunito, "M PLUS Rounded 1c", sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    g.strokeStyle = stroke; g.lineWidth = size * 0.13;
+    g.strokeText(ch, cx, cy);
+    g.fillStyle = fill;
+    g.fillText(ch, cx, cy);
+  }
+
+  /** 文字の書かれた風船 */
+  balloon(color, ch) {
+    return this.cached('balloon:' + color + ':' + ch, () => {
+      const c = this.colorOf(color), S = 2, img = this.canvas(64 * S, 80 * S), g = img.getContext('2d');
+      g.scale(S, S);
+      const body = g.createRadialGradient(22, 22, 3, 32, 34, 36);
+      body.addColorStop(0, c.hi); body.addColorStop(0.45, c.col); body.addColorStop(1, c.lo);
+      g.fillStyle = body;
+      g.beginPath();
+      g.moveTo(32, 66);
+      g.bezierCurveTo(12, 58, 4, 42, 5, 30);
+      g.bezierCurveTo(6, 13, 18, 3, 32, 3);
+      g.bezierCurveTo(46, 3, 58, 13, 59, 30);
+      g.bezierCurveTo(60, 42, 52, 58, 32, 66);
+      g.fill();
+      g.fillStyle = c.lo;                                      // 結び目（丸）
+      g.beginPath(); g.arc(32, 67, 3.2, 0, TAU); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.55)';
+      g.beginPath(); g.ellipse(20, 19, 6.5, 9.5, -0.5, 0, TAU); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.8)';
+      g.beginPath(); g.ellipse(17.5, 14.5, 2.2, 3.2, -0.5, 0, TAU); g.fill();
+      this.letter(g, ch, 32, 36, 31);
+      return img;
+    });
+  }
+
+  /** シャボン玉: 中は透明で、ふちが虹色にうっすら光る。左上に窓の映り込み */
+  bubble() {
+    return this.cached('bubble', () => {
+      const S = 128, R = S / 2, img = this.canvas(S), g = img.getContext('2d');
+      const body = g.createRadialGradient(R, R, R * 0.2, R, R, R);
+      body.addColorStop(0, 'rgba(255,255,255,.04)'); body.addColorStop(0.7, 'rgba(255,255,255,.1)');
+      body.addColorStop(0.86, 'rgba(170,240,255,.5)'); body.addColorStop(0.94, 'rgba(255,190,245,.65)'); body.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = body;
+      g.beginPath(); g.arc(R, R, R, 0, TAU); g.fill();
+      // 虹色のうつろい（片側だけ黄緑、反対側は桃色）
+      const iri = g.createLinearGradient(0, S, S, 0);
+      iri.addColorStop(0, 'rgba(255,240,120,.22)'); iri.addColorStop(0.5, 'rgba(255,255,255,0)'); iri.addColorStop(1, 'rgba(120,200,255,.22)');
+      g.globalCompositeOperation = 'source-atop';
+      g.fillStyle = iri; g.fillRect(0, 0, S, S);
+      g.globalCompositeOperation = 'source-over';
+      g.fillStyle = 'rgba(255,255,255,.8)';
+      g.beginPath(); g.ellipse(R * 0.62, R * 0.55, R * 0.16, R * 0.24, -0.7, 0, TAU); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.45)';
+      g.beginPath(); g.arc(R * 1.38, R * 1.42, R * 0.08, 0, TAU); g.fill();
+      return img;
+    });
+  }
+  /** 文字の入ったシャボン玉（文字はブロックの色） */
+  letterBubble(color, ch) {
+    return this.cached('lbubble:' + color + ':' + ch, () => {
+      const S = 128, img = this.canvas(S), g = img.getContext('2d');
+      g.drawImage(this.bubble(), 0, 0, S, S);
+      const c = this.colorOf(color);
+      this.letter(g, ch, S / 2, S / 2 + 3, 62, c.col, 'rgba(255,255,255,.95)');
+      return img;
+    });
+  }
+  /** つやつやのガムボール */
+  ball(color) {
+    return this.cached('ball:' + color, () => {
+      const S = 96, img = this.canvas(S), g = img.getContext('2d');
+      this.gem(g, S / 2, S / 2, S / 2 - 1, this.colorOf(color));
+      return img;
+    });
+  }
+  /** 文字の入ったガムボール */
+  letterBall(color, ch) {
+    return this.cached('lball:' + color + ':' + ch, () => {
+      const S = 128, img = this.canvas(S), g = img.getContext('2d');
+      this.gem(g, S / 2, S / 2, S / 2 - 2, this.colorOf(color));
+      this.letter(g, ch, S / 2, S / 2 + 4, 66);
+      return img;
+    });
+  }
+  /** 丸いシール: 白い丸に、ブロックの色の文字。ふちはブロックの色でふっくら */
+  sticker(color, ch) {
+    return this.cached('sticker:' + color + ':' + ch, () => {
+      const S = 128, R = S / 2, img = this.canvas(S), g = img.getContext('2d'), c = this.colorOf(color);
+      g.fillStyle = 'rgba(40,20,90,.18)';                      // 下にうっすら影
+      g.beginPath(); g.arc(R, R + 5, R - 6, 0, TAU); g.fill();
+      g.fillStyle = c.col;
+      g.beginPath(); g.arc(R, R, R - 6, 0, TAU); g.fill();
+      const face = g.createRadialGradient(R - 14, R - 18, 6, R, R, R - 13);
+      face.addColorStop(0, '#fff'); face.addColorStop(1, '#f1f4ff');
+      g.fillStyle = face;
+      g.beginPath(); g.arc(R, R, R - 13, 0, TAU); g.fill();
+      this.letter(g, ch, R, R + 3, 64, c.col, 'rgba(255,255,255,.9)');
+      return img;
+    });
+  }
+
+  /** ぼんやりした光（glow）と、ふちまでなめらかに消える大きな丸（soft） */
+  sprite(kind, color) {
+    return this.cached(kind + ':' + color, () => {
+      const c = color === 'white' ? { col: '#ffffff', hi: '#ffffff' } : this.colorOf(color), S = 64, R = S / 2;
+      const img = this.canvas(S), g = img.getContext('2d');
+      const grd = g.createRadialGradient(R, R, 0, R, R, R);
+      if (kind === 'soft') {
+        grd.addColorStop(0, hexA(c.hi, 0.55)); grd.addColorStop(0.5, hexA(c.col, 0.35)); grd.addColorStop(0.8, hexA(c.col, 0.12)); grd.addColorStop(1, hexA(c.col, 0));
+      } else {
+        grd.addColorStop(0, 'rgba(255,255,255,.9)'); grd.addColorStop(0.18, c.hi); grd.addColorStop(0.45, hexA(c.col, 0.35)); grd.addColorStop(1, hexA(c.col, 0));
+      }
+      g.fillStyle = grd;
+      g.fillRect(0, 0, S, S);
+      return img;
+    });
+  }
+  spriteUrl(kind, color) { return this.cached('url:' + kind + ':' + color, () => this.sprite(kind, color).toDataURL()); }
 
   /**
-   * 光の放射の絵（400px）: 中心から外へ向かって消えていく光の帯。中心の穴と外側の消え方まで描き込むので、
-   * CSS の mask は使わない（mask は画面の合成を重くする）
+   * 虹色の絵（400px）: なめらかな色相の輪を、外側へ向かって透明にしたもの。
+   * 扇形を並べるとつなぎ目が放射状の線に見えるので、conic グラデーション 1 枚で描き、丸いグラデーションで抜く
    */
-  burstImage(kind) {
-    const key = 'burst:' + kind;
-    if (this.sprites.has(key)) return this.sprites.get(key);
-    const S = 400, R = S / 2, cv = document.createElement('canvas');
-    cv.width = cv.height = S;
-    const g = cv.getContext('2d');
-    const cols = { sea: ['rgba(200,250,255,'], gold: ['rgba(255,240,170,'], amazing: ['rgba(255,200,245,'],
-      rainbow: ['rgba(255,120,150,', 'rgba(255,230,120,', 'rgba(120,240,255,'] }[kind] ?? ['rgba(255,255,255,'];
-    const n = 18, w = (TAU / n) * 0.36;
-    for (let i = 0; i < n; i++) {
-      const c = cols[i % cols.length], a = (TAU * i) / n;
-      const grd = g.createRadialGradient(R, R, 0, R, R, R);
-      grd.addColorStop(0, c + '0)'); grd.addColorStop(0.08, c + '.55)'); grd.addColorStop(0.5, c + '.3)'); grd.addColorStop(1, c + '0)');
-      g.fillStyle = grd;
-      g.beginPath(); g.moveTo(R, R); g.arc(R, R, R, a - w, a + w); g.closePath(); g.fill();
-    }
-    const url = cv.toDataURL();
-    this.sprites.set(key, url);
-    return url;
-  }
-  /** 虹色の絵（400px）: 色相の輪を、外側へ向かって透明にしたもの */
   rainbowImage() {
-    if (this.sprites.has('rainbow')) return this.sprites.get('rainbow');
-    const S = 400, R = S / 2, cv = document.createElement('canvas');
-    cv.width = cv.height = S;
-    const g = cv.getContext('2d');
-    const hues = ['255,80,110', '255,176,40', '255,233,74', '77,230,136', '63,216,255', '120,110,255', '200,90,255'];
-    const n = 84;
-    for (let i = 0; i < n; i++) {
-      const a = (TAU * i) / n, c = hues[Math.floor((i / n) * hues.length)];
-      const grd = g.createRadialGradient(R, R, 0, R, R, R);
-      grd.addColorStop(0, `rgba(${c},.7)`); grd.addColorStop(0.45, `rgba(${c},.42)`); grd.addColorStop(1, `rgba(${c},0)`);
-      g.fillStyle = grd;
-      g.beginPath(); g.moveTo(R, R); g.arc(R, R, R, a, a + TAU / n + 0.02); g.closePath(); g.fill();
-    }
-    const url = cv.toDataURL();
-    this.sprites.set('rainbow', url);
-    return url;
-  }
-
-  /** ぼんやりした光（glow）と、4本の光の筋を持つ星（star） */
-  sprite(kind, color) {
-    const key = kind + ':' + color;
-    let img = this.sprites.get(key);
-    if (img) return img;
-    const c = this.colorOf(color), S = 64, R = S / 2;
-    img = document.createElement('canvas');
-    img.width = img.height = S;
-    const g = img.getContext('2d');
-    const grd = g.createRadialGradient(R, R, 0, R, R, R);
-    grd.addColorStop(0, 'rgba(255,255,255,.9)');
-    grd.addColorStop(0.18, c.hi);
-    grd.addColorStop(0.45, hexA(c.col, 0.35));
-    grd.addColorStop(1, hexA(c.col, 0));
-    g.fillStyle = grd;
-    g.fillRect(0, 0, S, S);
-    if (kind === 'star') {
-      g.fillStyle = 'rgba(255,255,255,.9)';
-      for (const [w, h] of [[2.4, R * 0.95], [R * 0.95, 2.4]]) {
-        g.beginPath(); g.ellipse(R, R, w, h, 0, 0, TAU); g.fill();
+    return this.cached('rainbow', () => {
+      const S = 400, R = S / 2, cv = this.canvas(S), g = cv.getContext('2d');
+      const hues = ['255,80,110', '255,176,40', '255,233,74', '77,230,136', '63,216,255', '120,110,255', '200,90,255', '255,80,110'];
+      if (g.createConicGradient) {
+        const cg = g.createConicGradient(0, R, R);
+        hues.forEach((c, i) => cg.addColorStop(i / (hues.length - 1), `rgb(${c})`));
+        g.fillStyle = cg;
+      } else {
+        const lg = g.createLinearGradient(0, 0, S, S);                   // conic が無い環境: 斜めの虹
+        hues.forEach((c, i) => lg.addColorStop(i / (hues.length - 1), `rgb(${c})`));
+        g.fillStyle = lg;
       }
-    }
-    this.sprites.set(key, img);
-    return img;
+      g.fillRect(0, 0, S, S);
+      g.globalCompositeOperation = 'destination-in';
+      const fade = g.createRadialGradient(R, R, 0, R, R, R);
+      fade.addColorStop(0, 'rgba(0,0,0,.7)'); fade.addColorStop(0.45, 'rgba(0,0,0,.42)'); fade.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = fade;
+      g.fillRect(0, 0, S, S);
+      return cv.toDataURL();
+    });
   }
 
-  /** sprite を画像の URL にしたもの（DOM の背景に使う） */
-  spriteUrl(kind, color) {
-    const key = 'url:' + kind + ':' + color;
-    let url = this.sprites.get(key);
-    if (!url) { url = this.sprite(kind, color).toDataURL(); this.sprites.set(key, url); }
-    return url;
-  }
-
-  /** 文字の風船の絵をフォントの読み込み後に作り直す（先に作ると別のフォントで描かれるため） */
+  /** 文字の絵をフォントの読み込み後に作り直す（先に作ると別のフォントで描かれるため） */
   async warm() {
     try { await document.fonts?.load('900 31px Nunito'); } catch {}
-    for (const k of [...this.sprites.keys()]) if (k.startsWith('balloon:')) this.sprites.delete(k);
+    for (const k of [...this.sprites.keys()]) if (/^(balloon|lbubble|lball|sticker):/.test(k)) this.sprites.delete(k);
   }
 }
 

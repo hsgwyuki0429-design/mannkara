@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609251214';
-import { Particles, RAINBOW } from './particles.js?v=202609251214';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609251235';
+import { Particles, RAINBOW } from './particles.js?v=202609251235';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -569,14 +569,7 @@ export class Renderer {
       d.style.animationDelay = i * 12 + 'ms';
       this.addFx(this.fxLayer, d, 460 + i * 12);
     });
-    const beam = document.createElement('div');
-    beam.className = `beam c-${color} ${kind}`;
-    const fixed = (SIZE - n) * c;
-    Object.assign(beam.style, kind === 'col'
-      ? { left: fixed + 'px', top: 0, width: c + 'px', height: n * c + 'px' }
-      : { left: 0, top: fixed + 'px', width: n * c + 'px', height: c + 'px' });
-    this.addFx(this.fxLayer, beam, 420);
-    // ラインの各マスから、ラインと直交する向き（両側）へ光の筋が飛び散る
+    // ラインの各マスから、ラインと直交する向き（両側）へ丸い光の玉が飛び散る
     const pts = lineCells(kind, n).map(({ x, r }) => this.localToWrap((x + 0.5) * c, (r + 0.5) * c));
     const a = pts[0], b = pts[pts.length - 1];
     const perp = n > 1 ? Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2 : Math.random() * Math.PI * 2;
@@ -604,54 +597,11 @@ export class Renderer {
     if (!d) {
       d = document.createElement('div');
       d.className = `${cls} c-${color}`;
-      if (cls === 'fx-rays') d.style.backgroundImage = `url(${this.raysImage(color, vars)})`;
       this.fx2.appendChild(d);
     }
     d.__release = () => { if (d.isConnected) idle.push(d); };
     return d;
   }
-  /**
-   * 放射状の光線の画像（{ n: 本数, w: 1本の角度 deg }）を canvas に1回だけ描いて画像にする。
-   * 中心の近くと外側へ向かって消えていくところまで描き込むので、CSS の mask は要らない（mask は合成が重い）
-   */
-  raysImage(color, { n, w }) {
-    const key = color + '|' + n + '|' + w;
-    this.raysUrls ??= new Map();
-    if (this.raysUrls.has(key)) return this.raysUrls.get(key);
-    const B = 160, dpr = Math.min(2, window.devicePixelRatio || 1), S = Math.round(B * dpr);
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = S;
-    const g = cv.getContext('2d'), col = this.particles.color(color), R = S / 2;
-    g.translate(R, R);
-    const grd = g.createRadialGradient(0, 0, 0, 0, 0, R);
-    grd.addColorStop(0, rgba(col.hi, 0));
-    grd.addColorStop(0.1, rgba(col.hi, 0.95));
-    grd.addColorStop(0.3, rgba(col.hi, 0.85));
-    grd.addColorStop(0.62, rgba(col.col, 0.4));
-    grd.addColorStop(1, rgba(col.col, 0));
-    g.fillStyle = grd;
-    const half = (w * Math.PI) / 360;
-    for (let i = 0; i < n; i++) {                       // 外へ向かって広がるくさび形
-      const a = (Math.PI * 2 * i) / n;
-      g.beginPath();
-      g.moveTo(0, 0);
-      g.arc(0, 0, R, a - half, a + half);
-      g.closePath();
-      g.fill();
-    }
-    // 芯: くさびの中心線を白っぽく細く
-    g.globalCompositeOperation = 'lighter';
-    g.fillStyle = grd;
-    g.globalAlpha = 0.5;
-    for (let i = 0; i < n; i++) {
-      const a = (Math.PI * 2 * i) / n;
-      g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R * 0.8, a - half * 0.3, a + half * 0.3); g.closePath(); g.fill();
-    }
-    const url = cv.toDataURL();
-    this.raysUrls.set(key, url);
-    return url;
-  }
-
   /** 1枚絵を (x, y) を中心に、frames の [透明度, 拡大率, 回転deg, offset?] の順に動かして消す */
   playSprite(d, base, x, y, frames, life) {
     this._spriteAnims ??= new Set();
@@ -678,18 +628,12 @@ export class Renderer {
   }
 
   /**
-   * 中心から放射状に伸びる光線（n 本・長さ len px・太さ width px）。回りながら伸びて消える。
-   * 光線は CSS の repeating-conic-gradient で1枚に描く
+   * 丸い光の輪（放射状の光線の代わり）: 光の玉が円に並び、回りながら外へ広がって消える。
+   * 本数 n・広がる大きさ len px・玉の大きさ width px
    */
-  raysFx(x, y, color, { n = 12, len = 80, width = 14, life = 620, spin = 0.5, alpha = 0.8 } = {}) {
-    if (this.q < 0.6 || matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-    const B = 160;
-    // 本数は 12 / 16 / 20 本の3種類にまとめる（見た目の種類が少ないほど1枚絵を使い回せる）。太さは本数で決める
-    n = n <= 13 ? 12 : n <= 17 ? 16 : 20;
-    const w = { 12: 10, 16: 8, 20: 6 }[n];
-    const d = this.sprite('fx-rays', color, { n, w });
-    const k = (len * 2) / B, r0 = Math.random() * 360, r1 = r0 + (spin * 180) / Math.PI;
-    this.playSprite(d, B, x, y, [[0, 0.55 * k, r0], [alpha, 0.62 * k, r0 + (r1 - r0) * 0.12, 0.12], [0, k, r1]], life);
+  raysFx(x, y, color, { n = 12, len = 80, width = 14, life = 620, spin = 0.5 } = {}) {
+    if (this.q < 0.5) n = Math.ceil(n / 2);
+    this.particles.halo(x, y, color, { n, r0: len * 0.2, r1: len, dot: width * 0.55, life, spin });
   }
 
   /** 画面が一瞬ぐっと寄って戻る（大きな連鎖の衝撃）。scale だけを動かす */
@@ -751,18 +695,16 @@ export class Renderer {
     }
   }
 
-  /** 全消し: 虹色の光線が盤面の中心から回り、花火が連発する */
+  /** 全消し（盤面の中の分）: 盤面の中心から虹色の光の玉の輪が広がり、ふわっと光る。画面全体の演出は scenes.allClear */
   allClearBlast() {
     const c = this.cell, b = this.boardBox();
     const x = (b.x0 + b.x1) / 2, y = (b.y0 + b.y1) / 2;
-    ['red', 'yellow', 'green', 'cyan', 'purple'].forEach((color, i) => this.raysFx(x, y, color, {
-      n: 12, len: c * 4.2, width: c * 0.7, life: 1100, spin: i % 2 ? -0.7 : 0.7,
-    }));
+    ['red', 'yellow', 'green', 'cyan', 'purple'].forEach((color, i) => setTimeout(() => this.raysFx(x, y, color, {
+      n: 12, len: c * (2.6 + i * 0.35), width: c * 0.7, life: 900, spin: i % 2 ? -0.7 : 0.7,
+    }), i * 70));
     this.flareFx(x, y, 'yellow', c * 7, 800);
-    [0, 160, 320].forEach((d, i) => setTimeout(() => this.particles.wave(x, y, RAINBOW[i * 2], c * 1.6), d));
     this.flash(0.3, 'yellow');
     this.punch(0.045, 320);
-    this.fireworks(7, 150);
   }
 
   /** 流れる先頭ブロックが残す光の粒 */
@@ -827,7 +769,8 @@ export class Renderer {
       const frames = [];
       for (let k = 0; k <= 10; k++) {
         const t = (T * k) / 10;
-        frames.push({ transform: `translate(${vx * t}px,${vy * t + 0.5 * g * t * t}px) rotate(${rot * t}deg) rotateX(${rot * t * 2}deg)`,
+        // 丸い紙吹雪は裏返さず（真横を向くと線に見える）、ふわふわ膨らみながら落ちる
+        frames.push({ transform: `translate(${vx * t}px,${vy * t + 0.5 * g * t * t}px) scale(${0.75 + 0.25 * Math.cos(rot * t * 0.03)})`,
           opacity: k < 7 ? 1 : 1 - (k - 6) / 4 });
       }
       d.animate(frames, { duration: T * 1000, easing: 'linear' }).onfinish = () => d.remove();

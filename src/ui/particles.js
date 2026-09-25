@@ -8,14 +8,14 @@
  * 盤面の外へ飛び出す粒も切れないようにする。毎フレーム消して描き直すのは、粒がいる範囲（前のフレームと
  * 今のフレームの外接四角）だけにする（canvas 全体を毎回塗り直すと、それだけで重い）。
  *
- * 光るもの（光の筋・火の粉・光の尾）は加算合成で重ねて「焼けるような」明るさを出す。
+ * 形はすべて丸（線や細長い筋は使わない）。光るもの（光の玉・火の粉・光の尾）は加算合成で重ねて明るさを出す。
  * 形のある粒（色の粒・破片・輪）は普通に塗る。加算は光のにじみだけに使うので、青い背景の上でも色が濁らない。
  * 大きくて形の変わらない光（フレア・放射状の光線）はここでは描かない（renderer が DOM の1枚絵を
  * 拡大・回転・透明度だけで動かす。毎フレーム描き直さないので、大きくても軽い）。
  */
 const MAX_PARTICLES = 700;
 /** 加算合成で描く種類 */
-const ADDITIVE = new Set(['streak', 'ember', 'trail']);
+const ADDITIVE = new Set(['orb', 'ember', 'trail']);
 /** 花火などで使う7色（ブロックと同じ色） */
 export const RAINBOW = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
 const TAU = Math.PI * 2;
@@ -94,22 +94,37 @@ export class Particles {
       });
     }
   }
-  /** 広がる衝撃波の輪 */
-  wave(x, y, color, cell) { this.add({ kind: 'wave', x, y, color, size: cell * 1.3, life: 540 }); }
+  /**
+   * 丸い光の輪: 小さな光の玉が円に並んで外へ広がり、真ん中はふわっと光る（線の輪は使わない）
+   * size は広がる前の直径
+   */
+  wave(x, y, color, cell, { n = 12, spread = 1.7, size } = {}) {
+    const d = size ?? cell * 1.3;
+    this.add({ kind: 'bloom', x, y, color, size: d * 1.6, life: 420 });
+    this.halo(x, y, color, { n: Math.max(6, Math.round(n * this.quality)), r0: d * 0.3, r1: d * spread, dot: cell * 0.2, life: 560 });
+  }
+  /** 円に並んだ光の玉が r0 から r1 へ広がりながら小さくなって消える（放射状の光線の代わり） */
+  halo(x, y, color, { n = 12, r0 = 10, r1 = 60, dot = 6, life = 600, spin = 0.6 } = {}) {
+    const a0 = Math.random() * TAU;
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (TAU * i) / n;
+      this.add({ kind: 'haloDot', x, y, color, a, spin, r0, r1, size: dot * (i % 2 ? 0.75 : 1), life: life * (0.9 + (i % 3) * 0.08) });
+    }
+  }
   /** 流れるブロックが残す光の尾 */
   trail(x, y, color, cell) { this.add({ kind: 'trail', x, y, color, size: cell * 0.55, life: 340 }); }
 
   /**
-   * 飛び散る光の筋。進む向きに細長く伸び、空気抵抗で減速しながら縮んで消える。
-   * dir を中心に spread の範囲へ飛ぶ（spread = TAU なら全方向）。speed はマス/秒。
+   * 飛び散る光の玉（丸）。空気抵抗で減速しながら小さくなって消える。
+   * dir を中心に spread の範囲へ飛ぶ（spread = TAU なら全方向）。speed はマス/秒、len は玉の大きさの倍率。
    */
   streaks(x, y, color, n, cell, { dir = 0, spread = TAU, speed = [5, 11], life = [380, 620], len = 1 } = {}) {
     for (let i = 0; i < n; i++) {
       const a = dir + (spread >= TAU ? (TAU * (i + Math.random() * 0.8)) / n : (Math.random() - 0.5) * spread);
       const v = cell * (speed[0] + Math.random() * (speed[1] - speed[0]));
       this.add({
-        kind: 'streak', x, y, color, vx: Math.cos(a) * v, vy: Math.sin(a) * v, k: 4.5,
-        len: cell * len * (0.7 + Math.random() * 0.6), width: cell * 0.2, life: life[0] + Math.random() * (life[1] - life[0]),
+        kind: 'orb', x, y, color, vx: Math.cos(a) * v, vy: Math.sin(a) * v, k: 4.5,
+        size: cell * 0.42 * len * (0.7 + Math.random() * 0.6), life: life[0] + Math.random() * (life[1] - life[0]),
       });
     }
   }
@@ -123,7 +138,7 @@ export class Particles {
       });
     }
   }
-  /** 花火: 光の筋 + 色の粒 + 輪（フレアは renderer 側） */
+  /** 花火: 光の玉 + 色の粒 + 丸い光の輪（フレアは renderer 側） */
   firework(x, y, color, cell) {
     const q = this.quality;
     this.streaks(x, y, color, Math.round(16 * q), cell, { speed: [6, 12], life: [520, 800], len: 1.1 });
@@ -181,13 +196,6 @@ export class Particles {
     if (y + r > b.y1) b.y1 = y + r;
   }
 
-  /** 回転した座標系で描くための transform（(x, y) を原点、angle の向きを +x に） */
-  at(x, y, angle) {
-    const { dpr, margin } = this, c = Math.cos(angle) * dpr, s = Math.sin(angle) * dpr;
-    this.ctx.setTransform(c, s, -s, c, (x + margin) * dpr, (y + margin) * dpr);
-  }
-  unrotate() { const { dpr, margin } = this; this.ctx.setTransform(dpr, 0, 0, dpr, margin * dpr, margin * dpr); }
-
   draw(p, t) {
     const ctx = this.ctx;
     const c = this.color(p.color);
@@ -205,42 +213,33 @@ export class Particles {
       const x = p.x + p.vx * sec, y = p.y + p.vy * sec + 0.5 * p.g * sec * sec;
       const s = p.size * (1 - 0.5 * t);
       ctx.globalAlpha = t < 0.625 ? 1 : 1 - (t - 0.625) / 0.375;
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate((p.rot * sec * Math.PI) / 180);
-      const img = this.sprite('shard', p.color);
-      ctx.drawImage(img, -s * 0.8, -s * 0.8, s * 1.6, s * 1.6);
-      ctx.restore();
-      this.mark(x, y, s * 1.14);                           // 回転しても収まる半径
-    } else if (p.kind === 'wave') {
-      const e = easeOut3(t);
-      const radius = (p.size / 2) * (0.3 + 2.9 * e);
-      ctx.globalAlpha = 1 - e;
-      ctx.lineWidth = 3 - 2 * e;
-      ctx.strokeStyle = c.rim;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.lineWidth = 6;
-      ctx.globalAlpha = (1 - e) * 0.35;
-      ctx.strokeStyle = c.col;
-      ctx.stroke();
-      this.mark(p.x, p.y, radius + 4);
+      const img = this.sprite('shard', p.color);            // 丸い宝石の粒（回転は見えないので回さない）
+      ctx.drawImage(img, x - s * 0.8, y - s * 0.8, s * 1.6, s * 1.6);
+      this.mark(x, y, s * 0.8);
+    } else if (p.kind === 'bloom') {                        // ふわっと広がって消える丸い光
+      const e = easeOut3(t), r = (p.size / 2) * (0.4 + 0.8 * e);
+      ctx.globalAlpha = 0.75 * (1 - t) * (1 - t);
+      ctx.drawImage(this.sprite('glow', p.color), p.x - r, p.y - r, r * 2, r * 2);
+      this.mark(p.x, p.y, r);
+    } else if (p.kind === 'haloDot') {                      // 円に並んで広がる光の玉
+      const e = easeOut3(t), r = p.r0 + (p.r1 - p.r0) * e, a = p.a + p.spin * e;
+      const x = p.x + Math.cos(a) * r, y = p.y + Math.sin(a) * r, s = p.size * (1 - 0.55 * t) * 2.2;
+      ctx.globalAlpha = t < 0.1 ? t / 0.1 : 1 - (t - 0.1) / 0.9;
+      ctx.drawImage(this.sprite('spark', p.color), x - s / 2, y - s / 2, s, s);
+      this.mark(x, y, s / 2);
     } else if (p.kind === 'trail') {
       const e = easeOut2(t);
       const r = p.size * (1 - 0.8 * e);
       ctx.globalAlpha = 1 - e;
       ctx.drawImage(this.sprite('trail', p.color), p.x - r / 2, p.y - r / 2, r, r);
       this.mark(p.x, p.y, r / 2);
-    } else if (p.kind === 'streak') {
+    } else if (p.kind === 'orb') {                          // 飛び散る光の玉
       const sec = (t * p.life) / 1000, f = Math.exp(-p.k * sec);
       const x = p.x + (p.vx * (1 - f)) / p.k, y = p.y + (p.vy * (1 - f)) / p.k;
-      const len = p.len * (0.35 + 0.65 * f), w = p.width * (1 - 0.5 * t);
+      const r = p.size * (1 - 0.6 * t) * 1.6;
       ctx.globalAlpha = 1 - t * t;
-      this.at(x, y, Math.atan2(p.vy, p.vx));
-      ctx.drawImage(this.sprite('streak', p.color), -len / 2, -w / 2, len, w);
-      this.unrotate();
-      this.mark(x, y, len / 2);
+      ctx.drawImage(this.sprite('trail', p.color), x - r / 2, y - r / 2, r, r);
+      this.mark(x, y, r / 2);
     } else if (p.kind === 'ember') {
       const x = p.x + Math.sin(p.ph + t * 7) * p.wob, y = p.y - p.rise * t;
       const r = p.size * (1 - 0.4 * t);
@@ -274,10 +273,6 @@ export class Particles {
     if (img) return img;
     const c = this.color(name);
     img = document.createElement('canvas');
-    if (kind === 'streak') {
-      this.sprites.set(key, img);
-      return this.longSprite(img, kind, c);
-    }
     const S = kind === 'glow' ? 64 : 48;
     img.width = img.height = S;
     const g = img.getContext('2d');
@@ -289,20 +284,22 @@ export class Particles {
       g.fillStyle = grd;
       g.fillRect(0, 0, S, S);
     };
-    if (kind === 'dot') {                       // 色の四角い粒 + 同じ色のにじみ
+    if (kind === 'dot') {                       // 色の丸い粒 + 同じ色のにじみ
       g.globalAlpha = 0.55; glow(c.col, c.col); g.globalAlpha = 1;
       g.fillStyle = c.col;
-      roundRect(g, S * 0.3, S * 0.3, S * 0.4, S * 0.4, S * 0.1);
+      g.beginPath(); g.arc(S / 2, S / 2, S * 0.2, 0, Math.PI * 2); g.fill();
     } else if (kind === 'spark') {              // 白い粒 + 色のにじみ
       g.globalAlpha = 0.8; glow(c.col, c.col); g.globalAlpha = 1;
       g.fillStyle = '#fff';
       g.beginPath(); g.arc(S / 2, S / 2, S * 0.16, 0, Math.PI * 2); g.fill();
-    } else if (kind === 'shard') {              // 光る宝石のかけら
+    } else if (kind === 'shard') {              // 光る宝石の丸い粒（左上から光が当たる）
       g.globalAlpha = 0.45; glow(c.col, c.col); g.globalAlpha = 1;
-      const grd = g.createLinearGradient(S * 0.2, S * 0.2, S * 0.8, S * 0.8);
-      grd.addColorStop(0, c.hi); grd.addColorStop(0.5, c.col); grd.addColorStop(1, c.lo);
+      const grd = g.createRadialGradient(S * 0.4, S * 0.38, S * 0.02, S / 2, S / 2, S * 0.3);
+      grd.addColorStop(0, c.hi); grd.addColorStop(0.55, c.col); grd.addColorStop(1, c.lo);
       g.fillStyle = grd;
-      roundRect(g, S * 0.19, S * 0.19, S * 0.62, S * 0.62, S * 0.14);
+      g.beginPath(); g.arc(S / 2, S / 2, S * 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.7)';
+      g.beginPath(); g.arc(S * 0.41, S * 0.39, S * 0.07, 0, Math.PI * 2); g.fill();
     } else if (kind === 'glow') {               // 中心だけ白く、外側は色でぼんやり（フレア・火の粉）
       const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
       grd.addColorStop(0, 'rgba(255,255,255,.6)');         // 加算で重なっても真っ白に飛ばないよう控えめに
@@ -322,37 +319,9 @@ export class Particles {
   }
 }
 
-/** 光の筋の sprite: 白い芯の細長い楕円 */
-Particles.prototype.longSprite = function (img, kind, c) {
-  const W = 64, H = 16;
-  img.width = W; img.height = H;
-  const g = img.getContext('2d');
-  g.translate(W / 2, H / 2);
-  g.scale(W / H, 1);
-  const grd = g.createRadialGradient(0, 0, 0, 0, 0, H / 2);
-  grd.addColorStop(0, 'rgba(255,255,255,1)');
-  grd.addColorStop(0.3, rgba(c.hi, 0.9));
-  grd.addColorStop(0.6, rgba(c.col, 0.45));
-  grd.addColorStop(1, rgba(c.col, 0));
-  g.fillStyle = grd;
-  g.fillRect(-H / 2, -H / 2, H, H);
-  return img;
-};
-
 /** '#rrggbb' → 'rgba(r,g,b,a)' */
 function rgba(hex, a) {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
   if (!m) return `rgba(255,255,255,${a})`;
   return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})`;
-}
-
-function roundRect(g, x, y, w, h, r) {
-  g.beginPath();
-  g.moveTo(x + r, y);
-  g.arcTo(x + w, y, x + w, y + h, r);
-  g.arcTo(x + w, y + h, x, y + h, r);
-  g.arcTo(x, y + h, x, y, r);
-  g.arcTo(x, y, x + w, y, r);
-  g.closePath();
-  g.fill();
 }
