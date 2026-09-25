@@ -1,11 +1,11 @@
-import { Game } from '../core/game.js?v=202609251434';
-import { Board } from '../core/board.js?v=202609251434';
-import { resolveChains } from '../core/mancala.js?v=202609251434';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251434';
-import { Renderer, delay } from './renderer.js?v=202609251434';
-import { Sfx } from './sfx.js?v=202609251434';
-import { Scenes } from './scenes.js?v=202609251434';
-import { colorOf } from './palette.js?v=202609251434';
+import { Game } from '../core/game.js?v=202609251453';
+import { Board } from '../core/board.js?v=202609251453';
+import { resolveChains } from '../core/mancala.js?v=202609251453';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251453';
+import { Renderer, delay } from './renderer.js?v=202609251453';
+import { Sfx } from './sfx.js?v=202609251453';
+import { Scenes } from './scenes.js?v=202609251453';
+import { colorOf } from './palette.js?v=202609251453';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -67,8 +67,11 @@ function planSpeeds(steps) {
   const k = Math.max(1, total / TURN_PLAY_BUDGET);
   return base.map((v) => v * k);
 }
-/** 再生中に次のピースを持ち上げたら、置くまでに追いつくよう残りの再生を速める */
-const backlog = () => (pending > 1 || drag ? BACKLOG_SPEED : 1);
+/** 再生中に次のピースが置かれて待ちが溜まっていたら、さらに速める */
+const backlog = () => (pending > 1 ? BACKLOG_SPEED : 1);
+/** 再生中にピースを持ち上げたときの再生の速さ（置くまでに表示を盤面に追いつかせる）。長く持っているほど速める */
+const CATCH_UP = 4, CATCH_UP_MAX = 12;
+const catchUpSpeed = () => Math.min(CATCH_UP_MAX, CATCH_UP + (performance.now() - drag.t0) / 150);
 let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
@@ -88,17 +91,23 @@ const game = new Game({
       updateDebug();
       pending++;
       const gen = generation;
-      enqueue(() => playTurn(turn)).finally(() => { if (gen === generation) pending = Math.max(0, pending - 1); });
+      enqueue(() => playTurn(turn)).finally(() => {
+        if (gen !== generation) return;
+        pending = Math.max(0, pending - 1);
+        if (!pending) caughtUp();
+      });
     },
   },
 });
 
 async function playTurn(turn) {
+  // 途中でリスタート（モードの切り替えなど）したら、古いゲームの続き（点数・ゲームオーバー）は出さない
+  const gen = generation, stale = () => gen !== generation;
   const rush = turn.seq < rushBefore;
   renderer.setRush(rush);
   showScore(turn.scoreAfterPlace);
   if (rush) {                                            // 早送り: 演出なしで盤面と点数だけ最後まで進める
-    for (const step of turn.steps) await renderer.playStep(step, 1);
+    for (const step of turn.steps) { await renderer.playStep(step, 1); if (stale()) return; }
     if (turn.allClear) { scenes.allClear(boardCenter()); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
     showScore(turn.score);
     return;
@@ -113,9 +122,11 @@ async function playTurn(turn) {
   for (const [i, step] of turn.steps.entries()) {
     const sp = speeds[i] * backlog();
     // 再生中に次のピースが置かれたら、残りの発動は演出なしで一気に進める
-    if (renderer.rush) { await renderer.playStep(step, 1); continue; }
+    if (renderer.rush) { await renderer.playStep(step, 1); if (stale()) return; continue; }
     if (i === 0) await renderer.charge(step.kind, step.n, step.stack, ANIM.charge / backlog());
+    if (stale()) return;
     await renderer.playStep(step, sp);
+    if (stale()) return;
     if (renderer.rush) continue;
     const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
     if (step.chain >= 2) {
@@ -129,6 +140,7 @@ async function playTurn(turn) {
     if (step.gained) renderer.floatScore(step.gained, step.chain);
     showScore(step.score, true);
     await renderer.wait(ANIM.betweenChains / sp);
+    if (stale()) return;
   }
   if (turn.allClear) {
     // 盤面の前に出る全消しの演出（4種類から前回と違うもの）。文字もその中で出すので、中央の文字は出さない
@@ -140,7 +152,8 @@ async function playTurn(turn) {
   updateDanger();
   if (pending <= 1) updateHint();                  // 再生待ちが無くなったら、次のおすすめを出す
   if (turn.gameOver) {
-    await delay(350);
+    await renderer.wait(350);
+    if (stale()) return;
     renderer.setFever(0);
     sfx.over();
     const isBest = saveBest();
@@ -228,7 +241,7 @@ function renderTray(enter = false) {
   const slotBox = { width: (wrap.clientWidth - pad - gap * 2) / 3, height: wrap.clientHeight };
   game.tray.forEach((piece, i) => {
     const slot = document.createElement('div');
-    slot.className = 'slot' + (enter ? ' enter' : '');
+    slot.className = 'slot' + (enter ? ' enter' : '') + (drag?.slot === i ? ' dragging' : '');
     slot.dataset.slot = i;
     if (enter) slot.style.setProperty('animation-delay', `${i * 50}ms`);
     if (piece) {
@@ -254,7 +267,7 @@ function renderTray(enter = false) {
 }
 
 /* ---------- ドラッグ ---------- */
-let drag = null; // { slot, piece, lift, ox, oy, valid }
+let drag = null; // { slot, piece, lift, ox, oy, valid, chain, pointerId, x, y }
 
 function previewInfo(piece, ox, oy) {
   const b = game.board.clone();
@@ -293,12 +306,14 @@ function renderDragPiece(fx, fy) {
  * 指の位置に一番近い「置ける場所」を探す。ぴったりでなくても、ずれが SNAP_RANGE マス以内なら吸い付く。
  */
 const SNAP_RANGE = 1.6;
-function nearestPlacement(slot, piece, fx, fy) {
+/** 仮置きが見えていない間（連鎖の再生中）は、見えていない場所へ吸い付かないよう、ほぼ真下だけにする */
+const SNAP_RANGE_BLIND = 0.75;
+function nearestPlacement(slot, piece, fx, fy, range = SNAP_RANGE) {
   let best = null;
   for (let oy = Math.floor(fy) - 2; oy <= Math.ceil(fy) + 2; oy++) {
     for (let ox = Math.floor(fx) - 2; ox <= Math.ceil(fx) + 2; ox++) {
       const d = Math.hypot(ox - fx, oy - fy);
-      if (d > SNAP_RANGE || (best && d >= best.d)) continue;
+      if (d > range || (best && d >= best.d)) continue;
       if (game.canPlace(slot, ox, oy)) best = { ox, oy, d };
     }
   }
@@ -306,16 +321,20 @@ function nearestPlacement(slot, piece, fx, fy) {
 }
 
 function updateDrag(e) {
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (pending > 0 && !paused) renderer.timeScale = catchUpSpeed();
   const center = renderDragPiece(e.clientX, e.clientY);
   const c = renderer.cell;
   const fx = center.x / c - drag.piece.width / 2;
   const fy = center.y / c - drag.piece.height / 2;
-  const hit = nearestPlacement(drag.slot, drag.piece, fx, fy);
+  const hit = nearestPlacement(drag.slot, drag.piece, fx, fy, pending > 0 ? SNAP_RANGE_BLIND : SNAP_RANGE);
   const ox = hit ? hit.ox : Math.round(fx), oy = hit ? hit.oy : Math.round(fy);
   const valid = !!hit;
-  if (ox === drag.ox && oy === drag.oy && valid === drag.valid) return;
-  drag.ox = ox; drag.oy = oy; drag.valid = valid;
-  if (valid) {
+  const lag = pending > 0;       // 連鎖の再生中は、表示が盤面（連鎖の最後まで進んだ状態）に追いついていない
+  if (ox === drag.ox && oy === drag.oy && valid === drag.valid && lag === drag.lag) return;
+  drag.ox = ox; drag.oy = oy; drag.valid = valid; drag.lag = lag;
+  // 追いつくまでは仮置きを出さない（見えているブロックと合わない場所に出てしまうので）。追いついたら caughtUp で出す
+  if (valid && !lag) {
     const { cells, chain, lines } = previewInfo(drag.piece, ox, oy);
     renderer.showPreview(drag.piece, ox, oy, cells, chain, lines);
     // 消える場所に入った瞬間だけ、期待をあおる上昇音と軽い振動
@@ -333,34 +352,61 @@ function endDrag() {
   renderer.clearPreview();
   document.querySelectorAll('.slot').forEach((s) => s.classList.remove('dragging'));
   drag = null;
+  renderer.timeScale = paused ? 0 : 1;
+}
+/** 持っているピースを置かずに戻す（指が離れたのを取りこぼしたとき・一時停止・画面の切り替えなど） */
+function cancelDrag() {
+  if (!drag) return;
+  endDrag();
+  renderTray();
+  updateHint();
+}
+/** 再生が全部終わって表示が盤面に追いついた: ピースを持っていれば仮置きを出し直す */
+function caughtUp() {
+  if (!drag) return;
+  renderer.timeScale = paused ? 0 : 1;
+  drag.ox = null;
+  updateDrag({ clientX: drag.x, clientY: drag.y });
 }
 
 $('tray').addEventListener('pointerdown', (e) => {
-  const slotEl = e.target.closest('.slot');
-  if (!slotEl || game.gameOver || drag || paused) return;
-  const slot = Number(slotEl.dataset.slot);
+  const hitSlot = e.target.closest('.slot');
+  // 最初の指（isPrimary）が下りたのにまだ持っている = 前の指が離れたのを取りこぼした。持っていたピースは戻す
+  // （戻すとトレイを描き直すので、触った枠は番号で探し直す）
+  if (drag && e.isPrimary) cancelDrag();
+  if (!hitSlot || game.gameOver || drag || paused) return;
+  const slot = Number(hitSlot.dataset.slot);
+  const slotEl = document.querySelector(`.slot[data-slot="${slot}"]`);
   const piece = game.tray[slot];
   if (!piece) return;
   sfx.unlock();
   sfx.pick();
   const lift = e.pointerType === 'mouse' ? 0 : renderer.cell * (1.2 + Math.max(piece.width, piece.height) * 0.5);
-  drag = { slot, piece, lift, ox: null, oy: null, valid: false, chain: 0 };
+  drag = { slot, piece, lift, ox: null, oy: null, valid: false, chain: 0, pointerId: e.pointerId, x: e.clientX, y: e.clientY, t0: performance.now() };
   renderer.clearHint();
   slotEl.classList.add('dragging');
   $('dragLayer').innerHTML = '';
   updateDrag(e);
   e.preventDefault();
 });
-window.addEventListener('pointermove', (e) => { if (drag) { updateDrag(e); e.preventDefault(); } }, { passive: false });
-window.addEventListener('pointerup', async () => {
-  if (!drag) return;
+// 持ち上げた指の動きだけを見る（ほかの指で触っても、持っているピースは動かない・落ちない）
+const mine = (e) => drag && e.pointerId === drag.pointerId;
+window.addEventListener('pointermove', (e) => { if (mine(e)) { updateDrag(e); e.preventDefault(); } }, { passive: false });
+window.addEventListener('pointerup', (e) => {
+  if (!mine(e)) return;
   const { slot, ox, oy, valid } = drag;
   const overBoard = ox !== null && ox > -3 && oy > -3 && ox < SIZE + 1 && oy < SIZE + 1;
   endDrag();
   if (valid) game.placePiece(slot, ox, oy);
   else { if (overBoard) sfx.invalid(); renderTray(); updateHint(); }
 });
-window.addEventListener('pointercancel', () => { if (drag) { endDrag(); renderTray(); updateHint(); } });
+window.addEventListener('pointercancel', (e) => { if (mine(e)) cancelDrag(); });
+// アプリの切り替え・通知などで指が離れたのが届かないことがある。そのときは持っているピースを戻す
+window.addEventListener('blur', cancelDrag);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { cancelDrag(); saveBest(); }            // 途中でアプリを閉じてもベストスコアが残るように
+});
+window.addEventListener('pagehide', () => saveBest());
 
 /* ---------- 学習モード ---------- */
 /**
@@ -402,8 +448,11 @@ $('btnSound').addEventListener('click', () => {
 
 /* ---------- 一時停止 ---------- */
 let paused = false;
+/** 一時停止: 連鎖の再生も止める（持っているピースは戻す） */
 function setPaused(v) {
   paused = v;
+  if (v) cancelDrag();
+  renderer.timeScale = v ? 0 : 1;
   $('pauseOverlay').classList.toggle('hidden', !v);
 }
 $('btnPause').addEventListener('click', () => { sfx.unlock(); if (!game.gameOver) setPaused(true); });
@@ -444,8 +493,8 @@ $('btnRunChain').addEventListener('click', () => {
 
 /* ---------- 開始 ---------- */
 function restart() {
-  saveBest();
-  generation++; queue = Promise.resolve(); pending = 0;
+  // ベストスコアは呼ぶ側で残しておく（ここで残すと、モードを切り替えたときに前のモードの点数が新しいモードのベストになる）
+  generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0;
   bestCelebrated = false;
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
@@ -462,8 +511,12 @@ function restart() {
   updateHint();
 }
 applyMode();
-$('btnRetry').addEventListener('click', () => { sfx.unlock(); restart(); });
-window.addEventListener('resize', () => renderTray());
+$('btnRetry').addEventListener('click', () => { sfx.unlock(); saveBest(); restart(); });
+window.addEventListener('resize', () => {
+  renderTray();
+  // 持っているピースはマスの大きさが変わったので作り直す（盤面は renderer が先に合わせ直している）
+  if (drag) { $('dragLayer').innerHTML = ''; drag.ox = null; updateDrag({ clientX: drag.x, clientY: drag.y }); }
+});
 restart();
 window.__booted = true;
 window.__game = game;
