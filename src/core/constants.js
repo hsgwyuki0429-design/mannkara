@@ -98,13 +98,14 @@ export const streakMultiplier = (streak) => 1 + Math.min(streak - 1, 8) * 0.25;
 
 // ===== アニメーション時間（ms・調整用） =====
 export const ANIM = {
-  step: 34,        // 1マスぶん動く時間（流れる・押し込むすべて共通）
-  betweenChains: 30,
+  step: 60,        // 1マスぶん動く時間（流れる・押し込むすべて共通）。ゆっくり動く分、動いている間の演出で見せる
+  betweenChains: 70,
+  charge: 150,     // 発動の直前にラインが光って溜める時間
 };
-/** 連鎖が1つ進むごとに再生速度をこれだけ掛けて上げる（2連鎖目 1.35倍, 3連鎖目 1.82倍 …） */
-export const CHAIN_SPEED_GROWTH = 1.35;
-export const CHAIN_SPEED_MAX = 6;
-/** 1ターンぶんの連鎖の再生は、どんなに長くてもおよそこの時間に収める（超えそうなら全体を速める） */
-export const TURN_PLAY_BUDGET = 1600;
+/** 連鎖が進んでも再生は速くしない（どの連鎖も同じ速さでじっくり見せる） */
+export const CHAIN_SPEED_GROWTH = 1;
+export const CHAIN_SPEED_MAX = 1;
+/** 1ターンぶんの連鎖の再生時間の上限（なし: 長い連鎖でもまとめて速めない） */
+export const TURN_PLAY_BUDGET = Infinity;
 /** 再生待ちのターンが溜まっている（再生中に次を置いた）ときは、さらにこの倍率で速める */
 export const BACKLOG_SPEED = 1.8;

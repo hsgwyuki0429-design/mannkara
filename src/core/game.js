@@ -1,17 +1,17 @@
-import { Board } from './board.js?v=202609240336';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609240336';
-import { ScoreManager } from './score.js?v=202609240336';
-import { nextActivation, lineMoves } from './mancala.js?v=202609240336';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609240336';
-import * as Sim from './sim.js?v=202609240336';
-import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609240336';
-import { bestMove } from './advisor.js?v=202609240336';
+import { Board } from './board.js?v=202609251235';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609251235';
+import { ScoreManager } from './score.js?v=202609251235';
+import { nextActivation, lineMoves } from './mancala.js?v=202609251235';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609251235';
+import * as Sim from './sim.js?v=202609251235';
+import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609251235';
+import { bestMove } from './advisor.js?v=202609251235';
 import {
   TRAY_SIZE, CHAIN_PIECE_RATE, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609240336';
+} from './constants.js?v=202609251235';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -210,12 +210,24 @@ export class Game {
     return [new Piece(this.generator.pick(placeable).name), ...this.drawTray().slice(1)];
   }
 
-  /** 詰む組み合わせ（ただし1つは置ける）。見つからなければ null */
+  /**
+   * 詰む組み合わせ（ただし1つは置ける）。まず普通に抽選し、見つからなければ置ける形を1つ含む組み合わせを
+   * 順に調べる（抽選だけだと、たまたま見つからずに規則が効かないことがある）。どうしても無ければ null
+   */
   stuckTray(start) {
+    const stuck = (names) => countWays(start, names, 1).count === 0;
     for (let tries = 0; tries < TRAY_RETRIES; tries++) {
       const tray = this.drawTray();
       if (!tray.some((p) => Sim.fits(start, p.cells))) continue;
-      if (countWays(start, tray.map((p) => p.name), 1).count === 0) return tray;
+      if (stuck(tray.map((p) => p.name))) return tray;
+    }
+    const fit = SHAPES.filter((s) => Sim.fits(start, new Piece(s.name).cells)).map((s) => s.name);
+    if (!fit.length) return null;
+    const all = SHAPES.map((s) => s.name);
+    for (let tries = 0; tries < 300; tries++) {
+      const names = [this.generator.pick(fit.map((name) => ({ name, weight: 1 }))).name,
+        all[Math.floor(this.generator.random() * all.length)], all[Math.floor(this.generator.random() * all.length)]];
+      if (stuck(names)) return this.deal(names.map((name) => ({ name })));
     }
     return null;
   }

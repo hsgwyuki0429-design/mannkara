@@ -1,13 +1,22 @@
-import { Game } from '../core/game.js?v=202609240336';
-import { Board } from '../core/board.js?v=202609240336';
-import { resolveChains } from '../core/mancala.js?v=202609240336';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609240336';
-import { Renderer, delay } from './renderer.js?v=202609240336';
-import { Sfx } from './sfx.js?v=202609240336';
+import { Game } from '../core/game.js?v=202609251235';
+import { Board } from '../core/board.js?v=202609251235';
+import { resolveChains } from '../core/mancala.js?v=202609251235';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251235';
+import { Renderer, delay } from './renderer.js?v=202609251235';
+import { Sfx } from './sfx.js?v=202609251235';
+import { Scenes } from './scenes.js?v=202609251235';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
 const renderer = new Renderer(sfx);
+/** 画面全体の演出（全消しの海と風船・大連鎖の色の変化など） */
+const scenes = new Scenes({ sfx, colorOf: (c) => renderer.particles.color(c), quality: () => renderer.q });
+scenes.warm();
+/** 盤面の中心（画面座標） */
+function boardCenter() {
+  const w = renderer.wrap.getBoundingClientRect(), b = renderer.boardBox();
+  return { x: w.left + (b.x0 + b.x1) / 2, y: w.top + (b.y0 + b.y1) / 2 };
+}
 
 /* ---------- モード（通常 / 学習）とベストスコア（端末ごと・モードごとに別） ---------- */
 const MODE_KEY = 'stair-mancala-mode';
@@ -83,16 +92,21 @@ async function playTurn(turn) {
   if (turn.steps.length) {
     renderer.setFever((turn.streak - 1) / 5);
     if (turn.streak >= 2) { renderer.showCombo(turn.streak); sfx.combo(turn.streak); }
+    if (turn.streak >= 5 && turn.streak % 5 === 0) scenes.comboWave();       // コンボ 5・10・15… で画面が暖色に染まる
   } else renderer.setFever(0);
   let shownTier = 0;                                       // このターンで光線を出した褒め言葉の段階
   for (const [i, step] of turn.steps.entries()) {
     const sp = speeds[i] * backlog();
-    if (i === 0) await renderer.charge(step.kind, step.n, step.stack[0]?.color, 70 / backlog());
+    if (i === 0) await renderer.charge(step.kind, step.n, step.stack[0]?.color, ANIM.charge / backlog());
     await renderer.playStep(step, sp);
     const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
     if (step.chain >= 2) {
       renderer.showText(`${step.chain} CHAIN<small>${praise}</small>`, `t${tier}`);
-      if (tier > shownTier) { shownTier = tier; renderer.textBurst(tier); }   // 段階が上がった時だけ（毎回だと光りっぱなしになる）
+      if (tier > shownTier) {                                  // 段階が上がった時だけ（毎回だと光りっぱなしになる）
+        shownTier = tier;
+        renderer.textBurst(tier);
+        if (tier >= 4) scenes.bigChain(tier, boardCenter());    // Amazing 以上で画面全体の色が変わる
+      } else if (step.chain >= 12 && step.chain % 4 === 0) scenes.bigChain(5, boardCenter());   // 12・16・20…連鎖でもう一度
       sfx.praise(tier);
     }
     if (turn.streak >= 3 && i % 2 === 0) renderer.embers(Math.min(1, (turn.streak - 2) / 5));
@@ -101,9 +115,9 @@ async function playTurn(turn) {
     await delay(ANIM.betweenChains / sp);
   }
   if (turn.allClear) {
+    // 盤面の前に出る全消しの演出（4種類から前回と違うもの）。文字もその中で出すので、中央の文字は出さない
+    scenes.allClear(boardCenter());
     renderer.allClearBlast();
-    renderer.confetti();
-    renderer.showText('ALL CLEAR!', 't5');
     sfx.fanfare();
   }
   showScore(turn.score);
@@ -165,6 +179,7 @@ function showScore(v, bump = false) {
     bestCelebrated = true;
     renderer.confetti();
     renderer.fireworks(4, 180);
+    scenes.newBest();
     renderer.showText('NEW BEST!', 't5');
     sfx.fanfare();
     document.querySelector('.best-pill')?.classList.add('beat');
@@ -425,6 +440,7 @@ function restart() {
   game.reset();
   endDrag();
   renderer.reset();
+  scenes.clear();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
   setPaused(false);
@@ -442,4 +458,5 @@ restart();
 window.__booted = true;
 window.__game = game;
 window.__renderer = renderer;
+window.__scenes = scenes;
 window.__ui = { showScore, renderTray, setBest(v) { best = v; } };
