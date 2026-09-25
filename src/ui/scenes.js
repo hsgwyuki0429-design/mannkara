@@ -2,15 +2,14 @@
  * 画面全体の演出（シーン）。盤面の外側まで使う、大きな色の変化のための層。
  *
  *  - #sceneTint（奥）: 画面全体の色の変化。1回だけ描いた 400px の絵を拡大し、opacity と transform だけで動かす
- *  - #sceneStars（奥）: 立ちのぼる光の玉・大きなぼかしの丸（小さな絵を transform と opacity だけで動かす）
  *  - #sceneFront（手前, 盤面の前）: 全消しの演出（海・シャボン玉・ガムボール・まんまる）、文字の風船や玉、はじけた粒
  *
  * 形はすべて丸（線・細長い光・光線は使わない）。色はブロックの7色と海の青緑だけ。
+ * ぼんやり光る丸（光の玉・ぼかしの丸・フレア）は使わない（盤面の陰影と合わず浮いて見えるので）。
  * 何も動いていない間は requestAnimationFrame を止め、手前の canvas も描き直さない。
  */
 const TAU = Math.PI * 2;
 const RAINBOW = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
-const easeOut3 = (t) => 1 - Math.pow(1 - t, 3);
 const easeIn3 = (t) => t * t * t;
 const clamp01 = (t) => Math.max(0, Math.min(1, t));
 /** 行き過ぎてから戻る（浮かび上がって止まる・ぽんと出てくる） */
@@ -35,10 +34,11 @@ const IRIS = [
 const ALL_CLEAR_KINDS = ['sea', 'bubbles', 'gumballs', 'iris'];
 
 export class Scenes {
-  constructor({ sfx, colorOf, quality = () => 1 } = {}) {
+  constructor({ sfx, colorOf } = {}) {
     this.sfx = sfx;
     this.colorOf = colorOf;                         // 色名 → { col, hi, lo, rim }
-    this.quality = quality;                         // 演出の量（1 = 全部 … 0.25 = 最小限）
+    this.frameMs = 16.7;                            // 演出を描いている間の1フレームの時間（なめらかに平均）
+    this.lastNow = 0;
     this.reduced = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const app = document.getElementById('app');
     const mk = (tag, id, before) => {
@@ -48,10 +48,8 @@ export class Scenes {
       return el;
     };
     this.tint = mk('div', 'sceneTint', app);
-    this.starLayer = mk('div', 'sceneStars', app);
     // 盤面の前: まんまるの丸（DOM の丸を拡大するだけ）→ 海（解像度を下げた canvas）→ 文字や粒（canvas）の順に重ねる
     this.irisEl = mk('div', 'sceneIris');
-    this.irisFx = mk('div', 'sceneIrisFx');
     this.seaCanvas = mk('canvas', 'sceneSea');
     this.sctx = this.seaCanvas.getContext('2d');
     this.front = mk('canvas', 'sceneFront');
@@ -65,6 +63,12 @@ export class Scenes {
     this.fit();
     window.addEventListener('resize', () => this.fit());
   }
+
+  /**
+   * 演出の量の目安（1 = 全部出す … 0.25 = 最小限）。演出を描いている間のフレーム時間から決める。
+   * 遅い端末では自動で粒や層を減らし、画面がカクつかないようにする
+   */
+  quality() { return Math.max(0.25, Math.min(1, 1 - (this.frameMs - 20) / 26)); }
 
   fit() {
     const W = window.innerWidth, H = window.innerHeight;
@@ -83,7 +87,6 @@ export class Scenes {
     this.fctx.clearRect(0, 0, this.front.width, this.front.height);
     this.sctx.clearRect(0, 0, this.seaCanvas.width, this.seaCanvas.height);
     this._tintAnim?.cancel(); this._tintSpin?.cancel(); this._irisAnim?.cancel();
-    this.starLayer.innerHTML = this.irisFx.innerHTML = '';
   }
 
   /* =====================================================================
@@ -107,20 +110,15 @@ export class Scenes {
     return kind;
   }
 
-  /** 新記録: 金色〜夕焼け色に染まり、ぼかしの丸が広がり、風船の NEW BEST が浮かんで割れる */
+  /** 新記録: 水色〜青紫に明るく染まり、風船の NEW BEST が浮かんで割れる */
   newBest() {
     this.wash('gold', 2600, 0.62);
-    this.bokeh('gold', 12);
     this.spell('NEW BEST', { style: 'balloon', at: 120, popAt: 1900, row: 0.3 });
-    this.rise('gold', 18);
     this.kick();
   }
 
-  /**
-   * 大きな連鎖（褒め言葉が Amazing 以上）: 画面全体が段階の色に染まり、大きなぼかしの丸が広がり、
-   * 下から光の玉が立ちのぼる。Unbelievable（tier 5）は虹色で、光の玉の輪も広がる
-   */
-  bigChain(tier, center) {
+  /** 大きな連鎖（褒め言葉が Amazing 以上）: 画面全体が段階の色に染まる。Unbelievable（tier 5）は虹色 */
+  bigChain(tier) {
     const now = performance.now();
     if (now - (this._lastBig ?? -1e9) < 1100) return;       // 続けて重ならないように（長い連鎖で光りっぱなしにしない）
     this._lastBig = now;
@@ -128,17 +126,11 @@ export class Scenes {
     // 画面いっぱいの半透明の層は、遅い端末では合成が重いので省く（演出の量 quality が下がっているとき）
     const q = this.quality();
     if (q >= 0.45) this.wash(kind, 1400, tier >= 5 ? 0.5 : 0.42);
-    if (q >= 0.6) this.bokeh(kind, tier >= 5 ? 12 : 9, center);
-    this.rise(tier >= 5 ? 'rainbow' : 'purple', tier >= 5 ? 22 : 16);
-    if (tier >= 5 && center) this.bloomRing(center.x, center.y, 'yellow');
-    this.kick();
   }
 
-  /** コンボが5の倍数に届いた: 夕焼けのように画面の下から暖色に染まり、火の粉が立ちのぼる */
+  /** コンボが5の倍数に届いた: 画面の下から桃〜青紫に染まる */
   comboWave() {
     if (this.quality() >= 0.45) this.wash('warm', 1500, 0.6);
-    this.rise('warm', 20);
-    this.kick();
   }
 
   /* =====================================================================
@@ -148,7 +140,6 @@ export class Scenes {
     const t0 = performance.now(), gen = this.gen;
     const w = { t0, peak: 0.62, drainAt: 2750, end: 3850, ph: Math.random() * TAU, lastSplash: 0, bubbles: [] };
     this.wash('sea', 3400, 0.45);
-    this.bokeh('sea', 10);
     this.sfx?.wave?.();
     this.spell('ALL CLEAR', { style: 'balloon', at: 260, popAt: 2350, row: 0.2 });
     this.actors.push({ draw: (now) => gen === this.gen && this.drawSea(w, now) });
@@ -190,19 +181,6 @@ export class Scenes {
     g.addColorStop(0, SEA.surface); g.addColorStop(0.28, SEA.mid); g.addColorStop(1, SEA.deep);
     fillWave(0, amp, g);
 
-    // 水の中でゆらめく丸い光（光の差し込みの代わり）
-    if (q >= 0.5) {
-      f.globalCompositeOperation = 'lighter';
-      for (let i = 0; i < 5; i++) {
-        const cx = ((i + 0.5) / 5) * W + Math.sin(t * 0.8 + i * 1.9) * 30, cy = base + H * (0.12 + 0.07 * (i % 3)) + Math.sin(t * 1.3 + i) * 12;
-        const r = 40 + (i % 3) * 18;
-        f.globalAlpha = 0.18;
-        f.drawImage(this.sprite('glow', 'cyan'), cx - r, cy - r, r * 2, r * 2);
-      }
-      f.globalCompositeOperation = 'source-over';
-      f.globalAlpha = 1;
-    }
-
     // 水面の泡の列（白い線の代わりに、丸い泡が水面に沿って並ぶ）
     for (let x = 6; x <= W; x += 16) {
       const y = surf(x) + 1, r = 3 + 1.8 * Math.sin(x * 0.21 + t * 4);
@@ -238,7 +216,6 @@ export class Scenes {
   bubbles() {
     const t0 = performance.now(), gen = this.gen, q = this.quality();
     this.wash('bubble', 3500, 0.5);
-    this.bokeh('bubble', 10);
     this.sfx?.bubbles?.();
     const list = [];
     const n = Math.round(46 * q) + 10;
@@ -333,11 +310,6 @@ export class Scenes {
       { transform: at(1), offset: 2950 / 3650, easing: 'cubic-bezier(.55,0,.9,.4)' },
       { transform: at(0) },
     ], { duration: 3650 });
-    // 中心から広がっていく明るい丸（波紋を線ではなく、ぼかした丸で）と、丸のふちの柔らかい光
-    for (let i = 0; i < 6; i++) {
-      this.sprite2dom('soft', 'white', center.x, center.y, rMax * 1.9, [{ o: 0.32, s: 0.05 }, { o: 0, s: 1 }], 1400, 350 + i * 450, this.irisFx);
-    }
-    this.sprite2dom('soft', 'white', center.x, center.y, rMax * 2.3, [{ o: 0.55, s: 0.1 }, { o: 0, s: 1 }], 800, 0, this.irisFx);
     const dots = Array.from({ length: Math.round(34 * q) + 8 }, (_, i) => ({
       a: Math.random() * TAU, r0: 20 + Math.random() * 60, v: 0.6 + Math.random() * 0.9, size: 3 + Math.random() * 7,
       color: i % 3 ? RAINBOW[i % RAINBOW.length] : 'white', t0: t0 + 250 + Math.random() * 1600,
@@ -447,7 +419,7 @@ export class Scenes {
     this.sfx?.pop?.(it.k);
   }
 
-  /** 丸い粒をはじけさせる（water なら水滴、そうでなければ色の粒）＋ふわっとした光 */
+  /** 丸い粒をはじけさせる（water なら水滴、そうでなければ色の粒） */
   splash(x, y, r, color, water = false) {
     const now = performance.now(), n = Math.round(10 * this.quality()) + 4;
     for (let i = 0; i < n; i++) {
@@ -455,7 +427,6 @@ export class Scenes {
       this.bits.push({ kind: water ? 'drop' : 'bead', t0: now, life: 650 + Math.random() * 300, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, g: 700,
         size: Math.max(2, r * (0.12 + Math.random() * 0.12)), color });
     }
-    this.bits.push({ kind: 'flash', t0: now, life: 280, x, y, size: r * 2.6, color });
     this.kick();
   }
 
@@ -481,61 +452,6 @@ export class Scenes {
     }
   }
 
-  /** 大きなぼかしの丸（ボケ）がふわっと広がって消える（放射状の光線の代わり）。center の近くほど多い */
-  bokeh(kind, n, center) {
-    n = Math.round(n * this.quality());
-    const colors = { rainbow: RAINBOW, gold: ['yellow', 'orange', 'red'], amazing: ['purple', 'red', 'blue'],
-      sea: ['cyan', 'blue', 'green'], bubble: ['cyan', 'purple', 'blue'] }[kind] ?? RAINBOW;
-    const cx = center?.x ?? this.W / 2, cy = center?.y ?? this.H * 0.45;
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * TAU, dist = Math.pow(Math.random(), 0.7) * Math.max(this.W, this.H) * 0.55;
-      const x = cx + Math.cos(a) * dist, y = cy + Math.sin(a) * dist, size = 90 + Math.random() * 170;
-      this.sprite2dom('soft', colors[i % colors.length], x, y, size, [
-        { o: 0, s: 0.4 }, { o: 0.55, s: 1, at: 0.35 }, { o: 0, s: 1.25 },
-      ], 1300 + Math.random() * 700, Math.random() * 400);
-    }
-  }
-
-  /** 画面の下から光の玉（または火の粉）が立ちのぼる */
-  rise(kind, n) {
-    n = Math.round(n * this.quality());
-    const colors = kind === 'rainbow' ? RAINBOW : kind === 'warm' ? ['orange', 'yellow', 'red'] : kind === 'gold' ? ['yellow', 'orange'] : ['purple', 'red', 'cyan'];
-    for (let i = 0; i < n; i++) {
-      const size = 20 + Math.random() * 28, x = Math.random() * this.W, y = this.H * (0.72 + Math.random() * 0.35);
-      const rise = this.H * (0.35 + Math.random() * 0.35), wob = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 16);
-      this.sprite2dom('glow', colors[i % colors.length], x, y, size, [
-        { o: 0, s: 0.6 }, { o: 1, s: 1, dx: wob, dy: -rise * 0.35, at: 0.3 },
-        { o: 0.7, s: 0.9, dx: -wob * 0.5, dy: -rise * 0.75, at: 0.7 }, { o: 0, s: 0.7, dx: wob * 0.3, dy: -rise },
-      ], 1300 + Math.random() * 900, Math.random() * 500);
-    }
-  }
-
-  /** 小さな絵（64px）を画面座標 (x, y)・直径 size で、keys の透明度・拡大・移動の順に動かして消す */
-  sprite2dom(kind, color, x, y, size, keys, life, delay = 0, layer = this.starLayer) {
-    const d = document.createElement('div');
-    d.className = 'scene-star';
-    d.style.backgroundImage = `url(${this.spriteUrl(kind, color)})`;
-    layer.appendChild(d);
-    const tf = (dx = 0, dy = 0, sc = 1) => `translate(${x - 32 + dx}px,${y - 32 + dy}px) scale(${(sc * size) / 64})`;
-    d.animate(keys.map((k) => ({ opacity: k.o, transform: tf(k.dx, k.dy, k.s), ...(k.at != null ? { offset: k.at } : {}) })),
-      { duration: life, delay, easing: 'ease-out', fill: 'backwards' }).onfinish = () => d.remove();
-  }
-
-  /** 大きく広がるぼかしの丸（衝撃波の輪の代わり。線ではなく面で） */
-  bloomRing(x, y, color) {
-    const r1 = Math.hypot(this.W, this.H) * 0.6, t0 = performance.now(), gen = this.gen;
-    this.actors.push({ draw: (now) => {
-      if (gen !== this.gen) return false;
-      const t = Math.max(0, (now - t0) / 800);
-      if (t >= 1) return false;
-      const r = 30 + r1 * easeOut3(t), f = this.fctx;
-      f.globalAlpha = 0.45 * (1 - t);
-      f.drawImage(this.sprite('soft', color), x - r, y - r, r * 2, r * 2);
-      f.globalAlpha = 1;
-      return true;
-    } });
-  }
-
   /* =====================================================================
    * 描画ループ
    * ===================================================================== */
@@ -543,6 +459,9 @@ export class Scenes {
 
   frame(now) {
     this.raf = 0;
+    // 1回だけの大きな引っかかり（手駒の計算・タブの切り替えなど）は数えない。続けて遅いときだけ減らす
+    if (this.lastNow) { const dt = now - this.lastNow; if (dt < 100) this.frameMs += (dt - this.frameMs) * 0.08; }
+    this.lastNow = now;
     now = Math.max(now, performance.now() - 1);        // rAF の時刻はフレームの始まりなので、直前に作った演出より前になることがある
     const f = this.fctx;
     // 前のフレームで何か描いたときだけ消す（何も無い canvas を毎フレーム消すと、それだけで画面全体の描き直しになる）
@@ -557,6 +476,7 @@ export class Scenes {
     f.globalCompositeOperation = 'source-over';
     this.dirty = alive > 0 || bits;
     if (this.dirty) this.raf = requestAnimationFrame((t) => this.frame(t));
+    else this.lastNow = 0;
   }
 
   drawBits(now) {
@@ -576,10 +496,6 @@ export class Scenes {
         f.globalAlpha = 1 - t;
         f.fillStyle = 'rgba(214,250,255,.95)';
         f.beginPath(); f.arc(x, y, Math.max(0.5, p.size * (1 - 0.4 * t)), 0, TAU); f.fill();
-      } else if (p.kind === 'flash') {                          // ふわっとした光
-        f.globalAlpha = (1 - t) * 0.9;
-        const r = p.size * (0.4 + 0.8 * easeOut3(t));
-        f.drawImage(this.sprite('glow', p.color), x - r, y - r, r * 2, r * 2);
       }
     }
     this.bits.length = alive;
@@ -710,24 +626,6 @@ export class Scenes {
     });
   }
 
-  /** ぼんやりした光（glow）と、ふちまでなめらかに消える大きな丸（soft） */
-  sprite(kind, color) {
-    return this.cached(kind + ':' + color, () => {
-      const c = color === 'white' ? { col: '#ffffff', hi: '#ffffff' } : this.colorOf(color), S = 64, R = S / 2;
-      const img = this.canvas(S), g = img.getContext('2d');
-      const grd = g.createRadialGradient(R, R, 0, R, R, R);
-      if (kind === 'soft') {
-        grd.addColorStop(0, hexA(c.hi, 0.55)); grd.addColorStop(0.5, hexA(c.col, 0.35)); grd.addColorStop(0.8, hexA(c.col, 0.12)); grd.addColorStop(1, hexA(c.col, 0));
-      } else {
-        grd.addColorStop(0, 'rgba(255,255,255,.9)'); grd.addColorStop(0.18, c.hi); grd.addColorStop(0.45, hexA(c.col, 0.35)); grd.addColorStop(1, hexA(c.col, 0));
-      }
-      g.fillStyle = grd;
-      g.fillRect(0, 0, S, S);
-      return img;
-    });
-  }
-  spriteUrl(kind, color) { return this.cached('url:' + kind + ':' + color, () => this.sprite(kind, color).toDataURL()); }
-
   /**
    * 虹色の絵（400px）: なめらかな色相の輪を、外側へ向かって透明にしたもの。
    * 扇形を並べるとつなぎ目が放射状の線に見えるので、conic グラデーション 1 枚で描き、丸いグラデーションで抜く
@@ -735,7 +633,8 @@ export class Scenes {
   rainbowImage() {
     return this.cached('rainbow', () => {
       const S = 400, R = S / 2, cv = this.canvas(S), g = cv.getContext('2d');
-      const hues = ['255,80,110', '255,176,40', '255,233,74', '77,230,136', '63,216,255', '120,110,255', '200,90,255', '255,80,110'];
+      // 黄・橙は背景の青と混ざると灰色に濁るので、水色〜青緑〜青紫〜桃の範囲で1周させる
+      const hues = ['63,216,255', '90,235,210', '110,160,255', '160,110,255', '225,100,235', '255,110,180', '63,216,255'];
       if (g.createConicGradient) {
         const cg = g.createConicGradient(0, R, R);
         hues.forEach((c, i) => cg.addColorStop(i / (hues.length - 1), `rgb(${c})`));
@@ -762,8 +661,3 @@ export class Scenes {
   }
 }
 
-/** '#rrggbb' → 'rgba(r,g,b,a)' */
-function hexA(hex, a) {
-  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex).trim());
-  return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})` : `rgba(255,255,255,${a})`;
-}

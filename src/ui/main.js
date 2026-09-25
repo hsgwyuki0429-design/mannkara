@@ -1,16 +1,17 @@
-import { Game } from '../core/game.js?v=202609251235';
-import { Board } from '../core/board.js?v=202609251235';
-import { resolveChains } from '../core/mancala.js?v=202609251235';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251235';
-import { Renderer, delay } from './renderer.js?v=202609251235';
-import { Sfx } from './sfx.js?v=202609251235';
-import { Scenes } from './scenes.js?v=202609251235';
+import { Game } from '../core/game.js?v=202609251310';
+import { Board } from '../core/board.js?v=202609251310';
+import { resolveChains } from '../core/mancala.js?v=202609251310';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251310';
+import { Renderer, delay } from './renderer.js?v=202609251310';
+import { Sfx } from './sfx.js?v=202609251310';
+import { Scenes } from './scenes.js?v=202609251310';
+import { colorOf } from './palette.js?v=202609251310';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
 const renderer = new Renderer(sfx);
 /** 画面全体の演出（全消しの海と風船・大連鎖の色の変化など） */
-const scenes = new Scenes({ sfx, colorOf: (c) => renderer.particles.color(c), quality: () => renderer.q });
+const scenes = new Scenes({ sfx, colorOf });
 scenes.warm();
 /** 盤面の中心（画面座標） */
 function boardCenter() {
@@ -92,9 +93,9 @@ async function playTurn(turn) {
   if (turn.steps.length) {
     renderer.setFever((turn.streak - 1) / 5);
     if (turn.streak >= 2) { renderer.showCombo(turn.streak); sfx.combo(turn.streak); }
-    if (turn.streak >= 5 && turn.streak % 5 === 0) scenes.comboWave();       // コンボ 5・10・15… で画面が暖色に染まる
+    if (turn.streak >= 5 && turn.streak % 5 === 0) scenes.comboWave();       // コンボ 5・10・15… で画面の下から桃色に染まる
   } else renderer.setFever(0);
-  let shownTier = 0;                                       // このターンで光線を出した褒め言葉の段階
+  let shownTier = 0;                                       // このターンで画面の色を変えた褒め言葉の段階
   for (const [i, step] of turn.steps.entries()) {
     const sp = speeds[i] * backlog();
     if (i === 0) await renderer.charge(step.kind, step.n, step.stack[0]?.color, ANIM.charge / backlog());
@@ -102,14 +103,12 @@ async function playTurn(turn) {
     const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
     if (step.chain >= 2) {
       renderer.showText(`${step.chain} CHAIN<small>${praise}</small>`, `t${tier}`);
-      if (tier > shownTier) {                                  // 段階が上がった時だけ（毎回だと光りっぱなしになる）
+      if (tier > shownTier) {                                  // 段階が上がった時だけ（毎回だと染まりっぱなしになる）
         shownTier = tier;
-        renderer.textBurst(tier);
-        if (tier >= 4) scenes.bigChain(tier, boardCenter());    // Amazing 以上で画面全体の色が変わる
-      } else if (step.chain >= 12 && step.chain % 4 === 0) scenes.bigChain(5, boardCenter());   // 12・16・20…連鎖でもう一度
+        if (tier >= 4) scenes.bigChain(tier);    // Amazing 以上で画面全体の色が変わる
+      } else if (step.chain >= 12 && step.chain % 4 === 0) scenes.bigChain(5);   // 12・16・20…連鎖でもう一度
       sfx.praise(tier);
     }
-    if (turn.streak >= 3 && i % 2 === 0) renderer.embers(Math.min(1, (turn.streak - 2) / 5));
     if (step.gained) renderer.floatScore(step.gained, step.chain);
     showScore(step.score, true);
     await delay(ANIM.betweenChains / sp);
@@ -165,20 +164,17 @@ function showScore(v, bump = false) {
   };
   frame(t0);
   if (bump) {
-    // クラスの付け外し + offsetWidth は強制レイアウトになるので Web Animations で弾ませる
-    const base = '0 3px 3px rgba(0,0,0,.18),0 0 0 rgba(255,230,120,0)';
+    // クラスの付け外し + offsetWidth は強制レイアウトになるので Web Animations で弾ませる（光らせず、大きさだけ）
     s.__bump?.cancel();
     s.__bump = s.animate([
-      { transform: 'none', textShadow: base, easing: 'cubic-bezier(.3,1.6,.5,1)' },
-      { transform: 'scale(1.14)', textShadow: '0 3px 3px rgba(0,0,0,.18),0 0 22px rgba(255,230,120,.9)', offset: 0.35, easing: 'cubic-bezier(.3,1.6,.5,1)' },
-      { transform: 'none', textShadow: base },
+      { transform: 'none', easing: 'cubic-bezier(.3,1.6,.5,1)' },
+      { transform: 'scale(1.12)', offset: 0.35, easing: 'cubic-bezier(.3,1.6,.5,1)' },
+      { transform: 'none' },
     ], { duration: 300 });
   }
   // ベストスコアを超えた瞬間（ゲーム中に1回だけ）
   if (!bestCelebrated && best > 0 && v > best) {
     bestCelebrated = true;
-    renderer.confetti();
-    renderer.fireworks(4, 180);
     scenes.newBest();
     renderer.showText('NEW BEST!', 't5');
     sfx.fanfare();
@@ -193,7 +189,7 @@ function updateHud() { cancelAnimationFrame(rollRaf); shownScore = game.score.sc
  * 225° 回転して表示するので、w×h の形は画面上で (w+h)/√2 マス四方になる。
  */
 function trayCellSize(piece, box) {
-  const room = Math.min(box.width, box.height) - 18;
+  const room = Math.min(box.width, box.height) - 10;
   return Math.max(10, Math.min(renderer.cell, Math.floor((room * Math.SQRT2) / (piece.width + piece.height))));
 }
 /** 225° 回転した形の、画面上でマスが占める範囲の中心（形の外接四角の中心からのずれ, px） */
@@ -313,12 +309,10 @@ function updateDrag(e) {
     renderer.clearPreview();
     drag.chain = 0;
   }
-  $('dragLayer').classList.toggle('will-clear', valid && drag.chain > 0);
 }
 
 function endDrag() {
   $('dragLayer').innerHTML = '';
-  $('dragLayer').classList.remove('will-clear');
   renderer.clearPreview();
   document.querySelectorAll('.slot').forEach((s) => s.classList.remove('dragging'));
   drag = null;
@@ -451,7 +445,6 @@ function restart() {
   updateHint();
 }
 applyMode();
-$('btnRestart').addEventListener('click', restart);
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); restart(); });
 window.addEventListener('resize', () => renderTray());
 restart();
