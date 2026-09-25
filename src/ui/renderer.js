@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609251354';
-import { Shards } from './shards.js?v=202609251354';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609251453';
+import { Shards } from './shards.js?v=202609251453';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -87,6 +87,12 @@ export class Renderer {
     this.goalFill.className = 'goal-fill';
     this.goal.prepend(this.goalFill);
     this.frameMs = 16.7;      // ブロックが動いている間の1フレームの時間（なめらかに平均。演出の量を決める）
+    // 早送り: 再生中に次のピースが置かれたら、残りの再生を演出なしで一気に最後まで進める
+    // （ルールは置いた瞬間に確定しているので、表示が遅れたままだと新しいピースが古いブロックに重なって見える）
+    this.rush = false;
+    this.waiters = new Set();  // wait() の途中のもの（早送り・リスタートしたらすぐ終わらせる）
+    this.timeScale = 1;        // 再生の速さ（一時停止中は 0、再生中にピースを持ち上げたら追いつくよう速く）
+    this.gen = 0;              // リスタートするたびに増やす（古いゲームの再生を新しい盤面に残さない）
     this.els = new Map();     // blockId -> element
     this.manual = new Set();  // 手動制御中
     this.cell = 40;
@@ -105,6 +111,7 @@ export class Renderer {
     const SPAN_W = 11.62;                                     // 左右の番号を含めた横幅（マス単位）
     const SPAN_H = (EXT_UP + EXT_DOWN) / Math.SQRT2;          // 縦幅（マス単位）
     const cell = Math.max(16, Math.floor(Math.min((sw - 4) / SPAN_W, (sh - 4) / SPAN_H)));
+    const k = cell / this.cell;
     this.cell = cell;
     document.documentElement.style.setProperty('--cell', cell + 'px');
     const W = SIZE * cell;
@@ -127,7 +134,9 @@ export class Renderer {
       width: gs + 'px', height: gs + 'px',
     });
     this.drawStatic();
-    if (this._board) this.syncBoard(this._board, 0);
+    // ブロックは今見えている位置のまま大きさだけ合わせる（盤面に合わせると、再生中のブロックが最後の位置へ飛んでしまう）。
+    // 位置はどれもマスの大きさに比例するので、比で掛ければよい
+    if (k !== 1) for (const el of this.els.values()) if (el.__pos) this.setPos(el, { x: el.__pos.x * k, y: el.__pos.y * k }, 0);
   }
 
   /** 盤面と同じ見え方にする transform（ドラッグ中のピースにも使う） */
@@ -328,12 +337,40 @@ export class Renderer {
     this.goal.classList.remove('ready');
   }
 
-  /** 発動の直前の「溜め」: 満杯になったラインのブロックがぎゅっと縮み、ラインの番号が弾む */
-  async charge(kind, n, color, ms = 150) {
-    const blocks = lineCells(kind, n).map(({ x, r }) => this._board?.get(x, r)).filter(Boolean).map((b) => this.els.get(b.id)).filter(Boolean);
-    for (const el of blocks) el.animate([{ scale: '1' }, { scale: '.9' }], { duration: ms, easing: 'ease-in', fill: 'forwards' }).onfinish = function () { this.cancel(); };
+  /**
+   * 発動の直前の「溜め」: 満杯になったラインのブロック stack がぎゅっと縮み、ラインの番号が弾む。
+   * （盤面 this._board は連鎖の最後まで進んだ状態なので、そこからラインのブロックを探してはいけない）
+   */
+  async charge(kind, n, stack, ms = 150) {
+    if (this.rush) return;
+    for (const b of stack) {
+      const a = this.els.get(b.id)?.animate([{ scale: '1' }, { scale: '.9' }], { duration: ms, easing: 'ease-in', fill: 'forwards' });
+      if (a) a.onfinish = () => a.cancel();
+    }
     this.numEls?.get(kind + n)?.animate([{ scale: '1' }, { scale: '1.5' }, { scale: '1' }], { duration: ms + 160, easing: 'ease-out' });
-    await delay(ms);
+    await this.wait(ms);
+  }
+
+  /** 再生の時間で ms 待つ（一時停止中は止まり、速めると早く終わる。早送り・リスタートしたらすぐ終わる） */
+  wait(ms) {
+    if (this.rush) return Promise.resolve();
+    return new Promise((resolve) => {
+      let raf = 0, left = ms, last = performance.now();
+      const w = () => { cancelAnimationFrame(raf); this.waiters.delete(w); resolve(); };
+      const frame = (now) => {
+        left -= Math.max(0, now - last) * this.timeScale;
+        last = now;
+        if (left <= 0) w(); else raf = requestAnimationFrame(frame);
+      };
+      raf = requestAnimationFrame(frame);
+      this.waiters.add(w);
+    });
+  }
+
+  /** 早送りを始める / やめる。始めたら、待っているものと動いているものをすぐ終わらせる */
+  setRush(on) {
+    this.rush = on;
+    if (on) for (const w of [...this.waiters]) w();
   }
 
   /** 盤面が混んでピンチのときだけ、画面の縁がゆっくり脈打つ（0 = なし … 1 = 最大） */
@@ -359,16 +396,22 @@ export class Renderer {
     }
   }
 
-  /** requestAnimationFrame で duration ms の間 fn(t[ms]) を毎フレーム呼ぶ。ついでにフレーム時間を測る */
+  /**
+   * requestAnimationFrame で、再生の時間で duration ms の間 fn(t[ms]) を毎フレーム呼ぶ。ついでにフレーム時間を測る。
+   * 一時停止中（timeScale 0）は進まない。早送りになったら最後の位置へ飛ぶ。リスタートしたら何もせずに終わる
+   */
   tween(duration, fn) {
+    if (this.rush) { fn(duration); return Promise.resolve(); }
+    const gen = this.gen;
     return new Promise((resolve) => {
-      const t0 = performance.now();
-      let last = 0;
+      let t = 0, last = performance.now(), measured = 0;
       const frame = (now) => {
-        // 1回だけの大きな引っかかり（手駒の計算・タブの切り替えなど）は数えない。続けて遅いときだけ演出を減らす
-        if (last) { const dt = now - last; if (dt < 100) this.frameMs += (dt - this.frameMs) * 0.08; }
+        if (gen !== this.gen) { resolve(); return; }
+        const dt = Math.max(0, now - last);
         last = now;
-        const t = Math.min(duration, now - t0);
+        // 1回だけの大きな引っかかり（手駒の計算・タブの切り替えなど）は数えない。続けて遅いときだけ演出を減らす
+        if (measured++ && !this.rush && this.timeScale > 0 && dt < 100) this.frameMs += (dt - this.frameMs) * 0.08;
+        t = this.rush ? duration : Math.min(duration, t + dt * this.timeScale);
         fn(t);
         if (t < duration) requestAnimationFrame(frame); else resolve();
       };
@@ -395,6 +438,7 @@ export class Renderer {
    */
   async playStep(step, speed = 1) {
     const { kind, n: N, stack, chain, before, after } = step;
+    const gen = this.gen;                                    // 途中でリスタートしたら、古い盤面の続きは描かない
     const cellT = ANIM.step / speed;                         // 1マスあたりの時間
     const F = kind === 'col' ? (x, r) => ({ x, r }) : (x, r) => ({ x: r, r: x });   // 画面 <-> 縦列の座標
     const P = (fx, fr) => { const q = F(fx, fr); return this.pos(q.x, q.r); };
@@ -405,9 +449,11 @@ export class Renderer {
     const along = (s) => (s <= SIZE ? P(src, s) : P(src + (s - SIZE), SIZE));
     const start = stack.map((_, k) => N - 1 - k);           // slot k の r = N-1-k
     const trainT = 9 * cellT;
-    this.sfx?.sink();
-    this.lineBlast(kind, N, stack[0]?.color, chain, stack);
-    this.wake(kind, N, stack[0]?.color, trainT);
+    if (!this.rush) {
+      this.sfx?.sink();
+      this.lineBlast(kind, N, stack[0]?.color, chain, stack, before);
+      this.wake(kind, N, stack[0]?.color, trainT);
+    }
     let lastCell = -1;
     await this.tween(trainT, (t) => {
       const u = 9 * easeInOut(t / trainT);
@@ -415,9 +461,10 @@ export class Renderer {
       const c = Math.floor(u);
       if (c !== lastCell) {
         lastCell = c;
-        if (c > 0 && c < 9) this.sfx?.step(c);
+        if (c > 0 && c < 9 && !this.rush && this.timeScale <= 1.5) this.sfx?.step(c);     // 速めている間は刻みの音を鳴らさない
       }
     });
+    if (gen !== this.gen) return;
 
     // 先頭がゴールへ
     this.goalIn(stack[0], chain);
@@ -448,7 +495,7 @@ export class Renderer {
     const enterT = longest * cellT;
     const pushedSound = new Set();
     // 入っていく先のラインの番号が光る
-    for (const m of moves) this.glowNum(kind, SIZE - m.to.x, m.b.color);
+    if (!this.rush) for (const m of moves) this.glowNum(kind, SIZE - m.to.x, m.b.color);
     if (moves.length || goals.length) {
       await this.tween(enterT, (t) => {
         for (const m of moves) {
@@ -460,7 +507,7 @@ export class Renderer {
           for (const q of m.pushed) {
             const rr = Math.min(q.fromR, r - (m.to.r - q.toR));
             this.setPos(q.el, P(m.to.x, rr), 0);
-            if (rr < q.fromR && !pushedSound.has(m)) { pushedSound.add(m); this.sfx?.push(chain); }
+            if (rr < q.fromR && !pushedSound.has(m) && !this.rush) { pushedSound.add(m); this.sfx?.push(chain); }
           }
         }
         for (const g of goals) {                             // 通路をそのまま右へ流れてゴール
@@ -468,16 +515,18 @@ export class Renderer {
           this.setPos(g.el, P(SIZE - g.k + d, SIZE), 0);
         }
       });
+      if (gen !== this.gen) return;
     }
     for (const m of moves) if (!m.settled) this.settle(m.el, P(m.to.x, m.to.r), m.b.color, moves.indexOf(m));
     if (goals.length) this.goalIn(goals.map((g) => g.b), chain);     // 同時に着くブロックの演出はまとめて1回
     for (const m of moves) { this.manual.delete(m.b.id); m.el.classList.remove('travel'); }
     this.applySnapshot(after);
-    this.bounce([[0, 1], [0.3, 1.012], [0.6, 0.997], [1, 1]], 220);
+    if (!this.rush) this.bounce([[0, 1], [0.3, 1.012], [0.6, 0.997], [1, 1]], 220);
   }
 
   /** 配られたブロックがラインの中で止まった: ぽよんと弾み、小さな音 */
   settle(el, p, color, i = 0) {
+    if (this.rush) return;
     el.animate([{ scale: '1.18 .82' }, { scale: '.94 1.06', offset: 0.45 }, { scale: '1' }], { duration: 260, easing: 'ease-out' });
     this.sfx?.settle?.(i);
   }
@@ -498,9 +547,11 @@ export class Renderer {
       const el = this.els.get(block.id);
       if (!el) continue;
       el.style.setProperty('--t', '0ms');
+      if (this.rush) { this.removeEl(block.id); continue; }
       el.classList.add('fly');
       setTimeout(() => this.removeEl(block.id), 220);
     }
+    if (this.rush) return;
     const color = list[0].color;
     this.hitGoal(chain, color);
     this.shatter(color, 3 + Math.min(chain, 3) + Math.min(list.length - 1, 2));
@@ -573,21 +624,22 @@ export class Renderer {
   cellCenter(p) { return this.localToWrap(p.x + this.cell / 2, p.y + this.cell / 2); }
 
   /** ラインの発動: 盤面が揺れ、大きな連鎖では画面がぐっと寄る（光や粒は出さない）。3連鎖目からは盤面のブロックが波打つ */
-  lineBlast(kind, n, color = 'yellow', chain = 1, moving = []) {
+  lineBlast(kind, n, color = 'yellow', chain = 1, moving = [], before = null) {
     this.shake(Math.min(2 + chain * 1.2, 11), 180 + Math.min(chain, 8) * 20);
     if (chain >= 4) this.punch(Math.min(0.01 + chain * 0.003, 0.035));
-    if (chain >= 3 && this.q >= 0.75) this.ripple(kind, SIZE - n, Math.min(0.04 + chain * 0.01, 0.1), new Set(moving.map((b) => b.id)));
+    if (chain >= 3 && this.q >= 0.75 && before) this.ripple(before, kind, SIZE - n, Math.min(0.04 + chain * 0.01, 0.1), new Set(moving.map((b) => b.id)));
   }
 
   /**
    * 盤面のブロックが、発動したラインから外へ向かって順にぽよんと沈んで戻る（波紋を線ではなく動きで）。
    * 動かすのは各ブロックの scale だけ（合成だけで済む）
    */
-  ripple(kind, at, amount, skip = new Set()) {
-    if (!this._board || reducedMotion()) return;
-    for (const { block, x, r } of this._board.entries()) {
-      if (skip.has(block.id)) continue;
-      const el = this.els.get(block.id);
+  ripple(snap, kind, at, amount, skip = new Set()) {
+    if (reducedMotion()) return;
+    // snap = この発動の直前に見えている盤面（this._board は連鎖の最後まで進んだ状態なので使わない）
+    for (const [id, { x, r }] of snap) {
+      if (skip.has(id)) continue;
+      const el = this.els.get(id);
       if (!el) continue;
       const dist = Math.abs((kind === 'col' ? x : r) - at);
       el.animate([{ scale: '1' }, { scale: `${1 - amount}` }, { scale: `${1 + amount * 0.35}` }, { scale: '1' }],
@@ -682,6 +734,8 @@ export class Renderer {
   }
 
   reset() {
+    this.gen++;                                              // 再生中の発動はここで打ち切る
+    for (const w of [...this.waiters]) w();
     this.blockLayer.innerHTML = '';
     this.fxLayer.innerHTML = '';
     this.shardLayer.clear();
@@ -692,6 +746,7 @@ export class Renderer {
     this.setDanger(0);
     this.els.clear();
     this.manual.clear();
+    this.setRush(false);
     this.clearPreview();
   }
 }
