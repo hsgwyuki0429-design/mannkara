@@ -151,7 +151,7 @@ export class Particles {
     this.box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     let alive = 0;
     for (const p of this.list) {
-      p.t = Math.min(1, (now - p.t0) / p.life);
+      p.t = Math.min(1, Math.max(0, (now - p.t0) / p.life));    // rAF の時刻は、直前に足した粒より前のことがある
       if (p.t >= 1) continue;
       this.list[alive++] = p;
     }

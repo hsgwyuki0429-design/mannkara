@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609240336';
-import { Particles, RAINBOW } from './particles.js?v=202609240336';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609251158';
+import { Particles, RAINBOW } from './particles.js?v=202609251158';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -330,15 +330,21 @@ export class Renderer {
   }
 
   /** 発動の直前に、満杯になったラインが一瞬ぎゅっと光る「溜め」（期待を最高潮にしてから解放する） */
-  async charge(kind, n, color, ms = 70) {
+  async charge(kind, n, color, ms = 150) {
     const c = this.cell;
-    const els = lineCells(kind, n).map(({ x, r }) => {
+    const els = lineCells(kind, n).map(({ x, r }, i) => {
       const d = document.createElement('div');
       d.className = `cell charge c-${color}`;
       d.style.transform = `translate(${x * c}px,${r * c}px)`;
+      d.style.animationDuration = ms + 'ms';
+      d.style.animationDelay = Math.round((i * ms) / (n * 3)) + 'ms';    // 斜辺側から順に光が溜まっていく
       this.fxLayer.appendChild(d);
       return d;
     });
+    // 溜めている間、ラインのブロックがぎゅっと縮んで光る
+    const blocks = lineCells(kind, n).map(({ x, r }) => this._board?.get(x, r)).filter(Boolean).map((b) => this.els.get(b.id)).filter(Boolean);
+    for (const el of blocks) el.animate([{ scale: '1', filter: 'none' }, { scale: '.9', filter: 'brightness(1.5)' }], { duration: ms, easing: 'ease-in', fill: 'forwards' }).onfinish = function () { this.cancel(); };
+    this.numEls?.get(kind + n)?.animate([{ scale: '1' }, { scale: '1.5' }, { scale: '1' }], { duration: ms + 160, easing: 'ease-out' });
     await delay(ms);
     els.forEach((d) => d.remove());
   }
@@ -404,16 +410,28 @@ export class Renderer {
     const trainT = 9 * cellT;
     this.sfx?.sink();
     this.lineBlast(kind, N, stack[0]?.color, chain);
-    let lastCell = -1;
+    let lastCell = -1, lastHalf = -1, turned = false;
+    const q = this.q;
     await this.tween(trainT, (t) => {
       const u = 9 * easeInOut(t / trainT);
       els.forEach((el, k) => this.setPos(el, along(start[k] + u), 0));
-      const c = Math.floor(u);
+      const c = Math.floor(u), h = Math.floor(u * 2);
+      if (h !== lastHalf) {
+        lastHalf = h;
+        // どのブロックも光の尾を引き、先頭は細かい光の粒をまき散らす（ゆっくり動く間も目が離せないように）
+        stack.forEach((b, k) => { if (k === 0 || (q >= 0.6 && (h + k) % 2 === 0)) this.trail(along(start[k] + u), b.color); });
+        if (q >= 0.5) { const p = this.cellCenter(along(start[0] + u)); this.particles.sparks(p.x, p.y, stack[0].color, 2, this.cell * 0.45); }
+      }
       if (c !== lastCell) {
         lastCell = c;
         if (c > 0 && c < 9) this.sfx?.step(c);
-        const lead = along(start[0] + u);                  // 先頭のブロックが光の尾を引く
-        this.trail(lead, stack[0].color);
+      }
+      // 先頭が曲がり角（盤面の外の通路）に入った瞬間: 角が光り、盤面が少し沈む
+      if (!turned && start[0] + u >= SIZE) {
+        turned = true;
+        const p = this.cellCenter(P(src, SIZE));
+        this.flareFx(p.x, p.y, stack[0].color, this.cell * 2.4, 360);
+        this.particles.streaks(p.x, p.y, stack[0].color, this.qn(6), this.cell, { speed: [3, 7], life: [260, 420], len: 0.7 });
       }
     });
 
@@ -445,9 +463,12 @@ export class Renderer {
     const longest = Math.max(1, ...moves.map((m) => m.dist), ...goals.map((g) => g.k));
     const enterT = longest * cellT;
     const pushedSound = new Set();
+    // 入っていく先のラインの番号が光る
+    for (const m of moves) this.glowNum(kind, SIZE - m.to.x, m.b.color);
     if (moves.length || goals.length) {
       await this.tween(enterT, (t) => {
         for (const m of moves) {
+          if (!m.settled && t >= m.dist * cellT) { m.settled = true; this.settle(m.el, P(m.to.x, m.to.r), m.b.color, moves.indexOf(m)); }
           const d = m.dist * easeOut(Math.min(1, t / (m.dist * cellT)));
           const r = m.from.fr - d;                           // 入ってくるブロックの位置（上へ進む）
           this.setPos(m.el, P(m.to.x, r), 0);
@@ -464,10 +485,31 @@ export class Renderer {
         }
       });
     }
+    for (const m of moves) if (!m.settled) this.settle(m.el, P(m.to.x, m.to.r), m.b.color, moves.indexOf(m));
     if (goals.length) this.goalIn(goals.map((g) => g.b), chain);     // 同時に着くブロックの演出はまとめて1回
     for (const m of moves) { this.manual.delete(m.b.id); m.el.classList.remove('travel'); }
     this.applySnapshot(after);
     this.bounce([[0, 1], [0.3, 1.012], [0.6, 0.997], [1, 1]], 220);
+  }
+
+  /** 配られたブロックがラインの中で止まった: ぽよんと弾み、マスに光の輪と粒、小さな音 */
+  settle(el, p, color, i = 0) {
+    el.animate([{ scale: '1.18 .82' }, { scale: '.94 1.06', offset: 0.45 }, { scale: '1' }], { duration: 260, easing: 'ease-out' });
+    const ring = document.createElement('div');
+    ring.className = `cell land-ring c-${color}`;
+    ring.style.transform = `translate(${p.x}px,${p.y}px)`;
+    this.addFx(this.fxLayer, ring, 520);
+    if (this.q >= 0.5) { const q = this.cellCenter(p); this.particles.sparks(q.x, q.y, color, 5, this.cell * 0.7); }
+    this.sfx?.settle?.(i);
+  }
+
+  /** ライン番号を一瞬ブロックの色で光らせる（transform と opacity だけの小さなアニメーション） */
+  glowNum(kind, n, color) {
+    const el = this.numEls?.get(kind + n);
+    if (!el) return;
+    el.classList.add('lit', `c-${color}`);
+    el.animate([{ scale: '1' }, { scale: '1.35' }, { scale: '1' }], { duration: 420, easing: 'ease-out' })
+      .onfinish = () => el.classList.remove('lit', `c-${color}`);
   }
 
   /** ブロック（1個または同時に着く複数個）がゴールに入る。演出と音はまとめて1回 */

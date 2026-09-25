@@ -257,6 +257,25 @@ button{font-family:inherit;cursor:pointer;}
 /* 見えていない間は動かさない */
 #fever.off,#fever.off::before,#fever.off::after,#danger.off::before{animation-play-state:paused;}
 #app{z-index:1;}
+/* ---- 画面全体の演出（scenes.js） ----
+   奥（盤面の後ろ）: 色の変化 #sceneTint・光の放射 #sceneBurst・海と星 #sceneBack / 手前: 風船 #sceneFront
+   色の変化と光の放射は1回だけ描いた絵を opacity と transform だけで動かす */
+#sceneBack,#sceneFront{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;}
+#sceneBack{z-index:0;}
+#sceneStars{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
+.scene-star{position:absolute;left:0;top:0;width:64px;height:64px;background:center/100% 100% no-repeat;opacity:0;}
+#sceneFront{z-index:24;}
+/* 色の変化と光の放射は 400px の絵を拡大して使う（画面より大きい絵をそのまま作ると、高解像度の画面で描く量が桁違いに増える） */
+#sceneTint{position:fixed;left:50%;top:50%;width:400px;height:400px;margin:-200px 0 0 -200px;z-index:0;pointer-events:none;opacity:0;}
+#sceneTint.t-sea{background:radial-gradient(closest-side,rgba(90,235,255,.85),rgba(40,170,240,.55) 45%,rgba(30,110,220,.35) 75%,transparent);}
+/* 暖色は青の上に薄く重ねると灰色に濁るので、夕焼けのように濃い色を画面の下（または中心）から広げる。
+   大きな絵（200vmax）の中で、画面は縦 25%〜75% の範囲に当たる */
+#sceneTint.t-gold{background:radial-gradient(closest-side,rgba(255,222,110,.95),rgba(255,166,70,.85) 18%,rgba(255,104,140,.5) 36%,transparent 56%);}
+#sceneTint.t-amazing{background:radial-gradient(closest-side,rgba(255,150,225,.9),rgba(190,90,255,.55) 42%,rgba(90,80,255,.3) 72%,transparent);}
+#sceneTint.t-warm{background:linear-gradient(to top,transparent 23%,rgba(255,150,70,.95) 25%,rgba(255,96,110,.72) 38%,rgba(210,70,190,.3) 52%,transparent 64%);}
+#sceneTint.t-rainbow{background:center/100% 100% no-repeat;}   /* 絵は scenes.rainbowImage */
+#sceneBurst{position:fixed;left:0;top:0;width:400px;height:400px;z-index:0;pointer-events:none;opacity:0;
+  background:center/100% 100% no-repeat;}   /* 絵は scenes.burstImage */
 .best-pill.beat{border-color:var(--gold);box-shadow:0 0 14px rgba(255,213,74,.7);animation:beat 1.2s ease-in-out infinite;}
 @keyframes beat{50%{box-shadow:0 0 22px rgba(255,213,74,1)}}
 @media (prefers-reduced-motion: reduce){#fever,#fever::before,#fever::after,#danger::before,.hi,.goal.ready,.hint{animation:none}}
