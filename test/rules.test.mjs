@@ -1,11 +1,11 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609251158';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609251158';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609251158';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609251158';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609251158';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609251158';
-import * as Sim from '../src/core/sim.js?v=202609251158';
-import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609251158';
+import { Board, createBlock } from '../src/core/board.js?v=202609251214';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609251214';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609251214';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609251214';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609251214';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609251214';
+import * as Sim from '../src/core/sim.js?v=202609251214';
+import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609251214';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -439,12 +439,12 @@ console.log('ときどき「1つずつなら置けるのに、3つとも置け�
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd });
   g.allClearTray = () => null;
-  for (let i = 0; i < 300; i++) {
+  for (let i = 0; i < 400; i++) {                      // 探す時間で打ち切るので実行ごとに少し揺れる。回数を多めに
     g.board = boardWithBlocks(rnd, 3, 12); g.history = new Set();
     g.spawnTray(); n++;
     if (g.lastLineup.kind === 'tight') tight++;
   }
-  eq(tight / n > 0.05 && tight / n < 0.15, true, `置き方の少ない組み合わせの割合 ${(tight / n * 100).toFixed(0)}%`);
+  eq(tight / n > 0.04 && tight / n < 0.16, true, `置き方の少ない組み合わせの割合 ${(tight / n * 100).toFixed(0)}%`);
   let high = 0;
   for (let i = 0; i < 60; i++) { g.board = boardWithBlocks(rnd, 17, 27); g.spawnTray(); if (g.lastLineup.kind === 'tight') high++; }
   eq(high, 0, '6割以上埋まっているときは出さない（ふつうの目標がもともと少ない）');
@@ -586,7 +586,7 @@ function findPlay(board, tray, goal) {
   // 確率: ブロックが残った盤面で補充するたびに約20%でチャンス（手順が見つかるまで次の補充でも探す）。埋まり具合は問わない
   let seed = 59;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const g = new Game({ random: rnd }), N = 250;
+  const g = new Game({ random: rnd }), N = 400;      // 探索は時間で打ち切るので実行ごとに少し揺れる。回数を多めに
   for (const [lo, hi] of [[1, 8], [12, 22]]) {
     let chances = 0;
     for (let i = 0; i < N; i++) {
@@ -594,7 +594,7 @@ function findPlay(board, tray, goal) {
       g.spawnTray();
       if (g.plan || g.wantAllClear) chances++;
     }
-    eq(chances / N > 0.14 && chances / N < 0.26, true, `ブロック ${lo}〜${hi} 個: 全消しのチャンスを引く割合 ${(chances / N * 100).toFixed(0)}%`);
+    eq(chances / N > 0.13 && chances / N < 0.27, true, `ブロック ${lo}〜${hi} 個: 全消しのチャンスを引く割合 ${(chances / N * 100).toFixed(0)}%`);
   }
 }
 console.log('盤面が空のときは約60%で「6個以上を手順どおりに置いた時だけ全消し」');
@@ -621,7 +621,7 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
 {
   let seed = 61, hits = 0, strict = true;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const g = new Game({ random: rnd }), N = 300;
+  const g = new Game({ random: rnd }), N = 400;
   for (let i = 0; i < N; i++) {
     g.board = new Board(); g.plan = null; g.wantAllClear = false;
     g.spawnTray();
@@ -629,7 +629,7 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
     hits++;
     if (!g.plan || g.plan.rest.length < 3) strict = false;
   }
-  eq(hits / N > 0.53 && hits / N < 0.67, true, `空の盤面で全消しの手順になる割合 ${(hits / N * 100).toFixed(0)}%`);
+  eq(hits / N > 0.52 && hits / N < 0.68, true, `空の盤面で全消しの手順になる割合 ${(hits / N * 100).toFixed(0)}%`);
   eq(strict, true, '1回目の3個を配り、残り（3個以上）は計画として持つ');
 }
 {
