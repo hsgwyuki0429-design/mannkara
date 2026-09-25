@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells } from './constants.js?v=202609251310';
+import { SIZE, isInside, lineCells } from './constants.js?v=202609251354';
 
 /**
  * 探索用の軽い盤面（手駒の組み合わせ探索・全消しの計画で何万回も試すため）。
