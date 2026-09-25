@@ -1,23 +1,18 @@
-import { Game } from '../core/game.js?v=202609251453';
-import { Board } from '../core/board.js?v=202609251453';
-import { resolveChains } from '../core/mancala.js?v=202609251453';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251453';
-import { Renderer, delay } from './renderer.js?v=202609251453';
-import { Sfx } from './sfx.js?v=202609251453';
-import { Scenes } from './scenes.js?v=202609251453';
-import { colorOf } from './palette.js?v=202609251453';
+import { Game } from '../core/game.js?v=202609252141';
+import { Board } from '../core/board.js?v=202609252141';
+import { resolveChains } from '../core/mancala.js?v=202609252141';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609252141';
+import { Renderer, delay } from './renderer.js?v=202609252141';
+import { Sfx } from './sfx.js?v=202609252141';
+import { Scenes } from './scenes.js?v=202609252141';
+import { colorOf } from './palette.js?v=202609252141';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
 const renderer = new Renderer(sfx);
-/** 画面全体の演出（全消しの海と風船・大連鎖の色の変化など） */
+/** 画面全体の演出（新記録の風船・大連鎖やコンボの色の変化など。画面を覆う演出は使わない） */
 const scenes = new Scenes({ sfx, colorOf });
 scenes.warm();
-/** 盤面の中心（画面座標） */
-function boardCenter() {
-  const w = renderer.wrap.getBoundingClientRect(), b = renderer.boardBox();
-  return { x: w.left + (b.x0 + b.x1) / 2, y: w.top + (b.y0 + b.y1) / 2 };
-}
 
 /* ---------- モード（通常 / 学習）とベストスコア（端末ごと・モードごとに別） ---------- */
 const MODE_KEY = 'stair-mancala-mode';
@@ -108,7 +103,7 @@ async function playTurn(turn) {
   showScore(turn.scoreAfterPlace);
   if (rush) {                                            // 早送り: 演出なしで盤面と点数だけ最後まで進める
     for (const step of turn.steps) { await renderer.playStep(step, 1); if (stale()) return; }
-    if (turn.allClear) { scenes.allClear(boardCenter()); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
+    if (turn.allClear) { renderer.showText('ALL CLEAR!', 't5'); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
     showScore(turn.score);
     return;
   }
@@ -143,8 +138,7 @@ async function playTurn(turn) {
     if (stale()) return;
   }
   if (turn.allClear) {
-    // 盤面の前に出る全消しの演出（4種類から前回と違うもの）。文字もその中で出すので、中央の文字は出さない
-    scenes.allClear(boardCenter());
+    renderer.showText('ALL CLEAR!', 't5');
     renderer.allClearBlast();
     sfx.fanfare();
   }
