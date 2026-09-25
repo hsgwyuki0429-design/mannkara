@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells } from './constants.js?v=202609252141';
+import { SIZE, isInside, lineCells } from './constants.js?v=202609252223';
 
 /**
  * 探索用の軽い盤面（手駒の組み合わせ探索・全消しの計画で何万回も試すため）。
@@ -83,14 +83,12 @@ function insertBottom(s, kind, n) {
   const cells = LINES[kind][n];
   const count = s[cntAt(kind, n)];
   if (count === n) return false;
-  if (count === n - 1) {                       // 手前を奥へ詰めて埋める → 満杯
-    for (const i of cells) if (!s[i]) fill(s, i);
-    return true;
+  if (s[cells[0]]) {                           // 手前の端が埋まっている → 一番近い空欄まで奥へ詰めて入る
+    for (const i of cells) if (!s[i]) { fill(s, i); return true; }
   }
   let first = -1;
   for (let k = 0; k < n; k++) if (s[cells[k]]) { first = k; break; }
   const stop = first < 0 ? n - 1 : first - 1;
-  if (stop < 0) return false;
   fill(s, cells[stop]);
   return true;
 }

@@ -1,11 +1,11 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609252141';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609252141';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609252141';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609252141';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609252141';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609252141';
-import * as Sim from '../src/core/sim.js?v=202609252141';
-import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609252141';
+import { Board, createBlock } from '../src/core/board.js?v=202609252223';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609252223';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609252223';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609252223';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609252223';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609252223';
+import * as Sim from '../src/core/sim.js?v=202609252223';
+import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609252223';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -103,7 +103,7 @@ console.log('配られたブロックは、ブロックか壁に当たる手前�
   eq([4,3,2,1].map((n) => pat(b, 'col', n).at(-1)), [1,1,1,1], '縦5 発動: 空の縦4〜1 には一番奥に入る');
 }
 
-console.log('満杯より1個少ないラインだけは、手前のブロックを奥へ詰めて埋める');
+console.log('手前の端が埋まっているラインは、手前のブロックを奥へ詰めて埋める');
 {
   const b = new Board();
   setLine(b, 'col', 4, [1,0,1,1]);
@@ -120,12 +120,18 @@ console.log('満杯より1個少ないラインだけは、手前のブロック
   eq(pat(b, 'col', 4), [1,1,1,1], '■■■□ -> 3個とも奥へ詰めて満杯');
 }
 
-console.log('手前の端が埋まっていて進めないとき（満杯より2個以上少ない）は入れずにゴールへ');
+console.log('満杯より2個以上少なくても、手前の端が埋まっていれば一番近い空欄まで詰めて入る（満杯だけゴールへ）');
 {
   const b = new Board();
   setLine(b, 'col', 4, [1,0,1,0]);
-  eq(b.insertBottom('col', 4, createBlock('x')), false, '■□■□ には入れない');
-  eq(pat(b, 'col', 4), [1,0,1,0], '盤面は変わらない');
+  const ids = b.line('col', 4).map((v) => v?.id ?? null);
+  eq(b.insertBottom('col', 4, createBlock('x')), true, '■□■□ にも入れる');
+  eq(pat(b, 'col', 4), [1,1,1,0], '■□■□ -> ■■■□（一番近い空欄だけ埋まる）');
+  eq(b.line('col', 4)[1].id, ids[0], '元の一番手前が1マス奥へ');
+  const c = new Board();
+  setLine(c, 'row', 5, [1,1,0,0,1]);
+  eq(c.insertBottom('row', 5, createBlock('x')), true, '横でも同じ');
+  eq(pat(c, 'row', 5), [1,1,1,0,1], '■■□□■ -> ■■■□■');
   const f = new Board();
   setLine(f, 'col', 3, [1,1,1]);
   eq(f.insertBottom('col', 3, createBlock('x')), false, '満杯にも入れない');
@@ -698,7 +704,7 @@ console.log('学習モードのおすすめ（Game.hint）');
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (let t = 0; t < 60 && checked < 10; t++) {
     const g = new Game({ random: rnd });
-    g.allClearTray = () => null;
+    g.allClearTray = () => null; g.planTray = null; g.plan = null;
     g.board = boardWithBlocks(rnd, 16, 24);
     g.tray = g.spawnTray();
     const s = Sim.fromBoard(g.board);
