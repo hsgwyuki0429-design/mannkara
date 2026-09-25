@@ -241,18 +241,14 @@ button{font-family:inherit;cursor:pointer;}
 #fever.off,#fever.off::before,#fever.off::after,#danger.off::before{animation-play-state:paused;}
 #app{z-index:1;}
 /* ---- 画面全体の演出（scenes.js） ----
-   奥（盤面の後ろ）: 色の変化 #sceneTint / 手前（盤面の前）: 全消しの演出 #sceneFront
-   色の変化は1回だけ描いた 400px の絵を拡大し、opacity と transform だけで動かす */
-#sceneFront,#sceneSea{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:24;}
-#sceneIris{position:fixed;left:0;top:0;width:400px;height:400px;border-radius:50%;z-index:24;pointer-events:none;transform:scale(0);}
+   奥（盤面の後ろ）: 色の変化 #sceneTint / 手前（盤面の前）: 新記録の風船 #sceneFront
+   全消しは画面を覆う演出を使わない（盤面の中だけ）。色の変化は1回だけ描いた 400px の絵を拡大し、opacity と transform だけで動かす */
+#sceneFront{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:24;}
 /* 色の変化は 400px の絵を拡大して使う（画面より大きい絵をそのまま作ると、高解像度の画面で描く量が桁違いに増える） */
 #sceneTint{position:fixed;left:50%;top:50%;width:400px;height:400px;margin:-200px 0 0 -200px;z-index:0;pointer-events:none;opacity:0;}
-#sceneTint.t-sea{background:radial-gradient(closest-side,rgba(90,235,255,.85),rgba(40,170,240,.55) 45%,rgba(30,110,220,.35) 75%,transparent);}
 /* 背景の青の上に半透明で重ねるので、色は青と混ざっても濁らない水色・青紫・桃紫の範囲にする
    （黄・橙を薄く重ねると灰色に濁る）。大きな絵（200vmax）の中で、画面は縦 25%〜75% の範囲に当たる */
 #sceneTint.t-gold{background:radial-gradient(closest-side,rgba(150,230,255,.92),rgba(120,170,255,.66) 22%,rgba(190,130,255,.42) 40%,transparent 58%);}
-#sceneTint.t-bubble{background:radial-gradient(closest-side,rgba(200,245,255,.9),rgba(150,190,255,.6) 30%,rgba(230,160,255,.4) 55%,transparent 78%);}
-#sceneTint.t-candy{background:radial-gradient(closest-side,rgba(170,215,255,.88),rgba(200,150,255,.58) 30%,rgba(255,140,210,.36) 56%,transparent 78%);}
 #sceneTint.t-amazing{background:radial-gradient(closest-side,rgba(255,150,225,.9),rgba(190,90,255,.55) 42%,rgba(90,80,255,.3) 72%,transparent);}
 #sceneTint.t-warm{background:linear-gradient(to top,transparent 23%,rgba(255,120,200,.9) 25%,rgba(190,100,255,.62) 38%,rgba(120,120,255,.28) 52%,transparent 64%);}
 #sceneTint.t-rainbow{background:center/100% 100% no-repeat;}   /* 絵は scenes.rainbowImage */
