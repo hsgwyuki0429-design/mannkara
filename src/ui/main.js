@@ -1,11 +1,11 @@
-import { Game } from '../core/game.js?v=202609251354';
-import { Board } from '../core/board.js?v=202609251354';
-import { resolveChains } from '../core/mancala.js?v=202609251354';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251354';
-import { Renderer, delay } from './renderer.js?v=202609251354';
-import { Sfx } from './sfx.js?v=202609251354';
-import { Scenes } from './scenes.js?v=202609251354';
-import { colorOf } from './palette.js?v=202609251354';
+import { Game } from '../core/game.js?v=202609251434';
+import { Board } from '../core/board.js?v=202609251434';
+import { resolveChains } from '../core/mancala.js?v=202609251434';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609251434';
+import { Renderer, delay } from './renderer.js?v=202609251434';
+import { Sfx } from './sfx.js?v=202609251434';
+import { Scenes } from './scenes.js?v=202609251434';
+import { colorOf } from './palette.js?v=202609251434';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -67,14 +67,20 @@ function planSpeeds(steps) {
   const k = Math.max(1, total / TURN_PLAY_BUDGET);
   return base.map((v) => v * k);
 }
-/** 再生中に次のピースが置かれて待ちが溜まっていたら、さらに速める */
-const backlog = () => (pending > 1 ? BACKLOG_SPEED : 1);
+/** 再生中に次のピースを持ち上げたら、置くまでに追いつくよう残りの再生を速める */
+const backlog = () => (pending > 1 || drag ? BACKLOG_SPEED : 1);
+let turnSeq = 0;              // 置いた順の番号
+let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 const game = new Game({
   hooks: {
     onTurn(turn) {
       // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように）
       sfx.place();
+      turn.seq = ++turnSeq;
+      // 前のターンの再生がまだ終わっていなければ、残りを一気に最後まで進める（表示を盤面に追いつかせる）。
+      // ルールは置いた瞬間に確定しているので、遅れた表示のまま新しいピースを出すと古いブロックに重なって見える
+      if (pending > 0) { rushBefore = turn.seq; renderer.setRush(true); }
       renderer.popIn(turn.placed);
       renderer.clearHint();
       renderTray(turn.refilled);
@@ -88,7 +94,15 @@ const game = new Game({
 });
 
 async function playTurn(turn) {
+  const rush = turn.seq < rushBefore;
+  renderer.setRush(rush);
   showScore(turn.scoreAfterPlace);
+  if (rush) {                                            // 早送り: 演出なしで盤面と点数だけ最後まで進める
+    for (const step of turn.steps) await renderer.playStep(step, 1);
+    if (turn.allClear) { scenes.allClear(boardCenter()); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
+    showScore(turn.score);
+    return;
+  }
   const speeds = planSpeeds(turn.steps);
   if (turn.steps.length) {
     renderer.setFever((turn.streak - 1) / 5);
@@ -98,8 +112,11 @@ async function playTurn(turn) {
   let shownTier = 0;                                       // このターンで画面の色を変えた褒め言葉の段階
   for (const [i, step] of turn.steps.entries()) {
     const sp = speeds[i] * backlog();
-    if (i === 0) await renderer.charge(step.kind, step.n, step.stack[0]?.color, ANIM.charge / backlog());
+    // 再生中に次のピースが置かれたら、残りの発動は演出なしで一気に進める
+    if (renderer.rush) { await renderer.playStep(step, 1); continue; }
+    if (i === 0) await renderer.charge(step.kind, step.n, step.stack, ANIM.charge / backlog());
     await renderer.playStep(step, sp);
+    if (renderer.rush) continue;
     const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
     if (step.chain >= 2) {
       renderer.showText(`${step.chain} CHAIN<small>${praise}</small>`, `t${tier}`);
@@ -111,7 +128,7 @@ async function playTurn(turn) {
     }
     if (step.gained) renderer.floatScore(step.gained, step.chain);
     showScore(step.score, true);
-    await delay(ANIM.betweenChains / sp);
+    await renderer.wait(ANIM.betweenChains / sp);
   }
   if (turn.allClear) {
     // 盤面の前に出る全消しの演出（4種類から前回と違うもの）。文字もその中で出すので、中央の文字は出さない
@@ -452,4 +469,4 @@ window.__booted = true;
 window.__game = game;
 window.__renderer = renderer;
 window.__scenes = scenes;
-window.__ui = { showScore, renderTray, setBest(v) { best = v; } };
+window.__ui = { showScore, renderTray, setBest(v) { best = v; }, pending: () => pending };
