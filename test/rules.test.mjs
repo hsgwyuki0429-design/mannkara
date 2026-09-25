@@ -1,11 +1,11 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609240308';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240308';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240308';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609240308';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609240308';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609240308';
-import * as Sim from '../src/core/sim.js?v=202609240308';
-import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609240308';
+import { Board, createBlock } from '../src/core/board.js?v=202609240336';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609240336';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609240336';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609240336';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609240336';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609240336';
+import * as Sim from '../src/core/sim.js?v=202609240336';
+import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609240336';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -495,7 +495,7 @@ console.log('詰む組み合わせは「8割以上・詰まない置き方が1�
   }
 }
 
-console.log('全消しのチャンス: 2割以下（5個以下）の盤面で約20%、6個置いたところで全消しできる手駒');
+console.log('全消しのチャンス: ブロックが残った盤面でも約20%、手順どおりに置くと全消しできる手駒');
 {
   let seed = 41; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const seq = planAllClear(new Board(), { depth: 6, random: rnd, budgetMs: 1000 });
@@ -512,19 +512,26 @@ console.log('全消しのチャンス: 2割以下（5個以下）の盤面で約
   eq(seq.filter((m) => m.name.startsWith('Dot')).length <= 1, true, '1マスの形は1個まで');
 }
 {
-  // ブロックが少し残った盤面から: 見つかった手順は本体でも全消しになる
-  let seed = 43, found = 0, ok = true;
+  // ブロックが残った盤面から（少ない〜多い）: 見つかった手順は本体でも、途中で空にならず最後の1個で全消し
+  let seed = 43;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let t = 0; t < 20; t++) {
-    const b = boardWithBlocks(rnd, 1, 5);                // 2割以下
-    const seq = planAllClear(b, { depth: 6, random: rnd, budgetMs: 200 });
-    if (!seq) continue;
-    found++;
-    const c = b.clone();
-    for (const m of seq) { c.place(new Piece(m.name), m.ox, m.oy); resolveChains(c); }
-    if (c.totalBlocks() !== 0) ok = false;
+  for (const [lo, hi] of [[1, 5], [8, 14], [16, 24]]) {
+    let found = 0, ok = true;
+    for (let t = 0; t < 12; t++) {
+      const b = boardWithBlocks(rnd, lo, hi);
+      const seq = planAllClear(b, { depths: [6, 9, 12], random: rnd, budgetMs: 300 });
+      if (!seq) continue;
+      found++;
+      const c = b.clone();
+      for (const [i, m] of seq.entries()) {
+        const p = new Piece(m.name);
+        if (!c.canPlace(p, m.ox, m.oy)) { ok = false; break; }
+        c.place(p, m.ox, m.oy); resolveChains(c);
+        if ((i < seq.length - 1) === (c.totalBlocks() === 0)) { ok = false; break; }
+      }
+    }
+    eq(ok && found > 0, true, `ブロック ${lo}〜${hi} 個の盤面でも手順どおりなら全消し (${found}/12 で手順あり)`);
   }
-  eq(ok && found > 0, true, `残りがある盤面でも手順どおりなら全消し (${found}/20 で手順あり)`);
 }
 /** pieces を順番自由で全部置いて、最後の盤面が goal(sim) を満たす置き方 [{slot, ox, oy}] を探す */
 function findPlay(board, tray, goal) {
@@ -544,54 +551,51 @@ function findPlay(board, tray, goal) {
 {
   let seed = 47; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd });
-  // ブロックが少し残った盤面でチャンスを引いた状態（空の盤面は別の決め方）
-  for (let tries = 0; tries < 30; tries++) {
-    g.board = boardWithBlocks(rnd, 1, 3); g.plan = null; g.wantAllClear = true;
+  // ブロックがかなり残った盤面でチャンスを引いた状態: 手順どおりに置いていくと ALL CLEAR
+  let start = 0;
+  for (let tries = 0; tries < 40; tries++) {
+    g.board = boardWithBlocks(rnd, 10, 20); g.plan = null; g.wantAllClear = true;
+    start = g.board.totalBlocks();
     g.tray = g.spawnTray();
     if (g.plan) break;
   }
-  eq(!!g.plan && g.tray.length === 3, true, '1回目の3つを配り、2回目は計画として持つ');
-  const first = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) === g.plan.key);
+  eq(!!g.plan && g.tray.length === 3 && g.plan.rest.length >= 3, true, `ブロック ${start} 個の盤面で、最初の3つを配り残りは計画として持つ`);
+  let placed = 0, last = null, ok = true;
+  while (g.plan && ok) {
+    const want = g.plan.key;
+    const play = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) === want);
+    if (!play) { ok = false; break; }
+    for (const m of play) { last = g.placePiece(m.slot, m.ox, m.oy); placed++; }
+  }
+  const play = ok && findPlay(g.board, g.tray, (s) => Sim.blocks(s) === 0);
+  for (const m of play || []) { last = g.placePiece(m.slot, m.ox, m.oy); placed++; }
+  eq([ok && !!play, last?.allClear, placed >= 6], [true, true, true], `手順どおり ${placed} 個置いたところで ALL CLEAR`);
+}
+{
+  // 計画と違う置き方をしたら、そこで計画はおしまい（探し直して助けない）
+  let seed = 53; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game({ random: rnd });
+  for (let tries = 0; tries < 40 && !g.plan; tries++) { g.board = boardWithBlocks(rnd, 3, 12); g.plan = null; g.wantAllClear = true; g.tray = g.spawnTray(); }
+  const want = g.plan.key;
+  const play = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) !== want && Sim.blocks(s) > 0);
   let last = null;
-  for (const m of first ?? []) last = g.placePiece(m.slot, m.ox, m.oy);
-  eq(!!last?.refilled, true, '1回目を計画どおりに置き切れる');
-  const second = findPlay(g.board, g.tray, (s) => Sim.blocks(s) === 0);
-  for (const m of second ?? []) last = g.placePiece(m.slot, m.ox, m.oy);
-  eq([!!second, last?.allClear, g.board.totalBlocks()], [true, true, 0], '2回目の3つで全消し（turn.allClear）');
+  for (const m of play ?? []) last = g.placePiece(m.slot, m.ox, m.oy);
+  eq([!!last?.refilled, g.plan, g.lastLineup.kind === 'allClear'], [true, null, false], '違う置き方をしたら次は普通の手駒');
 }
 {
-  // 計画と違う置き方をしたときは、今の盤面から3つで全消しできる組を探し直す（見つかれば配る）
-  let seed = 53, replanned = 0, ok = true;
+  // 確率: ブロックが残った盤面で補充するたびに約20%でチャンス（手順が見つかるまで次の補充でも探す）。埋まり具合は問わない
+  let seed = 59;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let t = 0; t < 15; t++) {
-    const g = new Game({ random: rnd });
-    g.board = boardWithBlocks(rnd, 1, 4);
-    g.plan = { key: -1, rest: [] };
-    const tray = g.spawnTray();
-    const seq = findPlay(g.board, tray, (s) => Sim.blocks(s) === 0);
-    if (seq) replanned++;
+  const g = new Game({ random: rnd }), N = 250;
+  for (const [lo, hi] of [[1, 8], [12, 22]]) {
+    let chances = 0;
+    for (let i = 0; i < N; i++) {
+      g.board = boardWithBlocks(rnd, lo, hi); g.plan = null; g.wantAllClear = false;
+      g.spawnTray();
+      if (g.plan || g.wantAllClear) chances++;
+    }
+    eq(chances / N > 0.14 && chances / N < 0.26, true, `ブロック ${lo}〜${hi} 個: 全消しのチャンスを引く割合 ${(chances / N * 100).toFixed(0)}%`);
   }
-  eq(replanned > 0, true, `探し直した3つで全消しできる (${replanned}/15)`);
-}
-{
-  // 確率: 2割以下（空ではない）の盤面で補充するたびに約20%でチャンス（手順が見つかるまで次の補充でも探す）
-  let seed = 59, chances = 0;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const g = new Game({ random: rnd }), N = 300;
-  for (let i = 0; i < N; i++) {
-    g.board = boardWithBlocks(rnd, 1, 5); g.plan = null; g.wantAllClear = false;
-    g.spawnTray();
-    if (g.plan || g.wantAllClear) chances++;
-  }
-  eq(chances / N > 0.15 && chances / N < 0.25, true, `全消しのチャンスを引く割合 ${(chances / N * 100).toFixed(0)}%`);
-  // 2割を超える盤面では起きない
-  let over = 0;
-  for (let i = 0; i < 100; i++) {
-    g.board = boardWithBlocks(rnd, 6, 14); g.plan = null; g.wantAllClear = false;
-    g.spawnTray();
-    if (g.plan) over++;
-  }
-  eq(over, 0, '2割を超える盤面では全消しの手駒は出ない');
 }
 console.log('盤面が空のときは約60%で「6個以上を手順どおりに置いた時だけ全消し」');
 {
@@ -623,7 +627,7 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
     g.spawnTray();
     if (g.lastLineup.kind !== 'allClear') continue;
     hits++;
-    if (!g.plan?.strict || g.plan.rest.length < 3) strict = false;
+    if (!g.plan || g.plan.rest.length < 3) strict = false;
   }
   eq(hits / N > 0.53 && hits / N < 0.67, true, `空の盤面で全消しの手順になる割合 ${(hits / N * 100).toFixed(0)}%`);
   eq(strict, true, '1回目の3個を配り、残り（3個以上）は計画として持つ');
