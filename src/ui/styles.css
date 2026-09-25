@@ -93,7 +93,10 @@ button{font-family:inherit;cursor:pointer;}
   border:3px solid var(--goal);background:rgba(10,30,120,.22);
   color:var(--goal-text);font-size:calc(var(--cell) * .415);font-weight:900;letter-spacing:.01em;
   transition:background-color 160ms;}
-.goal .upright{text-shadow:var(--ts-s);}
+.goal .upright{position:relative;text-shadow:var(--ts-s);}
+/* ゴールの中の面: 入ったブロックの色で満ちて引く（ベタ塗り + マスと同じ内側の影） */
+.goal-fill{position:absolute;inset:2px;border-radius:20%;opacity:0;pointer-events:none;
+  background:var(--col,#3fd6e0);box-shadow:inset -2px -2px 5px rgba(4,12,60,.35),inset 1px 1px 0 rgba(255,255,255,.35);}
 /* 置けば消えるとき: 光らせず、ゴールの面が少し明るくなって弾む */
 .goal.ready{background:rgba(63,214,224,.2);animation:goalReady 560ms ease-in-out infinite alternate;}
 @keyframes goalReady{to{scale:1.07}}
@@ -131,6 +134,14 @@ button{font-family:inherit;cursor:pointer;}
 .block.pop-in::before,.block.pop-in::after{animation:land 340ms cubic-bezier(.25,1.4,.5,1) var(--d,0ms) both;}
 @keyframes land{0%{scale:1.22}45%{scale:.9}72%{scale:1.04}100%{scale:1}}
 .block.travel{z-index:5;}
+/* 発動したラインの空いたマス・全消しの盤面: マスの中にブロックの色が満ちて引く。
+   マスと同じ形・同じ内側の影（くぼみの底に色が溜まって見える）。光のにじみは付けない */
+.well-tint{scale:0;}
+.well-tint::after{content:'';position:absolute;inset:14%;border-radius:18%;
+  background:var(--col);
+  box-shadow:inset -2.5px -2.5px 5px rgba(4,12,60,.4),inset .8px .8px 0 rgba(255,255,255,.35);}
+/* ゴールから飛び散る宝石のかけら（shards.js。色ごとに1回だけ描いた絵を貼り、transform だけで動かす） */
+.shard{position:absolute;left:0;top:0;pointer-events:none;background:center/100% 100% no-repeat;}
 .block.fly::before,.block.fly::after{opacity:0;scale:.4;}
 .ghost{opacity:.38;filter:saturate(.8);animation:ghostIn 140ms ease-out;}
 /* 学習モードのおすすめの場所: 白い枠 + ピースの色の面。opacity と scale だけで脈打つ（手順どおりの手は金色の枠） */
@@ -168,6 +179,11 @@ button{font-family:inherit;cursor:pointer;}
   font-weight:900;font-size:32px;line-height:1.05;opacity:0;color:#fff;letter-spacing:.01em;text-shadow:var(--ts);}
 .pop small{display:block;font-size:21px;margin-top:2px;color:var(--tc,#fff);}
 .pop.show{animation:popText 820ms cubic-bezier(.2,.9,.3,1);}
+/* 大きい文字は1文字ずつ上から落ちてきて弾む。説明の小さい文字はそのあと下からせり上がる */
+.pop .ch{display:inline-block;animation:chDrop 380ms cubic-bezier(.3,1.6,.5,1) calc(var(--i) * 32ms) both;}
+@keyframes chDrop{from{opacity:0;translate:0 -.55em;scale:.5}}
+.pop small{animation:subIn 320ms cubic-bezier(.3,1.4,.5,1) calc(var(--n,0) * 32ms + 60ms) both;}
+@keyframes subIn{from{opacity:0;translate:0 .5em}}
 @keyframes popText{0%{opacity:0;scale:.3;rotate:-8deg}16%{opacity:1;scale:1.25;rotate:3deg}28%{scale:.95;rotate:0deg}38%{scale:1.03}
   75%{opacity:1;scale:1}100%{opacity:0;scale:1.08;translate:-50% -28px}}
 /* 段階ごとの色（t1 = Good … t5 = Unbelievable / NEW BEST） */
@@ -239,7 +255,7 @@ button{font-family:inherit;cursor:pointer;}
 #sceneTint.t-rainbow{background:center/100% 100% no-repeat;}   /* 絵は scenes.rainbowImage */
 .best-pill.beat{border-color:var(--gold);background:rgba(255,213,74,.14);animation:beat 1.2s ease-in-out infinite;}
 @keyframes beat{50%{scale:1.04}}
-@media (prefers-reduced-motion: reduce){#fever,#fever::before,#fever::after,#danger::before,.hi,.goal.ready,.hint{animation:none}}
+@media (prefers-reduced-motion: reduce){#fever,#fever::before,#fever::after,#danger::before,.hi,.goal.ready,.hint,.pop .ch,.pop small{animation:none}}
 
 /* ---- トレイ ----
    リスタートボタンを無くして浮いた分の高さをここへ回し、枠を無くした代わりに手駒がなるべく

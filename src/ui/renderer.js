@@ -1,5 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609251310';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609251354';
+import { Shards } from './shards.js?v=202609251354';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -16,6 +17,11 @@ const fresh = (el) => { const n = el.cloneNode(false); el.replaceWith(n); return
 const eased = (frames, easing) => frames.map((f, i) => (i < frames.length - 1 ? { easing, ...f } : f));
 const easeInOut = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
 const easeOut = (p) => 1 - Math.pow(1 - p, 2.2);
+/** easeInOut の逆関数（進んだ割合 y になる時刻の割合） */
+const easeInOutInv = (y) => (y < 0.5 ? Math.sqrt(y / 2) : 1 - Math.sqrt((1 - y) * 2) / 2);
+/** ブロックと同じ7色 */
+const COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
+const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /**
  * 描画とアニメーションだけを担当（ルールは持たない）。
@@ -43,6 +49,10 @@ export class Renderer {
     this.fxLayer = document.getElementById('fxLayer');
     // 消える列のハイライトは既存ブロックの上に重ねる（下にあると隠れて見えない）
     this.blockLayer.after(this.hiLayer);
+    // マスに色が満ちる演出（空いたマスの中に塗るので、ブロックより下・マスより上）
+    this.tintLayer = document.createElement('div');
+    this.tintLayer.className = 'layer';
+    this.wellLayer.after(this.tintLayer);
     this.lane = document.getElementById('lane');
     this.laneRow = document.getElementById('laneRow');
     this.goal = document.getElementById('goal');
@@ -62,6 +72,8 @@ export class Renderer {
     this.fx2 = document.createElement('div');
     this.fx2.className = 'layer fx2';
     this.wrap.appendChild(this.fx2);
+    // ゴールから飛び散る宝石のかけら（色ごとに1回だけ描いた小さな絵を貼って動かす）
+    this.shardLayer = new Shards(this.fx2);
     this.comboPop = document.createElement('div');
     this.comboPop.className = 'combo-pop';
     this.wrap.appendChild(this.comboPop);
@@ -70,6 +82,11 @@ export class Renderer {
     this.feverEl = document.getElementById('fever') || document.body.insertBefore(Object.assign(document.createElement('div'), { id: 'fever' }), document.body.firstChild);
     const goalText = this.goal.querySelector('span');
     if (goalText) goalText.className = 'upright';
+    // ゴールの中の面（入ったブロックの色で満ちる）
+    this.goalFill = document.createElement('div');
+    this.goalFill.className = 'goal-fill';
+    this.goal.prepend(this.goalFill);
+    this.frameMs = 16.7;      // ブロックが動いている間の1フレームの時間（なめらかに平均。演出の量を決める）
     this.els = new Map();     // blockId -> element
     this.manual = new Set();  // 手動制御中
     this.cell = 40;
@@ -140,6 +157,8 @@ export class Renderer {
   drawStatic() {
     const c = this.cell;
     this.wellLayer.innerHTML = '';
+    this.tintLayer.innerHTML = '';
+    this.tints = new Map();    // 'x,r' -> マスの中を色で満たす要素（最初に1回だけ作って使い回す）
     this.lane.innerHTML = '';
     this.laneRow.innerHTML = '';
     this.wells = new Map();
@@ -153,6 +172,11 @@ export class Renderer {
         d.style.transform = `translate(${x * c}px,${r * c}px)`;
         this.wellLayer.appendChild(d);
         this.wells.set(`${x},${r}`, d);
+        const t = document.createElement('div');
+        t.className = 'cell well-tint';
+        t.style.transform = d.style.transform;
+        this.tintLayer.appendChild(t);
+        this.tints.set(`${x},${r}`, t);
       }
     }
     // ライン番号（縦は盤面の下の通路、横は右の通路）。文字は回転させないので rotWrap 側に置く。
@@ -335,11 +359,15 @@ export class Renderer {
     }
   }
 
-  /** requestAnimationFrame で duration ms の間 fn(t[ms]) を毎フレーム呼ぶ */
+  /** requestAnimationFrame で duration ms の間 fn(t[ms]) を毎フレーム呼ぶ。ついでにフレーム時間を測る */
   tween(duration, fn) {
     return new Promise((resolve) => {
       const t0 = performance.now();
+      let last = 0;
       const frame = (now) => {
+        // 1回だけの大きな引っかかり（手駒の計算・タブの切り替えなど）は数えない。続けて遅いときだけ演出を減らす
+        if (last) { const dt = now - last; if (dt < 100) this.frameMs += (dt - this.frameMs) * 0.08; }
+        last = now;
         const t = Math.min(duration, now - t0);
         fn(t);
         if (t < duration) requestAnimationFrame(frame); else resolve();
@@ -347,6 +375,12 @@ export class Renderer {
       requestAnimationFrame(frame);
     });
   }
+
+  /**
+   * 演出の量の目安（1 = 全部 … 0.25 = 最小限）。ブロックが動いている間のフレーム時間から決める。
+   * 遅い端末や重い場面では、かけら・波打ち・1文字ずつの文字・マスに満ちる色を自動で減らす
+   */
+  get q() { return Math.max(0.25, Math.min(1, 1 - (this.frameMs - 20) / 26)); }
 
   /**
    * ライン(kind, n) の発動を再生する。縦列と横列はまったく同じ動きで、横列は縦横を入れ替えて描く。
@@ -372,7 +406,8 @@ export class Renderer {
     const start = stack.map((_, k) => N - 1 - k);           // slot k の r = N-1-k
     const trainT = 9 * cellT;
     this.sfx?.sink();
-    this.lineBlast(kind, N, stack[0]?.color, chain);
+    this.lineBlast(kind, N, stack[0]?.color, chain, stack);
+    this.wake(kind, N, stack[0]?.color, trainT);
     let lastCell = -1;
     await this.tween(trainT, (t) => {
       const u = 9 * easeInOut(t / trainT);
@@ -466,11 +501,13 @@ export class Renderer {
       el.classList.add('fly');
       setTimeout(() => this.removeEl(block.id), 220);
     }
-    this.hitGoal(chain);
+    const color = list[0].color;
+    this.hitGoal(chain, color);
+    this.shatter(color, 3 + Math.min(chain, 3) + Math.min(list.length - 1, 2));
   }
 
-  /** ゴールがぽんと弾む（光らせない。大きさだけ） */
-  hitGoal(chain) {
+  /** ゴールがぽんと弾み、中の面が入ったブロックの色で満ちて引いていく（光らせない） */
+  hitGoal(chain, color) {
     this._goalHit?.cancel();
     const k = Math.min(chain, 8);
     this._goalHit = this.goal.animate(eased([
@@ -478,7 +515,52 @@ export class Renderer {
       { transform: `scale(${1.14 + k * 0.012})`, offset: 0.35 },
       { transform: 'none' },
     ], 'ease-out'), { duration: 300 });
+    if (color) {
+      this.goalFill.className = `goal-fill c-${color}`;
+      this._goalFill?.cancel();
+      // 半透明にすると背景の青と混ざって濁るので、濃さは変えずに大きさだけで満ちて引く
+      this._goalFill = this.goalFill.animate([
+        { opacity: 1, scale: '0' }, { scale: '1.04', offset: 0.28 }, { scale: '1', offset: 0.55 }, { opacity: 1, scale: '0' },
+      ], { duration: 460, easing: 'ease-in-out' });
+    }
     this.sfx?.goal(chain);
+  }
+
+  /** ゴールから宝石のかけら（ブロックと同じ塗り・同じ向き）が n 個はじけ、重力で落ちていく（3個に1個はほかの色） */
+  shatter(color, n) {
+    if (reducedMotion() || this.q < 0.6) return;
+    n = Math.max(2, Math.round(n * this.q));
+    const q = this.cellCenter(this.goalPos()), c = this.cell;
+    const colors = Array.from({ length: n }, (_, i) => (i % 3 === 2 ? COLORS[Math.floor(Math.random() * COLORS.length)] : color));
+    this.shardLayer.burst(q.x, q.y, colors, n, c * 0.46, c * 4.6);
+  }
+
+  /**
+   * 発動したラインの空いたマスに、ブロックの色が満ちて引いていく（列車が通り過ぎた跡）。
+   * ブロックが抜けた瞬間から、通路と反対側の端から順に
+   */
+  wake(kind, n, color, trainT) {
+    if (this.q < 0.55) return;
+    for (const { x, r } of lineCells(kind, n)) {
+      const along = kind === 'col' ? r : x;                   // 列車の進む向きの位置（0 = 通路と反対側の端）
+      const at = trainT * easeInOutInv(Math.min(1, (along + 1) / 9));
+      this.tintCell(x, r, color, at, 560);
+    }
+  }
+
+  /**
+   * マス (x, r) の中をブロックの色で満たして引く（delay ms 後から life ms）。
+   * 要素はマスごとに1つを使い回す（色が変わるのは満ち始める瞬間）
+   */
+  tintCell(x, r, color, delay, life) {
+    const d = this.tints?.get(`${x},${r}`);
+    if (!d) return;
+    d.__anim?.cancel();
+    clearTimeout(d.__t);
+    d.__t = setTimeout(() => { d.className = `cell well-tint c-${color}`; }, delay);
+    // 半透明にすると背景の紺と混ざって濁るので、濃さは変えずにマスの中心から大きさだけで満ちて引く
+    d.__anim = d.animate([{ scale: '0' }, { scale: '1.06', offset: 0.26 }, { scale: '1', offset: 0.4 }, { scale: '1', offset: 0.6 }, { scale: '0' }],
+      { duration: life, delay, easing: 'ease-in-out' });
   }
 
   /** 盤面がぽんと弾む（[offset, scale] の並び, ms）。クラスの付け外しと強制レイアウトを使わない */
@@ -490,15 +572,32 @@ export class Renderer {
   /** マス中心のローカル px -> rotWrap 内の座標 */
   cellCenter(p) { return this.localToWrap(p.x + this.cell / 2, p.y + this.cell / 2); }
 
-  /** ラインの発動: 盤面が揺れ、大きな連鎖では画面がぐっと寄る（光や粒は出さない） */
-  lineBlast(kind, n, color = 'yellow', chain = 1) {
+  /** ラインの発動: 盤面が揺れ、大きな連鎖では画面がぐっと寄る（光や粒は出さない）。3連鎖目からは盤面のブロックが波打つ */
+  lineBlast(kind, n, color = 'yellow', chain = 1, moving = []) {
     this.shake(Math.min(2 + chain * 1.2, 11), 180 + Math.min(chain, 8) * 20);
     if (chain >= 4) this.punch(Math.min(0.01 + chain * 0.003, 0.035));
+    if (chain >= 3 && this.q >= 0.75) this.ripple(kind, SIZE - n, Math.min(0.04 + chain * 0.01, 0.1), new Set(moving.map((b) => b.id)));
+  }
+
+  /**
+   * 盤面のブロックが、発動したラインから外へ向かって順にぽよんと沈んで戻る（波紋を線ではなく動きで）。
+   * 動かすのは各ブロックの scale だけ（合成だけで済む）
+   */
+  ripple(kind, at, amount, skip = new Set()) {
+    if (!this._board || reducedMotion()) return;
+    for (const { block, x, r } of this._board.entries()) {
+      if (skip.has(block.id)) continue;
+      const el = this.els.get(block.id);
+      if (!el) continue;
+      const dist = Math.abs((kind === 'col' ? x : r) - at);
+      el.animate([{ scale: '1' }, { scale: `${1 - amount}` }, { scale: `${1 + amount * 0.35}` }, { scale: '1' }],
+        { duration: 300, delay: 40 + dist * 45, easing: 'ease-in-out' });
+    }
   }
 
   /** 画面が一瞬ぐっと寄って戻る（大きな連鎖の衝撃）。scale だけを動かす */
   punch(amount = 0.02, dur = 240) {
-    if (matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (reducedMotion()) return;
     this._punch?.cancel();
     this._punch = this.wrap.animate([{ scale: `${1 + amount}` }, { scale: '1' }], { duration: dur, easing: 'cubic-bezier(.2,.8,.3,1)' });
   }
@@ -511,14 +610,20 @@ export class Renderer {
     return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
   }
 
-  /** 全消し（盤面の中の分）: 盤面がぐっと寄って戻る。画面全体の演出は scenes.allClear */
+  /** 全消し（盤面の中の分）: 盤面がぐっと寄って戻り、空になったマスに盤面の中心から7色が順に満ちて広がる。画面全体の演出は scenes.allClear */
   allClearBlast() {
     this.punch(0.045, 320);
+    const cx = (SIZE - 1) / 3, cr = (SIZE - 1) / 3;             // 直角三角形の盤面の重心あたり
+    for (let x = 0; x < SIZE; x++) for (let r = 0; r < SIZE; r++) {
+      if (!isInside(x, r)) continue;
+      const ring = Math.round(Math.hypot(x - cx, r - cr));
+      this.tintCell(x, r, COLORS[ring % COLORS.length], 60 + ring * 70, 620);
+    }
   }
 
   /** 盤面が揺れる（強さ px, 長さ ms） */
   shake(power = 4, dur = 220) {
-    if (matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (reducedMotion()) return;
     const frames = [];
     for (let k = 0; k < 7; k++) {
       const f = power * (1 - k / 7);
@@ -558,13 +663,30 @@ export class Renderer {
     if (this.comboPop.classList.contains('show')) this.comboPop.animate([{ opacity: 0 }], { duration: 120, fill: 'forwards' });
     const el = this.pop = fresh(this.pop);
     el.innerHTML = html;
+    // 大きい文字は1文字ずつ、順にぽんと落ちてくる（説明の小さい文字はそのあと下から）。重いときは文字ごと出す
+    let i = 0;
+    if (this.q >= 0.6) for (const node of [...el.childNodes]) {
+      if (node.nodeType !== Node.TEXT_NODE) continue;
+      const frag = document.createDocumentFragment();
+      for (const ch of node.textContent) {
+        const s = document.createElement('span');
+        s.className = 'ch';
+        s.textContent = ch === ' ' ? '\u00a0' : ch;
+        s.style.setProperty('--i', i++);
+        frag.appendChild(s);
+      }
+      node.replaceWith(frag);
+    }
+    el.style.setProperty('--n', i);
     el.className = `pop show ${cls}`;
   }
 
   reset() {
     this.blockLayer.innerHTML = '';
     this.fxLayer.innerHTML = '';
+    this.shardLayer.clear();
     this.fx2.innerHTML = '';
+    for (const d of this.tints?.values() ?? []) { d.__anim?.cancel(); clearTimeout(d.__t); }
     this.hintLayer.innerHTML = '';
     this.setFever(0);
     this.setDanger(0);
