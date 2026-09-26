@@ -1,6 +1,8 @@
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];      // ペンタトニック（連鎖で上がっていく）
-const note = (i, base = 523.25) => base * Math.pow(2, PENTA[Math.min(i, PENTA.length - 1)] / 12);
+/** 高すぎる音は大音量で耳に刺さるので、全体を少し低くし（LOWER 半音）、上限も設ける（MAX_HZ） */
+const LOWER = Math.pow(2, -3 / 12), MAX_HZ = 1400;
+const note = (i, base = 523.25) => base * Math.pow(2, PENTA[Math.min(i, 8)] / 12);
 
 export class Sfx {
   constructor() { this.ctx = null; this.enabled = true; }
@@ -11,11 +13,17 @@ export class Sfx {
     this.ctx = new AC();
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.25;
-    this.master.connect(this.ctx.destination);
+    // 耳心地のため、高い倍音を少し丸め、音が重なって大きくなったときも割れないよう軽く抑える
+    this.soft = this.ctx.createBiquadFilter();
+    this.soft.type = 'lowpass'; this.soft.frequency.value = 3200; this.soft.Q.value = 0.5;
+    const comp = this.ctx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
+    this.master.connect(this.soft); this.soft.connect(comp); comp.connect(this.ctx.destination);
   }
   tone(freq, { dur = 0.1, type = 'sine', gain = 0.6, at = 0, slide = 0 } = {}) {
     if (!this.enabled || !this.ctx) return;
     const t = this.ctx.currentTime + at;
+    freq = Math.min(freq * LOWER, MAX_HZ);
     const o = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     o.type = type;
@@ -47,7 +55,7 @@ export class Sfx {
   // 発動: 低い衝撃音＋上へ抜けるシュッという音
   sink()        { this.tone(300, { dur: 0.16, type: 'sine', gain: 0.3, slide: 0.5 });
                   this.tone(110, { dur: 0.18, type: 'sine', gain: 0.55, slide: 0.45 });
-                  this.tone(700, { dur: 0.14, type: 'sawtooth', gain: 0.05, slide: 2.4 }); this.vibe(14); }
+                  this.tone(700, { dur: 0.14, type: 'triangle', gain: 0.05, slide: 1.8 }); this.vibe(14); }
   step(i)       { this.tone(note(i, 392), { dur: 0.05, type: 'triangle', gain: 0.25 }); }
   goal(chain)   { const f = note(chain + 1);
                   this.tone(f, { dur: 0.18, gain: 0.5 });
@@ -59,13 +67,13 @@ export class Sfx {
   // 連続発動: 上がっていく和音＋キラキラ
   combo(n)      { const f = note(Math.min(n, 8), 523.25);
                   [1, 1.25, 1.5, 2].forEach((m, k) => this.tone(f * m, { dur: 0.22, gain: 0.26, type: 'triangle', at: k * 0.04 }));
-                  this.tone(f * 4, { dur: 0.3, gain: 0.08, at: 0.16 });
+                  this.tone(f * 2, { dur: 0.3, gain: 0.06, at: 0.16 });
                   this.vibe([0, 18, 30, 26]); }
   // 褒め言葉: 段階が上がるほど和音が厚く、高く
   praise(tier)  { const base = 392 * Math.pow(2, (tier - 1) / 6);
                   const chord = [1, 1.26, 1.5, 2, 2.52, 3].slice(0, 2 + tier);
                   chord.forEach((m, k) => this.tone(base * m, { dur: 0.35, gain: 0.2, type: k % 2 ? 'sine' : 'triangle', at: k * 0.03 }));
-                  if (tier >= 3) this.tone(base * 4, { dur: 0.5, gain: 0.07, type: 'sine', at: 0.12, slide: 1.02 });
+                  if (tier >= 3) this.tone(base * 2, { dur: 0.5, gain: 0.06, type: 'sine', at: 0.12, slide: 1.02 });
                   if (tier >= 4) this.tone(80, { dur: 0.35, type: 'sine', gain: 0.6, slide: 0.5 });
                   this.vibe(tier >= 4 ? [0, 30, 40, 50] : 16); }
   // 新記録: ファンファーレ
@@ -111,5 +119,7 @@ export class Sfx {
                   if (!close) [0, 4, 7, 12].forEach((k, i) => this.tone(523.25 * Math.pow(2, k / 12), { dur: 0.5, gain: 0.1, type: 'triangle', at: 0.15 + i * 0.06 })); }
   // ブロックが列に入って止まった: 小さなコツッ
   settle(i = 0) { this.tone(note(i, 784), { dur: 0.05, gain: 0.12, type: 'triangle' }); }
-  over()        { this.tone(392, { dur: 0.7, type: 'sawtooth', gain: 0.25, slide: 0.25 }); this.vibe([0, 60, 50, 140]); }
+  // ゲームオーバー: やわらかい三角波・正弦波の和音が、ゆっくり下がって消える（耳障りなのこぎり波は使わない）
+  over()        { [392, 311.1, 261.6].forEach((f, i) => this.tone(f, { dur: 0.9, type: i ? 'sine' : 'triangle', gain: 0.22, slide: 0.7, at: i * 0.12 }));
+                  this.tone(196, { dur: 1.1, type: 'sine', gain: 0.25, slide: 0.8, at: 0.3 }); this.vibe([0, 60, 50, 140]); }
 }
