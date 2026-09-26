@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260720';
-import { Shards } from './shards.js?v=202609260720';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260753';
+import { Shards } from './shards.js?v=202609260753';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -279,7 +279,7 @@ export class Renderer {
    * 仮置きのプレビュー。消える列は既存ブロックごと「持っているピースの色」に塗り替えて光らせ、
    * その列の番号とゴールも光らせる（ここに置けば消える、という期待を先に見せる）。
    */
-  showPreview(piece, ox, oy, clearCells, chainCount, lines = []) {
+  showPreview(piece, ox, oy, clearCells, chainCount, lines = [], fit = false) {
     const c = this.cell;
     const key = `${ox},${oy},${chainCount}`;
     const fresh = key !== this._pvKey;
@@ -289,7 +289,7 @@ export class Renderer {
     const willClear = clearCells.length > 0;
     for (const cc of piece.cells) {
       const d = document.createElement('div');
-      d.className = `cell ghost c-${piece.color}` + (willClear ? ' strong' : '');
+      d.className = `cell ghost c-${piece.color}` + (willClear ? ' strong' : '') + (fit ? ' fit' : '');
       d.style.transform = `translate(${(ox + cc.x) * c}px,${(oy + cc.y) * c}px)`;
       this.ghostLayer.appendChild(d);
     }

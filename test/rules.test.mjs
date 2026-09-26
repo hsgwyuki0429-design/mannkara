@@ -1,13 +1,13 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609260720';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609260720';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609260720';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609260720';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609260720';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609260720';
-import * as Sim from '../src/core/sim.js?v=202609260720';
-import { ScoreManager } from '../src/core/score.js?v=202609260720';
+import { Board, createBlock } from '../src/core/board.js?v=202609260753';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609260753';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609260753';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609260753';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609260753';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609260753';
+import * as Sim from '../src/core/sim.js?v=202609260753';
+import { ScoreManager } from '../src/core/score.js?v=202609260753';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609260720';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609260753';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -328,6 +328,7 @@ console.log('連鎖ピース: 約10% の確率で、置けば発動が起きる�
   // 確率: 1回の抽選(drawTray)で通常抽選(next)を通らなかった枠 = 連鎖ピースとして選ばれた枠
   let total = 0;
   const g3 = new Game({ random: rnd }); g3.board = g.board.clone();
+  g3.fitPieces = () => [];                                         // 穴にはまる形の枠は数えない（別のテスト）
   const origNext = g3.generator.next.bind(g3.generator);
   let naturalCount = 0;
   g3.generator.next = () => { naturalCount++; return origNext(); };
@@ -742,6 +743,42 @@ console.log('ゲーム進行');
   await placeAny(1); await placeAny(2);
   eq(g.tray.filter(Boolean).length, 3, '使い切ったら3つ補充');
   eq(g.score.score > 0, true, 'スコアが入る');
+}
+
+console.log('穴にはまる形: ぴったりの判定・約30% の確率で配る・ボーナス');
+{
+  // 横8 (r=0) の左端 2 マスだけ空けて、まわりをブロックで囲む → I2 横がぴったり
+  const b = new Board();
+  for (let x = 0; x < 8; x++) b.set(x, 0, x >= 2 ? createBlock('red') : null);
+  b.set(0, 1, createBlock('red')); b.set(1, 1, createBlock('red'));
+  const s = Sim.fromBoard(b);
+  const I2 = new Piece('I20').cells, Dot = new Piece('Dot0').cells;
+  eq(Sim.fitOf(s, I2, 0, 0).kind, 'perfect', '囲まれた穴をちょうど埋めるとぴったり');
+  eq(Sim.fitOf(s, Dot, 1, 0).kind, 'snug', '穴の一部だけならくぼみ');
+  eq(Sim.fitOf(Sim.fromBoard(new Board()), Dot, 0, 0).kind, null, '空の盤面の角はぴったりではない');
+
+  let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game({ random: rnd });
+  g.board = b.clone();
+  const fitters = g.fitPieces();
+  eq(fitters.some((f) => f.name === 'I20' && f.fit === 'perfect'), true, `ぴったりの形が見つかる (${fitters.length}種)`);
+  const st = Sim.fromBoard(g.board);
+  eq(fitters.every(({ name, fit }) => Sim.placements(st, new Piece(name).cells)
+    .some(([ox, oy]) => Sim.fitOf(st, new Piece(name).cells, ox, oy).kind === fit)), true, '選ばれる形は実際にはまる場所がある');
+  // 確率: 連鎖ピースを無くして、通常抽選(next)を通らなかった枠を数える
+  g.chainPieces = () => [];
+  const orig = g.generator.next.bind(g.generator);
+  let natural = 0, total = 0;
+  g.generator.next = () => { natural++; return orig(); };
+  for (let i = 0; i < 4000; i++) { g.drawTray(); total += 3; }
+  const rate = (total - natural) / total;
+  eq(rate > 0.27 && rate < 0.33, true, `穴にはまる形の割合 ${(rate * 100).toFixed(1)}%`);
+  // 置いたらボーナス
+  g.generator.next = orig;
+  g.tray = [new Piece('I20'), new Piece('Dot0'), new Piece('Dot0')];
+  const before = g.score.score;
+  const t = g.placePiece(0, 0, 0);
+  eq([t.fit, t.fitBonus, g.score.score - before], ['perfect', 2 * 25, 2 + 2 * 25 + (t.steps.length ? g.score.score - t.scoreAfterPlace : 0)], 'ぴったり置くとボーナス');
 }
 
 console.log('スコア倍率');

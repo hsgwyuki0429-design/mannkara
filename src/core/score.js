@@ -1,7 +1,7 @@
 import {
-  SCORE_PER_CELL_PLACED, SCORE_PER_GOAL, ALL_CLEAR_BONUS,
+  SCORE_PER_CELL_PLACED, SCORE_PER_GOAL, ALL_CLEAR_BONUS, SCORE_PER_PERFECT_FIT_CELL,
   chainMultiplier, streakMultiplier,
-} from './constants.js?v=202609260720';
+} from './constants.js?v=202609260753';
 
 export class ScoreManager {
   constructor() { this.reset(); }
@@ -9,7 +9,7 @@ export class ScoreManager {
     this.score = 0; this.goals = 0;
     this.lastChain = 0; this.bestChain = 0;
     this.streak = 0; this.bestStreak = 0;
-    this.allClears = 0;
+    this.allClears = 0; this.perfectFits = 0;
   }
   addPlaced(cells) {
     this.score += cells * SCORE_PER_CELL_PLACED;
@@ -21,6 +21,13 @@ export class ScoreManager {
     this.bestChain = Math.max(this.bestChain, step.chain);
     const base = step.goals * SCORE_PER_GOAL;
     const gained = Math.round(base * chainMultiplier(step.chain) * streakMultiplier(Math.max(1, this.streak + 1)));
+    this.score += gained;
+    return gained;
+  }
+  /** 穴にぴったり置いたボーナス */
+  addPerfectFit(cells) {
+    this.perfectFits++;
+    const gained = cells * SCORE_PER_PERFECT_FIT_CELL;
     this.score += gained;
     return gained;
   }

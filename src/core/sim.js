@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells } from './constants.js?v=202609260720';
+import { SIZE, isInside, lineCells } from './constants.js?v=202609260753';
 
 /**
  * 探索用の軽い盤面（手駒の組み合わせ探索・全消しの計画で何万回も試すため）。
@@ -75,6 +75,30 @@ export function placements(s, cells) {
 export function fits(s, cells) {
   for (let oy = 0; oy < SIZE; oy++) for (let ox = 0; ox < SIZE; ox++) if (canPlace(s, cells, ox, oy)) return true;
   return false;
+}
+
+/**
+ * 左上 (ox, oy) に置いたとき、形がまわりにどれだけぴったり収まるか。
+ * 形のマスの上下左右のうち、形の外にあるものを数える: 盤面の外（walls）・ブロック（blocks）・空き（open）。
+ * 'perfect' = 空きに1つも接していない（ブロックに囲まれた穴をちょうど埋める）
+ * 'snug'    = 空きに接するのは1辺だけで、ブロックに FIT_SNUG_BLOCKS 辺以上接している（くぼみにはまる）
+ */
+export const FIT_SNUG_BLOCKS = 2;
+export function fitOf(s, cells, ox, oy) {
+  const own = new Set(cells.map((c) => (oy + c.y) * SIZE + ox + c.x));
+  let walls = 0, blocks = 0, open = 0;
+  for (const c of cells) {
+    const x = ox + c.x, r = oy + c.y;
+    for (const [dx, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, nr = r + dr, i = nr * SIZE + nx;
+      if (!isInside(nx, nr)) walls++;
+      else if (own.has(i)) continue;
+      else if (s[i]) blocks++;
+      else open++;
+    }
+  }
+  const kind = !open && blocks ? 'perfect' : open <= 1 && blocks >= FIT_SNUG_BLOCKS ? 'snug' : null;
+  return { kind, walls, blocks, open };
 }
 
 /* ---------- 発動（mancala.js と同じ） ---------- */

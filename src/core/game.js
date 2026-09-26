@@ -1,17 +1,17 @@
-import { Board } from './board.js?v=202609260720';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609260720';
-import { ScoreManager } from './score.js?v=202609260720';
-import { nextActivation, lineMoves } from './mancala.js?v=202609260720';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609260720';
-import * as Sim from './sim.js?v=202609260720';
-import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609260720';
-import { bestMove } from './advisor.js?v=202609260720';
+import { Board } from './board.js?v=202609260753';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609260753';
+import { ScoreManager } from './score.js?v=202609260753';
+import { nextActivation, lineMoves } from './mancala.js?v=202609260753';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609260753';
+import * as Sim from './sim.js?v=202609260753';
+import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609260753';
+import { bestMove } from './advisor.js?v=202609260753';
 import {
-  TRAY_SIZE, CHAIN_PIECE_RATE, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
+  TRAY_SIZE, CHAIN_PIECE_RATE, FIT_PIECE_RATE, FIT_PERFECT_WEIGHT, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609260720';
+} from './constants.js?v=202609260753';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -60,8 +60,10 @@ export class Game {
       const i = this.planTray.findIndex((m) => m.name === piece.name && m.ox === ox && m.oy === oy);
       this.planTray = i < 0 ? null : this.planTray.filter((_, j) => j !== i);
     }
+    const fit = Sim.fitOf(Sim.fromBoard(this.board), piece.cells, ox, oy).kind;
     const placed = this.board.place(piece, ox, oy);
     this.score.addPlaced(placed.length);
+    const fitBonus = fit === 'perfect' ? this.score.addPerfectFit(placed.length) : 0;
     const scoreAfterPlace = this.score.score;
 
     const steps = this.resolve();
@@ -78,7 +80,7 @@ export class Game {
     if (!this.hasMove()) this.gameOver = true;
 
     const turn = {
-      slot, piece, placed, steps, refilled, scoreAfterPlace,
+      slot, piece, placed, steps, refilled, scoreAfterPlace, fit, fitBonus,
       allClear, allClearBonus,
       score: this.score.score, streak: this.score.streak, gameOver: this.gameOver,
     };
@@ -279,15 +281,42 @@ export class Game {
     return tray;
   }
 
-  /** 条件なしの1回分の抽選（各枠 CHAIN_PIECE_RATE で連鎖ピース） */
+  /** 条件なしの1回分の抽選（各枠 CHAIN_PIECE_RATE で連鎖ピース、それ以外の枠は FIT_PIECE_RATE で穴にはまる形） */
   drawTray() {
     return Array.from({ length: TRAY_SIZE }, () => {
-      if (this.generator.random() < CHAIN_PIECE_RATE) {
+      const r = this.generator.random();
+      if (r < CHAIN_PIECE_RATE) {
         const chainers = this.chainPieces();
         if (chainers.length) return new Piece(this.generator.pick(chainers).name);
+      } else if (r < CHAIN_PIECE_RATE + FIT_PIECE_RATE) {
+        const fitters = this.fitPieces();
+        if (fitters.length) return new Piece(this.generator.pick(fitters).name);
       }
       return this.generator.next();
     });
+  }
+
+  /**
+   * 今の盤面の穴・くぼみにはまる形の向き一覧 [{name, fit, weight}]（Sim.fitOf。同じ盤面なら前回の結果を使う）。
+   * ぴったり（perfect）は FIT_PERFECT_WEIGHT 倍、大きい形ほど選びやすい
+   */
+  fitPieces() {
+    const start = Sim.fromBoard(this.board);
+    const key = Sim.keyOf(start);
+    if (this.fitCache?.key === key) return this.fitCache.list;
+    const out = [];
+    for (const shape of SHAPES) {
+      const { cells } = new Piece(shape.name);
+      let best = null;
+      for (const [ox, oy] of Sim.placements(start, cells)) {
+        const { kind } = Sim.fitOf(start, cells, ox, oy);
+        if (kind === 'perfect') { best = kind; break; }
+        if (kind) best = kind;
+      }
+      if (best) out.push({ name: shape.name, fit: best, weight: cells.length * (best === 'perfect' ? FIT_PERFECT_WEIGHT : 1) });
+    }
+    this.fitCache = { key, list: out };
+    return out;
   }
 
   /** 今の盤面で発動を起こせる形の向き一覧 [{name, chain, weight}]（同じ盤面なら前回の結果を使う） */

@@ -34,6 +34,10 @@ export class Sfx {
   place()       { this.tone(330, { dur: 0.08, type: 'triangle', gain: 0.75, slide: 0.55 });
                   this.tone(988, { dur: 0.09, gain: 0.22, at: 0.02 });
                   this.tone(1319, { dur: 0.12, gain: 0.14, at: 0.06 }); this.vibe(12); }
+  /** 穴にぴったりはまる場所に入った（カチッ）・ぴったり置いた（カチッ + 上がる2音） */
+  fitHover()    { this.tone(1318.5, { dur: 0.035, type: 'triangle', gain: 0.22 }); this.vibe(8); }
+  fit()         { this.tone(1046.5, { dur: 0.04, type: 'triangle', gain: 0.4 });
+                  [0, 4].forEach((k, i) => this.tone(note(k, 1046.5), { dur: 0.09, gain: 0.22, type: 'sine', at: 0.06 + i * 0.07 })); this.vibe(14); }
   hover()       { this.tone(1760, { dur: 0.025, gain: 0.05 }); }
   // 消える場所に入った: 連鎖が多いほど高く上がっていくキラッという音（期待）
   anticipate(chain) { const f = note(Math.min(chain, 6) + 1, 659);
