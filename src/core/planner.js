@@ -1,5 +1,5 @@
-import { Piece, SHAPES } from './pieces.js?v=202609252223';
-import * as Sim from './sim.js?v=202609252223';
+import { Piece, SHAPES } from './pieces.js?v=202609260234';
+import * as Sim from './sim.js?v=202609260234';
 
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 const CELLS = Object.fromEntries(SHAPES.map((s) => [s.name, new Piece(s.name).cells]));
@@ -64,19 +64,25 @@ export const spots = (s, name) => Sim.placements(s, CELLS[name]).length;
 
 /**
  * 全消しの手順を探す。
- * 今の盤面から depth 個のピースを順に置き、ちょうど depth 個目で盤面が空になる手順を返す
- * （途中で空になる手順は使わない。全消しは最後の見せ場にする）。
- * ビームサーチを、揺らぎを変えながら budgetMs の間くり返す。avoid に挙げた種類（'Dot' など）は使わない。
- * depth の代わりに depths（手数の候補の配列）を渡すと、くり返すたびに候補からランダムに選ぶ。
+ * 今の盤面から順にピースを置き、手数が minDepth 以上 maxDepth 以下の step の倍数（トレイの区切り）のところで
+ * ちょうど盤面が空になる手順を返す（途中で空になる手順は使わない。全消しは最後の見せ場にする）。
+ * 1回のビームサーチで minDepth〜maxDepth のどの長さでも見つけられるので、長い手順でも見つかりやすい。
+ * minDepth は minDepths（候補の配列）からくり返すたびにランダムに選ぶ（毎回同じ長さにならないように）。
+ * 揺らぎを変えながら budgetMs の間くり返す。avoid に挙げた種類（'Dot' など）は使わない。
+ * depth を渡すと、ちょうど depth 個の手順だけを探す。
  * 見つかれば [{ name, ox, oy }, …]、見つからなければ null。
  */
-export function planAllClear(board, { depth, depths = [depth], random = Math.random, budgetMs = 40, beam = 10, sample = 10, avoid = [] } = {}) {
+export function planAllClear(board, {
+  depth, depths = depth ? [depth] : [6], maxDepth, step = 3,
+  random = Math.random, budgetMs = 40, beam = 10, sample = 10, avoid = [],
+} = {}) {
   const deadline = now() + budgetMs;
   const start = Sim.fromBoard(board);
   const ok = (name) => !avoid.includes(TYPE_OF[name]);
   do {
-    const d = depths[Math.floor(random() * depths.length)];
-    const seq = beamSearch(start, d, random, beam, sample, deadline, ok);
+    const lo = depths[Math.floor(random() * depths.length)];
+    const hi = depth ?? Math.max(lo, maxDepth ?? lo);
+    const seq = beamSearch(start, lo, hi, step, random, beam, sample, deadline, ok);
     if (seq) return seq;
   } while (now() < deadline);
   return null;
@@ -84,24 +90,27 @@ export function planAllClear(board, { depth, depths = [depth], random = Math.ran
 
 /**
  * 1回ぶんのビームサーチ。各手数で「全消しまでの遠さ」(clearCost) が小さい盤面を beam 個だけ残して進む。
- * 形は出現率どおりに sample 個ずつ抽選して試すので、特定の形ばかりにはならない（最後の1手だけは全部の形を試す）。
+ * 形は出現率どおりに sample 個ずつ抽選して試すので、特定の形ばかりにはならない。
+ * 全消しにしてよい手数（lo 以上 hi 以下の step の倍数）では全部の形を試し、空になったらその手順を返す。
  */
-function beamSearch(start, depth, random, beam, sample, deadline, ok) {
+function beamSearch(start, lo, hi, step, random, beam, sample, deadline, ok) {
   let states = [{ s: start, seq: [] }];
-  for (let d = 1; d <= depth; d++) {
-    const last = d === depth;
+  for (let d = 1; d <= hi; d++) {
+    const finish = d >= lo && d % step === 0;
     const kids = new Map();
     for (const st of states) {
-      for (const name of last ? ALL : sampleShapes(random, sample)) {
+      for (const name of finish ? ALL : sampleShapes(random, sample)) {
         if (!ok(name) || !allowed(st.seq, name)) continue;
         const cells = CELLS[name];
         for (const [ox, oy] of Sim.placements(st.s, cells)) {
           const b = Sim.cloneSim(st.s);
           Sim.place(b, cells, ox, oy);
           Sim.resolveAll(b);
-          const left = Sim.blocks(b);
-          if (last) { if (left === 0) return [...st.seq, { name, ox, oy }]; continue; }
-          if (left === 0) continue;                           // 途中で空になる手順は使わない
+          if (Sim.blocks(b) === 0) {
+            if (finish) return [...st.seq, { name, ox, oy }];
+            continue;                                         // 途中で空になる手順は使わない
+          }
+          if (d === hi) continue;
           const score = Sim.clearCost(b) + random() * 2;      // 少し揺らして毎回違う手順に
           const key = Sim.keyOf(b);
           const prev = kids.get(key);

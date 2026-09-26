@@ -1,11 +1,11 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609252223';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609252223';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609252223';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609252223';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609252223';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609252223';
-import * as Sim from '../src/core/sim.js?v=202609252223';
-import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609252223';
+import { Board, createBlock } from '../src/core/board.js?v=202609260234';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609260234';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609260234';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609260234';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609260234';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609260234';
+import * as Sim from '../src/core/sim.js?v=202609260234';
+import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS, ALL_CLEAR_PIECES } from '../src/core/constants.js?v=202609260234';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -260,11 +260,13 @@ console.log('長い連鎖（穴あきラインを押し込みで埋めていく�
   eq(ok && checked > 50, true, `縦横入れ替えで対称な連鎖になる（${checked}盤面）`);
 }
 
-console.log('手駒: テトロミノ + ブロックブラストの形');
+console.log('手駒: テトロミノ + ブロックブラストの形 + 追加の形');
 {
   const types = (list) => [...new Set(list.map((s) => s.type))].sort().join(' ');
   eq(SHAPES.filter((s) => s.cells.length === 4 && 'IOTSZJL'.includes(s.type) && s.type.length === 1).length, 19, 'テトロミノの全向き 19 種');
-  eq(types(SHAPES), 'Dot I I2 I3 I5 J L O O3 R S T V3 V5 Z', '15種類');
+  eq(types(SHAPES), 'D2 Dot I I2 I3 I5 J L O O3 P R S T Tri V3 V5 Z', '18種類');
+  eq(SHAPES.filter((s) => s.type === 'Tri').every((s) => s.cells.length === 6), true, '階段は6マス');
+  eq(SHAPES.find((s) => s.name === 'Tri0').cells.every(([x, y]) => x + y <= 2), true, '階段は盤面の角と同じ向きの三角形');
   eq(SHAPES.find((s) => s.name === 'O30').cells.length, 9, '3×3');
   eq(SHAPES.filter((s) => s.type === 'V5').every((s) => s.cells.length === 5), true, '大きいL は5マス');
   const norm = (cells) => cells.map(([x, y]) => `${x},${y}`).sort().join(' ');
@@ -567,7 +569,7 @@ function findPlay(board, tray, goal) {
   }
   eq(!!g.plan && g.tray.length === 3 && g.plan.rest.length >= 3, true, `ブロック ${start} 個の盤面で、最初の3つを配り残りは計画として持つ`);
   let placed = 0, last = null, ok = true;
-  while (g.plan && ok) {
+  while (g.plan?.rest.length && ok) {
     const want = g.plan.key;
     const play = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) === want);
     if (!play) { ok = false; break; }
@@ -578,15 +580,61 @@ function findPlay(board, tray, goal) {
   eq([ok && !!play, last?.allClear, placed >= 6], [true, true, true], `手順どおり ${placed} 個置いたところで ALL CLEAR`);
 }
 {
-  // 計画と違う置き方をしたら、そこで計画はおしまい（探し直して助けない）
+  // 計画と違う置き方をしたら、その盤面から手順を探し直す（見つかるまで補充のたびに探す）
   let seed = 53; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const g = new Game({ random: rnd });
+  let replanned = 0, rounds = 0, stillWants = true;
+  for (let k = 0; k < 6; k++) {
+    const g = new Game({ random: rnd, allClearBudgetMs: 300 });
+    for (let tries = 0; tries < 40 && !g.plan; tries++) { g.board = boardWithBlocks(rnd, 3, 12); g.plan = null; g.wantAllClear = true; g.tray = g.spawnTray(); }
+    const want = g.plan.key;
+    const play = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) !== want && Sim.blocks(s) > 0);
+    if (!play) continue;
+    rounds++;
+    let last = null;
+    for (const m of play) last = g.placePiece(m.slot, m.ox, m.oy);
+    if (!last?.refilled || last.gameOver) continue;
+    // 見つからなければ次の補充でも探し続ける
+    for (let r = 0; r < 8 && g.lastLineup.kind !== 'allClear' && !g.gameOver; r++) {
+      if (!g.wantAllClear) stillWants = false;
+      const next = findPlay(g.board, g.tray, () => true);
+      for (const m of next) g.placePiece(m.slot, m.ox, m.oy);
+    }
+    if (g.lastLineup.kind === 'allClear' && g.plan && g.planTray?.length === 3) replanned++;
+  }
+  eq(stillWants, true, '見つからなかったら、次の補充でもう一度探す');
+  eq(rounds >= 4 && replanned >= rounds - 1, true, `違う置き方をしたら、その盤面から手順を探し直して配る (${replanned}/${rounds})`);
+}
+{
+  // 探し直した手順も、手順どおりに置けば ALL CLEAR（最後の3個で外れても探し直す）
+  let seed = 57; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game({ random: rnd, allClearBudgetMs: 300 });
   for (let tries = 0; tries < 40 && !g.plan; tries++) { g.board = boardWithBlocks(rnd, 3, 12); g.plan = null; g.wantAllClear = true; g.tray = g.spawnTray(); }
-  const want = g.plan.key;
-  const play = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) !== want && Sim.blocks(s) > 0);
-  let last = null;
-  for (const m of play ?? []) last = g.placePiece(m.slot, m.ox, m.oy);
-  eq([!!last?.refilled, g.plan, g.lastLineup.kind === 'allClear'], [true, null, false], '違う置き方をしたら次は普通の手駒');
+  const off = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) !== g.plan.key && Sim.blocks(s) > 0);
+  for (const m of off) g.placePiece(m.slot, m.ox, m.oy);
+  for (let r = 0; r < 15 && g.lastLineup.kind !== 'allClear' && !g.gameOver; r++) {
+    for (const m of findPlay(g.board, g.tray, () => true)) g.placePiece(m.slot, m.ox, m.oy);
+  }
+  let placed = 0, last = null, ok = g.lastLineup.kind === 'allClear';
+  while (ok && !last?.allClear && placed < 30) {
+    const h = g.hint();
+    if (!h?.plan) { ok = false; break; }
+    last = g.placePiece(h.slot, h.ox, h.oy); placed++;
+  }
+  eq([ok, !!last?.allClear], [true, true], `探し直した手順どおり ${placed} 個置いたところで ALL CLEAR`);
+}
+{
+  // 手順の長さは 6〜21 個（3の倍数）。長い手順も出る
+  let seed = 79; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const lens = {};
+  let bad = false;
+  for (let i = 0; i < 40; i++) {
+    const seq = planAllClear(boardWithBlocks(rnd, 3, 20), { depths: ALL_CLEAR_PIECES, maxDepth: 21, random: rnd, budgetMs: 60, beam: 4, sample: 6 });
+    if (!seq) continue;
+    lens[seq.length] = (lens[seq.length] || 0) + 1;
+    if (seq.length < 6 || seq.length > 21 || seq.length % 3) bad = true;
+  }
+  const long = Object.entries(lens).filter(([n]) => n >= 12).reduce((a, [, c]) => a + c, 0);
+  eq([bad, long > 0], [false, true], `手順の長さ ${JSON.stringify(lens)}`);
 }
 {
   // 確率: ブロックが残った盤面で補充するたびに約20%でチャンス（手順が見つかるまで次の補充でも探す）。埋まり具合は問わない
@@ -644,7 +692,7 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
   const g = new Game({ random: rnd });
   for (let k = 0; k < 20 && !g.plan; k++) { g.board = new Board(); g.plan = null; g.tray = g.spawnTray(); }
   let placed = 0, last = null, ok = true;
-  while (g.plan && ok) {
+  while (g.plan?.rest.length && ok) {
     const want = g.plan.key;
     const play = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) === want);
     if (!play) { ok = false; break; }
@@ -655,7 +703,7 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
   eq([ok && !!play, last?.allClear, placed >= 6], [true, true, true], `手順どおり ${placed} 個置いたところで ALL CLEAR`);
 }
 {
-  // 手順と違う置き方をしたら、そこで計画はおしまい（探し直して助けない）
+  // 手順と違う置き方をしたら、その盤面から手順を探し直す
   let seed = 71; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd });
   for (let k = 0; k < 20 && !g.plan; k++) { g.board = new Board(); g.plan = null; g.tray = g.spawnTray(); }
@@ -663,7 +711,7 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
   const play = findPlay(g.board, g.tray, (s) => Sim.keyOf(s) !== want && Sim.blocks(s) > 0);
   let last = null;
   for (const m of play ?? []) last = g.placePiece(m.slot, m.ox, m.oy);
-  eq([!!last?.refilled, g.plan, g.lastLineup.kind === 'allClear'], [true, null, false], '違う置き方をしたら次は普通の手駒');
+  eq(!!last?.refilled && (g.lastLineup.kind === 'allClear' || g.wantAllClear), true, '違う置き方をしたら探し直す（見つからなければ次の補充でも探す）');
 }
 
 console.log('学習モードのおすすめ（Game.hint）');

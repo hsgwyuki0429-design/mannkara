@@ -1,17 +1,18 @@
-import { Board } from './board.js?v=202609252223';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609252223';
-import { ScoreManager } from './score.js?v=202609252223';
-import { nextActivation, lineMoves } from './mancala.js?v=202609252223';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609252223';
-import * as Sim from './sim.js?v=202609252223';
-import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609252223';
-import { bestMove } from './advisor.js?v=202609252223';
+import { Board } from './board.js?v=202609260234';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609260234';
+import { ScoreManager } from './score.js?v=202609260234';
+import { nextActivation, lineMoves } from './mancala.js?v=202609260234';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609260234';
+import * as Sim from './sim.js?v=202609260234';
+import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609260234';
+import { bestMove } from './advisor.js?v=202609260234';
 import {
   TRAY_SIZE, CHAIN_PIECE_RATE, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
-  ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609252223';
+  ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_MAX_PIECES, ALL_CLEAR_BEAM, ALL_CLEAR_SAMPLE,
+  EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
+} from './constants.js?v=202609260234';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -21,8 +22,9 @@ import {
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 
 export class Game {
-  constructor({ random = Math.random, hooks = {} } = {}) {
+  constructor({ random = Math.random, hooks = {}, allClearBudgetMs = ALL_CLEAR_BUDGET_MS } = {}) {
     this.generator = new PieceGenerator(random);
+    this.allClearBudgetMs = allClearBudgetMs;   // 全消しの手順探しの時間の上限（テストでは長めにする）
     this.hooks = hooks;
     this.reset();
   }
@@ -235,35 +237,43 @@ export class Game {
   /**
    * 全消しのチャンス（手順どおりに置いた時だけ全消しになる手駒）:
    *  - 盤面が空: EMPTY_ALL_CLEAR_RATE の確率で、手順集（allclear-library.js）から1本選ぶ
-   *  - ブロックが残っている: ALL_CLEAR_RATE の確率で、今の盤面から ALL_CLEAR_PIECES 個の手順を計算する
+   *  - ブロックが残っている: ALL_CLEAR_RATE の確率で、今の盤面から 6〜21 個の手順を計算する
    *    （見つからなければ次の補充でもう一度）
    * どちらも最初の3個を配り、残りは計画として持つ。次に配る時、ここまで手順どおりの盤面なら続きを配り、
-   * 違っていたら計画はおしまい。該当しない・手順が見つからないときは null（普通の手駒にする）。
+   * 違っていたら（違う置き方をしたら）その盤面から手順を探し直す。
+   * 該当しない・手順が見つからないときは null（普通の手駒にする）。
    */
   allClearTray(fill) {
     const random = this.generator.random;
     const plan = this.plan;
     this.plan = null;
-    if (plan && Sim.keyOf(Sim.fromBoard(this.board)) === plan.key) return this.dealPlan(plan.rest);
-    if (this.board.totalBlocks() === 0) {
+    const empty = this.board.totalBlocks() === 0;
+    if (plan && !empty && Sim.keyOf(Sim.fromBoard(this.board)) === plan.key) return this.dealPlan(plan.rest);
+    if (empty) {
       this.wantAllClear = false;
       if (random() >= EMPTY_ALL_CLEAR_RATE) return null;
       return this.dealPlan(decodePlan(ALL_CLEAR_PLANS[Math.floor(random() * ALL_CLEAR_PLANS.length)]));
     }
-    if (plan) return null;                                     // 手順から外れた直後は、ふつうの手駒にする
-    this.wantAllClear ||= random() < ALL_CLEAR_RATE;
+    if (plan) this.wantAllClear = true;                        // 手順から外れた: 今の盤面から探し直す
+    else this.wantAllClear ||= random() < ALL_CLEAR_RATE;
     if (!this.wantAllClear) return null;
-    const seq = planAllClear(this.board, { depths: ALL_CLEAR_PIECES, random, budgetMs: ALL_CLEAR_BUDGET_MS });
+    const seq = planAllClear(this.board, {
+      depths: ALL_CLEAR_PIECES, maxDepth: ALL_CLEAR_MAX_PIECES, random,
+      budgetMs: this.allClearBudgetMs, beam: ALL_CLEAR_BEAM, sample: ALL_CLEAR_SAMPLE,
+    });
     if (!seq) return null;                                     // 見つからなければ次の補充でもう一度
     this.wantAllClear = false;
     return this.dealPlan(seq);
   }
 
-  /** 手順の最初の3個を配り、残りを計画として持つ（次に配る時、ここまで手順どおりの盤面なら続きを配る） */
+  /**
+   * 手順の最初の3個を配り、残りを計画として持つ。次に配る時、ここまで手順どおりの盤面なら続きを配る。
+   * 最後の3個を配った後も計画（rest は空）を持っておき、手順から外れたかどうかを見分ける
+   */
   dealPlan(seq) {
     const first = seq.slice(0, TRAY_SIZE), rest = seq.slice(TRAY_SIZE);
     this.planTray = first.map((m) => ({ ...m }));
-    if (rest.length) this.plan = { key: keyAfter(this.board, first), rest };
+    this.plan = { key: keyAfter(this.board, first), rest };
     return this.deal(first);
   }
 

@@ -27,6 +27,10 @@ export const SHAPES = [
   ...T('R', 0.8, [['###', '###'], ['##', '##', '##']]),
   ...T('V3', 1, [['##', '#.'], ['##', '.#'], ['.#', '##'], ['#.', '##']]),
   ...T('V5', 0.8, [['###', '#..', '#..'], ['###', '..#', '..#'], ['..#', '..#', '###'], ['#..', '#..', '###']]),
+  // 追加の形: 階段（三角形の盤面の角にぴったり入る6マス）・斜め2マス・P（2×3 から1マス欠け）
+  ...T('Tri', 0.6, [['###', '##.', '#..'], ['###', '.##', '..#'], ['..#', '.##', '###'], ['#..', '##.', '###']]),
+  ...T('D2', 0.6, [['#.', '.#'], ['.#', '#.']]),
+  ...T('P', 0.8, [['##', '##', '#.'], ['###', '.##'], ['.#', '##', '##'], ['##.', '###']]),
 ];
 /** 種類ごとの出現しやすさ（向きの weight の合計） */
 export const TYPE_WEIGHTS = SHAPES.reduce((m, s) => ({ ...m, [s.type]: (m[s.type] ?? 0) + s.weight }), {});
@@ -34,6 +38,7 @@ export const TYPE_WEIGHTS = SHAPES.reduce((m, s) => ({ ...m, [s.type]: (m[s.type
 export const TYPE_COLORS = {
   I: 'cyan', O: 'yellow', T: 'purple', S: 'green', Z: 'red', J: 'blue', L: 'orange',
   Dot: 'purple', I2: 'green', I3: 'orange', I5: 'red', O3: 'blue', R: 'cyan', V3: 'yellow', V5: 'red',
+  Tri: 'green', D2: 'cyan', P: 'purple',
 };
 export const SHAPE_BY_NAME = Object.fromEntries(SHAPES.map((s) => [s.name, s]));
 export const COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];

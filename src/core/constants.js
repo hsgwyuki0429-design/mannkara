@@ -71,21 +71,28 @@ export const LINEUP_BUDGET_MS = 25;
 export const targetWays = (f) => Math.max(1, Math.round(Math.pow(WAYS_MAX, 1 - Math.min(1, Math.max(0, f)))));
 /**
  * 全消しのチャンス: ブロックが残っている盤面（埋まり具合は問わない）で、補充のたびに ALL_CLEAR_RATE の確率で
- * 「ALL_CLEAR_PIECES のどれかの個数（3個ずつ配るので3の倍数）を、この順番・この場所に置くと最後の1個でちょうど全消し」の
- * 手順を今の盤面から計算し、3個ずつ配る。手順どおりの盤面にならなかったら、そこで計画はおしまい。
- * 手順が見つからなかったときは、次の補充でもう一度探す
+ * 「ALL_CLEAR_MIN_PIECES〜ALL_CLEAR_MAX_PIECES 個（3個ずつ配るので3の倍数）を、この順番・この場所に置くと
+ * 最後の1個でちょうど全消し」の手順を今の盤面から計算し、3個ずつ配る。
+ * 手順どおりの盤面にならなかったら（違う置き方をしたら）、その盤面からもう一度手順を探す。
+ * 手順が見つからなかったときは、次の補充でもう一度探す。全消しできるまで続く
  */
 export const ALL_CLEAR_RATE = 0.2;
-export const ALL_CLEAR_PIECES = [6, 9, 12];
+export const ALL_CLEAR_MIN_PIECES = 6;
+export const ALL_CLEAR_MAX_PIECES = 21;
+/** 手順の長さの下限の候補（毎回ここから選ぶので、短い手順ばかりにならない） */
+export const ALL_CLEAR_PIECES = [6, 9, 12, 15, 18, 21];
 /**
  * 盤面が空のとき（ゲーム開始・全消しの直後）は EMPTY_ALL_CLEAR_RATE の確率で、手順集（allclear-library.js）から
  * 「6個以上（主に9個）をこの順番・この場所に置くと、最後の1個でちょうど全消し」の手順を選び、3個ずつ配る。
- * 手順どおりの盤面になっていないと（違う置き方をしたら）そこで計画はおしまい（探し直さない）。
+ * 手順どおりの盤面になっていないと（違う置き方をしたら）、上と同じくその盤面から手順を探し直す。
  * （空の盤面では上の計算はしない）
  */
 export const EMPTY_ALL_CLEAR_RATE = 0.6;
 /** 全消しの手順探しにかける時間の上限（ms）。見つからなければ普通の手駒にする */
-export const ALL_CLEAR_BUDGET_MS = 40;
+export const ALL_CLEAR_BUDGET_MS = 60;
+/** 全消しの手順探しのビームの幅と、1手ごとに試す形の数 */
+export const ALL_CLEAR_BEAM = 4;
+export const ALL_CLEAR_SAMPLE = 6;
 /** 条件を満たすトレイを探す抽選回数の上限 */
 export const TRAY_RETRIES = 40;
 
