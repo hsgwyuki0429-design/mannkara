@@ -27,6 +27,17 @@ export const SHAPES = [
   ...T('R', 0.8, [['###', '###'], ['##', '##', '##']]),
   ...T('V3', 1, [['##', '#.'], ['##', '.#'], ['.#', '##'], ['#.', '##']]),
   ...T('V5', 0.8, [['###', '#..', '#..'], ['###', '..#', '..#'], ['..#', '..#', '###'], ['#..', '#..', '###']]),
+  // 三角の盤面に合わせた形
+  // 斜め点線: どのマスも別の縦・横に入るので、少ないマスで何本ものラインの最後の1マスを埋められる（強いので少なめ）
+  ...T('D2', 0.3, [['#.', '.#']]),
+  ...T('D3', 0.25, [['#..', '.#.', '..#']]),
+  // 逆斜め: 斜辺（階段）と平行。いくつものラインの斜辺側の端（配られたブロックが入る所）をまとめて埋める
+  ...T('A2', 0.3, [['.#', '#.']]),
+  ...T('A3', 0.25, [['..#', '.#.', '#..']]),
+  // 階段ヘビ（W 型 5マス）: 斜辺のでこぼこを埋める
+  ...T('W', 0.6, [['#..', '##.', '.##'], ['..#', '.##', '##.'], ['##.', '.##', '..#'], ['.##', '##.', '#..']]),
+  // 十字（5マス）: 縦3本・横3本に同時に入る
+  ...T('X', 0.5, [['.#.', '###', '.#.']]),
 ];
 /** 種類ごとの出現しやすさ（向きの weight の合計） */
 export const TYPE_WEIGHTS = SHAPES.reduce((m, s) => ({ ...m, [s.type]: (m[s.type] ?? 0) + s.weight }), {});
@@ -34,6 +45,7 @@ export const TYPE_WEIGHTS = SHAPES.reduce((m, s) => ({ ...m, [s.type]: (m[s.type
 export const TYPE_COLORS = {
   I: 'cyan', O: 'yellow', T: 'purple', S: 'green', Z: 'red', J: 'blue', L: 'orange',
   Dot: 'purple', I2: 'green', I3: 'orange', I5: 'red', O3: 'blue', R: 'cyan', V3: 'yellow', V5: 'red',
+  D2: 'cyan', D3: 'blue', A2: 'green', A3: 'orange', W: 'purple', X: 'yellow',
 };
 export const SHAPE_BY_NAME = Object.fromEntries(SHAPES.map((s) => [s.name, s]));
 export const COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];

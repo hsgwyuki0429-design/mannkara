@@ -1,13 +1,13 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609260706';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609260706';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609260706';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609260706';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609260706';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609260706';
-import * as Sim from '../src/core/sim.js?v=202609260706';
-import { ScoreManager } from '../src/core/score.js?v=202609260706';
+import { Board, createBlock } from '../src/core/board.js?v=202609260720';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609260720';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609260720';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609260720';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609260720';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609260720';
+import * as Sim from '../src/core/sim.js?v=202609260720';
+import { ScoreManager } from '../src/core/score.js?v=202609260720';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609260706';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609260720';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -266,8 +266,15 @@ console.log('手駒: テトロミノ + ブロックブラストの形');
 {
   const types = (list) => [...new Set(list.map((s) => s.type))].sort().join(' ');
   eq(SHAPES.filter((s) => s.cells.length === 4 && 'IOTSZJL'.includes(s.type) && s.type.length === 1).length, 19, 'テトロミノの全向き 19 種');
-  eq(types(SHAPES), 'Dot I I2 I3 I5 J L O O3 R S T V3 V5 Z', '15種類');
+  eq(types(SHAPES), 'A2 A3 D2 D3 Dot I I2 I3 I5 J L O O3 R S T V3 V5 W X Z', '21種類');
   eq(SHAPES.find((s) => s.name === 'O30').cells.length, 9, '3×3');
+  const spread = (t) => SHAPES.filter((s) => s.type === t).every((s) =>
+    new Set(s.cells.map(([x]) => x)).size === s.cells.length && new Set(s.cells.map(([, y]) => y)).size === s.cells.length);
+  eq(['D2', 'D3', 'A2', 'A3'].every(spread), true, '斜めの形は全マスが別の縦・横に入る');
+  eq(SHAPES.filter((s) => ['W', 'X'].includes(s.type)).every((s) => s.cells.length === 5), true, '階段ヘビと十字は5マス');
+  const key = (cells) => cells.map(([x, y]) => `${x},${y}`).sort().join(' ');
+  const tset = new Set(SHAPES.map((s) => key(s.cells)));
+  eq(SHAPES.every((s) => tset.has(key(s.cells.map(([x, y]) => [y, x])))), true, '縦横を入れ替えた形もすべてある（盤面の対称性）');
   eq(SHAPES.filter((s) => s.type === 'V5').every((s) => s.cells.length === 5), true, '大きいL は5マス');
   const norm = (cells) => cells.map(([x, y]) => `${x},${y}`).sort().join(' ');
   eq(new Set(SHAPES.map((s) => norm(s.cells))).size, SHAPES.length, '同じ形の向きが重複していない');
