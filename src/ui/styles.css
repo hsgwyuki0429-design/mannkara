@@ -155,6 +155,10 @@ button{font-family:inherit;cursor:pointer;}
 .slot.hinted .piece{animation:trayHint 900ms ease-in-out infinite alternate;}
 @keyframes trayHint{from{scale:.94}to{scale:1.08}}
 .ghost.strong{opacity:.72;filter:saturate(1) brightness(1.08);}
+/* 穴・凹みにはまる場所: 吸い込まれるようにきゅっと縮んで収まる（光らせず、動きだけ）。ぴったり・長方形はさらに濃く */
+.ghost.fit{animation:ghostFit 260ms cubic-bezier(.3,1.6,.5,1);}
+.ghost.perfect,.ghost.rect{opacity:.8;filter:saturate(1);}
+@keyframes ghostFit{0%{scale:1.2;opacity:.2}55%{scale:.9}100%{scale:1}}
 @keyframes ghostIn{from{scale:1.12;opacity:.15}}
 /* 仮置き中に消える列: 既存ブロックの上に持っているピースの色を重ね、斜辺側から順に入ってから脈打つ（光らせず、濃さだけ） */
 .hi{opacity:1;animation:hiPulse 620ms ease-in-out infinite alternate;}

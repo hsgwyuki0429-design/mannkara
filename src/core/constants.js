@@ -42,6 +42,17 @@ export const TRAY_SIZE = 3;
 /** 手駒1つごとに「置けば発動が起きる形」を選ぶ確率 */
 export const CHAIN_PIECE_RATE = 0.1;
 /**
+ * 手駒1つごとに「今の盤面の穴・凹みに気持ちよくはまる形」を選ぶ確率（連鎖ピースに選ばれなかった枠で）。
+ * 列を消すのとは別に「空いている所にぴったり入れたい・凹みを埋めて四角くそろえたい」気持ちに応えるための形。
+ * はまり方（Sim.fitOf）ごとの選びやすさ（× 形のマス数。大きい形ほど選びやすい）:
+ *   perfect = 囲まれた穴をちょうど埋める / rect = 凹みを埋めて長方形ができる / dent = 凹みにはまる
+ */
+export const FIT_PIECE_RATE = 0.3;
+export const FIT_WEIGHTS = { perfect: 8, rect: 6, dent: 1 };
+/** ボーナス: 穴にぴったり = 置いたマス1つあたり / 長方形ができた = 長方形のマス1つあたり（両方なら足す） */
+export const SCORE_PER_PERFECT_FIT_CELL = 25;
+export const SCORE_PER_RECT_CELL = 10;
+/**
  * 新しいトレイの決め方（埋まり具合 f = Board.fillRate = ブロック数 / 28）:
  *  - 埋まり具合に関係なく、必ず「順番と場所を選べば3つとも置ける」＝詰まない置き方が1つ以上ある組み合わせ
  *  - 置き方の数（置き終えた盤面の種類。countWays）は埋まり具合に比例して桁で減らす:
