@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609261121';
-import { Shards } from './shards.js?v=202609261121';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609261134';
+import { Shards } from './shards.js?v=202609261134';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -643,15 +643,47 @@ export class Renderer {
     return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
   }
 
-  /** 全消し（盤面の中の分）: 盤面がぐっと寄って戻り、空になったマスに盤面の中心から7色が順に満ちて広がる。画面全体の演出は scenes.allClear */
+  /**
+   * 全消し（盤面の中の分。画面を覆う演出は使わない）:
+   *  1) 空になった全マスに、盤面の中心から輪になって順に7色の宝石（ブロックと同じ .block の塗り）がぽんと満ちる
+   *  2) 満ちた宝石が、同じ順に砕けて小さくなり、ブロックと同じ塗りのかけらを散らす。砕けるたびに盤面がぐっと寄る
+   * 宝石は半透明にせず、大きさだけで出し入れする（背景の青と混ざって濁らないように）
+   */
   allClearBlast() {
     this.punch(0.045, 320);
-    const cx = (SIZE - 1) / 3, cr = (SIZE - 1) / 3;             // 直角三角形の盤面の重心あたり
+    const c = this.cell, cx = (SIZE - 1) / 3, cr = (SIZE - 1) / 3;   // 直角三角形の盤面の重心あたり
+    const RING = 75, LIFE = 1150;                                  // 輪ごとの遅れ・1つの宝石の一生（ms）
+    const cells = [];
     for (let x = 0; x < SIZE; x++) for (let r = 0; r < SIZE; r++) {
-      if (!isInside(x, r)) continue;
-      const ring = Math.round(Math.hypot(x - cx, r - cr));
-      this.tintCell(x, r, COLORS[ring % COLORS.length], 60 + ring * 70, 620);
+      if (isInside(x, r)) cells.push({ x, r, ring: Math.round(Math.hypot(x - cx, r - cr) * 1.3) });   // 7色がひと回りする細かさ
     }
+    const rings = Math.max(...cells.map((q) => q.ring));
+    if (reducedMotion() || this.q < 0.45) {                         // 重い端末・動きを減らす設定: 色が満ちるだけ
+      for (const q of cells) this.tintCell(q.x, q.r, COLORS[q.ring % COLORS.length], 60 + q.ring * 70, 620);
+      return;
+    }
+    const shardEvery = this.q >= 0.8 ? 1 : 2;                      // 遅い端末ではかけらを半分に
+    cells.forEach((q, i) => {
+      const color = COLORS[q.ring % COLORS.length], d = 40 + q.ring * RING;
+      const el = document.createElement('div');
+      el.className = `cell block ac-gem c-${color}`;
+      el.style.transform = `translate(${q.x * c}px,${q.r * c}px)`;
+      el.style.setProperty('--d', d + 'ms');
+      el.style.setProperty('--life', LIFE + 'ms');
+      this.addFx(this.fxLayer, el, d + LIFE + 50);
+      if (i % shardEvery) return;
+      // 宝石が砕ける瞬間（アニメの 72% の所）にかけらを散らす
+      setTimeout(() => {
+        if (!el.isConnected) return;
+        const p = this.cellCenter(this.pos(q.x, q.r));
+        this.shardLayer.burst(p.x, p.y, [color, COLORS[(q.ring + 3) % COLORS.length]], 2, c * 0.52, c * 3.8, { spread: 3.4, cap: 64 });
+      }, d + LIFE * 0.72);
+    });
+    // 砕け始め・砕け終わりで盤面がぐっと寄る
+    const burstAt = 40 + LIFE * 0.72;
+    setTimeout(() => this.punch(0.03, 260), burstAt);
+    setTimeout(() => this.punch(0.02, 240), burstAt + rings * RING);
+    setTimeout(() => this.sfx?.bubbles?.(), burstAt);
   }
 
   /** 盤面が揺れる（強さ px, 長さ ms） */

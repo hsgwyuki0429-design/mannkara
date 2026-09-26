@@ -1,12 +1,12 @@
-import { Game } from '../core/game.js?v=202609261121';
-import { Board } from '../core/board.js?v=202609261121';
-import { resolveChains } from '../core/mancala.js?v=202609261121';
-import * as Sim from '../core/sim.js?v=202609261121';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609261121';
-import { Renderer, delay } from './renderer.js?v=202609261121';
-import { Sfx } from './sfx.js?v=202609261121';
-import { Scenes } from './scenes.js?v=202609261121';
-import { colorOf } from './palette.js?v=202609261121';
+import { Game } from '../core/game.js?v=202609261134';
+import { Board } from '../core/board.js?v=202609261134';
+import { resolveChains } from '../core/mancala.js?v=202609261134';
+import * as Sim from '../core/sim.js?v=202609261134';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609261134';
+import { Renderer, delay } from './renderer.js?v=202609261134';
+import { Sfx } from './sfx.js?v=202609261134';
+import { Scenes } from './scenes.js?v=202609261134';
+import { colorOf } from './palette.js?v=202609261134';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -147,7 +147,6 @@ async function playTurn(turn) {
   }
   if (turn.allClear) {
     renderer.showText(allClearText(turn), 't5');
-    renderer.floatScore(turn.allClearBonus, 5);
     renderer.allClearBlast();
     sfx.fanfare();
   }
@@ -208,10 +207,13 @@ function showScore(v, bump = false) {
   // ベストスコアを超えた瞬間（ゲーム中に1回だけ）
   if (!bestCelebrated && best > 0 && v > best) {
     bestCelebrated = true;
-    scenes.newBest();
-    renderer.showText('NEW BEST!', 't5');
+    const pill = document.querySelector('.best-pill');
+    // 盤面の上の大きな文字は出さない（風船の NEW BEST と重なるので、風船だけにする）
+    scenes.newBest(pill?.getBoundingClientRect());
     sfx.fanfare();
-    document.querySelector('.best-pill')?.classList.add('beat');
+    pill?.classList.add('beat');
+    pill?.animate([{ scale: '1' }, { scale: '1.25', offset: 0.3 }, { scale: '.96', offset: 0.6 }, { scale: '1' }],
+      { duration: 520, easing: 'cubic-bezier(.3,1.4,.5,1)' });
   }
 }
 function updateHud() { cancelAnimationFrame(rollRaf); shownScore = game.score.score; showScore(game.score.score); }

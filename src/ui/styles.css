@@ -133,6 +133,16 @@ button{font-family:inherit;cursor:pointer;}
 .block::before,.block::after{transition:opacity 180ms,scale 200ms ease-in,filter 160ms;}
 .block.pop-in::before,.block.pop-in::after{animation:land 340ms cubic-bezier(.25,1.4,.5,1) var(--d,0ms) both;}
 @keyframes land{0%{scale:1.22}45%{scale:.9}72%{scale:1.04}100%{scale:1}}
+/* 全消し: 空いたマスに宝石がぽんと満ち、しばらく並んでから砕けて小さくなる（renderer.allClearBlast。濃さは変えず大きさだけ） */
+.ac-gem{pointer-events:none;}
+.ac-gem::before,.ac-gem::after{animation:acGem var(--life) linear var(--d) both;}
+@keyframes acGem{
+  0%{scale:0;animation-timing-function:cubic-bezier(.3,1.6,.5,1)}
+  16%{scale:1.14;animation-timing-function:ease-out}
+  26%{scale:1}
+  64%{scale:1;animation-timing-function:ease-out}
+  72%{scale:1.2;animation-timing-function:ease-in}
+  100%{scale:0}}
 .block.travel{z-index:5;}
 /* 発動したラインの空いたマス・全消しの盤面: マスの中にブロックの色が満ちて引く。
    マスと同じ形・同じ内側の影（くぼみの底に色が溜まって見える）。光のにじみは付けない */

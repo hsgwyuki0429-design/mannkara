@@ -1,12 +1,15 @@
+import { gemSprite } from './shards.js?v=202609261134';
+
 /**
  * 画面全体の演出（シーン）。盤面の外側まで使う、大きな色の変化のための層。
  *
  *  - #sceneTint（奥, 盤面の後ろ）: 画面全体の色の変化。1回だけ描いた 400px の絵を拡大し、opacity と transform だけで動かす
  *    （新記録・大きな連鎖・コンボで使う）
- *  - #sceneFront（手前, 盤面の前）: 新記録で浮かぶ文字の風船と、はじけた粒
+ *  - #sceneFront（手前, 盤面の前）: 新記録で浮かぶ文字の風船と、はじけて飛ぶ宝石のかけら
  *
  * 全消しは画面を覆う演出を使わない（盤面の中だけ。renderer.allClearBlast）。
- * 形はすべて丸（線・細長い光・光線は使わない）。色はブロックの7色。
+ * 飛び散るものはブロックと同じ塗り・同じ光の向きの宝石のかけら（shards.js の gemSprite。回さない）。
+ * 線・細長い光・光線は使わない。色はブロックの7色。薄くせず、消えるときは小さくなるだけ。
  * ぼんやり光る丸（光の玉・ぼかしの丸・フレア）は使わない（盤面の陰影と合わず浮いて見えるので）。
  * 何も動いていない間は requestAnimationFrame を止め、手前の canvas も描き直さない。
  */
@@ -69,11 +72,49 @@ export class Scenes {
    * 演出の組み合わせ
    * ===================================================================== */
 
-  /** 新記録: 水色〜青紫に明るく染まり、風船の NEW BEST が浮かんで割れる */
-  newBest() {
+  /**
+   * 新記録: 水色〜青紫に明るく染まり、ベストスコアの枠から宝石のかけらがはじけ、画面の両下からかけらが2回噴き上がる。
+   * 風船の NEW BEST が浮かんで、割れるとかけらになって散る。from = ベストスコアの枠の画面上の四角（あれば）
+   */
+  newBest(from = null) {
     this.wash('gold', 2600, 0.62);
+    if (from) this.burst(from.x + from.width / 2, from.y + from.height / 2, 16, 380);
+    this.fountain(0);
+    this.fountain(520);
     this.spell('NEW BEST', { at: 120, popAt: 1900, row: 0.3 });
     this.kick();
+  }
+
+  /** (x, y) から全方向へ、7色のかけらをはじけさせる */
+  burst(x, y, n, speed) {
+    n = Math.round(n * this.quality());
+    const now = performance.now();
+    for (let i = 0; i < n; i++) {
+      const a = (TAU * i) / n + Math.random() * 0.3, v = speed * (0.6 + Math.random() * 0.6);
+      this.bits.push({ t0: now, life: 900 + Math.random() * 300, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, g: 900,
+        size: 16 + Math.random() * 10, color: RAINBOW[i % RAINBOW.length] });
+    }
+    this.kick();
+  }
+
+  /** 画面の左下と右下から、7色のかけらが画面の中ほどへ向かって噴き上がり、落ちてくる（at ms 後） */
+  fountain(at = 0) {
+    const gen = this.gen;
+    setTimeout(() => {
+      if (gen !== this.gen) return;
+      const n = Math.round(22 * this.quality()) + 4, now = performance.now(), H = this.H, W = this.W;
+      for (const side of [-1, 1]) {
+        const x0 = side < 0 ? -8 : W + 8, y0 = H * 0.92;
+        for (let i = 0; i < n; i++) {
+          // 真上から内側へ 15〜50° 傾けて打ち上げる。画面の高さに合わせて、上の方まで届く速さ
+          const tilt = (0.26 + Math.random() * 0.62) * -side, v = Math.sqrt(2 * 1100 * H * (0.45 + Math.random() * 0.35));
+          this.bits.push({ t0: now + i * 12, life: 1500 + Math.random() * 500, x: x0, y: y0,
+            vx: Math.sin(tilt) * v, vy: -Math.cos(tilt) * v, g: 1100, size: 18 + Math.random() * 12, color: RAINBOW[(i + (side > 0 ? 3 : 0)) % RAINBOW.length] });
+        }
+      }
+      this.sfx?.bubbles?.();
+      this.kick();
+    }, at);
   }
 
   /** 大きな連鎖（褒め言葉が Amazing 以上）: 画面全体が段階の色に染まる。Unbelievable（tier 5）は虹色 */
@@ -151,14 +192,14 @@ export class Scenes {
     this.sfx?.pop?.(it.k);
   }
 
-  /** 丸い粒（風船が割れたときの紙吹雪）をはじけさせる */
+  /** 風船が割れた: 風船の色（3個に1個はほかの色）のかけらがはじける */
   splash(x, y, r, color) {
     const n = Math.round(10 * this.quality()) + 4;
+    const now = performance.now();
     for (let i = 0; i < n; i++) {
-      const now = performance.now();
       const a = (TAU * i) / n + Math.random() * 0.4, v = 140 + Math.random() * 200 + r * 3;
-      this.bits.push({ t0: now, life: 650 + Math.random() * 300, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, g: 700,
-        size: Math.max(2, r * (0.12 + Math.random() * 0.12)), color });
+      this.bits.push({ t0: now, life: 700 + Math.random() * 300, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80, g: 800,
+        size: Math.max(9, r * (0.5 + Math.random() * 0.25)), color: i % 3 === 2 ? RAINBOW[(i + 2) % RAINBOW.length] : color });
     }
     this.kick();
   }
@@ -215,18 +256,17 @@ export class Scenes {
   drawBits(now) {
     const f = this.fctx;
     let alive = 0;
-    for (const p of this.bits) {                                // 色の丸い粒（つやつや、風船が割れたときの紙吹雪）
-      const t = Math.max(0, (now - p.t0) / p.life);
+    for (const p of this.bits) {                                // 宝石のかけら（ブロックと同じ塗り。回さず、薄くせず小さくなって消える）
+      const t = (now - p.t0) / p.life;
       if (t >= 1) continue;
       this.bits[alive++] = p;
-      const s = Math.max(0, now - p.t0) / 1000;
-      const x = p.x + (p.vx ?? 0) * s, y = p.y + (p.vy ?? 0) * s + 0.5 * (p.g ?? 0) * s * s;
-      f.globalAlpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
-      const r = p.size * (1 - 0.3 * t);
-      f.drawImage(this.ball(p.color), x - r, y - r, r * 2, r * 2);
+      if (t < 0) continue;                                      // まだ打ち上がっていない
+      const s = (now - p.t0) / 1000;
+      const x = p.x + p.vx * s, y = p.y + p.vy * s + 0.5 * p.g * s * s;
+      const d = p.size * (t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4);  // d = ひし形の対角線の長さ
+      if (d > 0.5) f.drawImage(gemSprite(p.color), x - d / 2, y - d / 2, d, d);
     }
     this.bits.length = alive;
-    f.globalAlpha = 1;
     return alive > 0;
   }
 
@@ -241,17 +281,6 @@ export class Scenes {
   }
   canvas(w, h = w) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 
-  /** 宝石と同じ、左上から光が当たる丸い塗り */
-  gem(g, cx, cy, r, c) {
-    const body = g.createRadialGradient(cx - r * 0.32, cy - r * 0.36, r * 0.08, cx, cy, r);
-    body.addColorStop(0, c.hi); body.addColorStop(0.5, c.col); body.addColorStop(1, c.lo);
-    g.fillStyle = body;
-    g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.55)';
-    g.beginPath(); g.ellipse(cx - r * 0.38, cy - r * 0.42, r * 0.22, r * 0.32, -0.6, 0, TAU); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.85)';
-    g.beginPath(); g.arc(cx - r * 0.45, cy - r * 0.52, r * 0.08, 0, TAU); g.fill();
-  }
   letter(g, ch, cx, cy, size, fill = '#fff', stroke = 'rgba(40,20,90,.35)') {
     g.font = `900 ${size}px Nunito, "M PLUS Rounded 1c", sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
@@ -287,14 +316,6 @@ export class Scenes {
     });
   }
 
-  /** つやつやの丸（風船が割れたときの紙吹雪） */
-  ball(color) {
-    return this.cached('ball:' + color, () => {
-      const S = 96, img = this.canvas(S), g = img.getContext('2d');
-      this.gem(g, S / 2, S / 2, S / 2 - 1, this.colorOf(color));
-      return img;
-    });
-  }
   /**
    * 虹色の絵（400px）: なめらかな色相の輪を、外側へ向かって透明にしたもの。
    * 扇形を並べるとつなぎ目が放射状の線に見えるので、conic グラデーション 1 枚で描き、丸いグラデーションで抜く
