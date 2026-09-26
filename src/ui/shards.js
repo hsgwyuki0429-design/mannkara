@@ -1,4 +1,4 @@
-import { colorOf } from './palette.js?v=202609261155';
+import { colorOf } from './palette.js?v=202609261436';
 
 /**
  * ゴールから飛び散る宝石のかけら。
@@ -55,7 +55,7 @@ export function gemSprite(name) {
 export class Shards {
   constructor(parent) {
     this.parent = parent;
-    this.sprites = new Map();         // 色 → 絵の data URL
+    this.sprites = new Map();         // 色 → かけらの絵の CSS クラス名
     this.alive = new Set();
   }
 
@@ -77,8 +77,8 @@ export class Shards {
       const v = speed * (1 + Math.random() * 0.55), vx = Math.cos(a) * v, vy = Math.sin(a) * v, g = speed * 3;
       const T = 0.72 + Math.random() * 0.22, sz = size * (0.8 + Math.random() * 0.45);
       const d = document.createElement('div');
-      d.className = 'shard';
-      d.style.cssText = `width:${sz}px;height:${sz}px;background-image:url(${this.url(colors[i % colors.length])})`;
+      d.className = 'shard ' + this.cls(colors[i % colors.length]);
+      d.style.cssText = `width:${sz}px;height:${sz}px`;
       this.parent.appendChild(d);
       this.alive.add(d);
       const frames = [];
@@ -90,9 +90,21 @@ export class Shards {
     }
   }
 
-  url(name) {
-    let u = this.sprites.get(name);
-    if (!u) { u = gemSprite(name).toDataURL(); this.sprites.set(name, u); }
-    return u;
+  /** 7色ぶんの絵とクラスを先に作っておくための仕事（1色ずつ） */
+  warmJobs() { return ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'].map((name) => () => this.cls(name)); }
+
+  /**
+   * 色ごとのかけらの絵を背景にする CSS クラス名。絵（data URL）は色ごとに1回だけスタイルシートに書く
+   * （かけら1個ずつの style に長い data URL を書くと、出すたびにその文字列の読み取りと画像の照合が走る）
+   */
+  cls(name) {
+    let c = this.sprites.get(name);
+    if (!c) {
+      c = 'shard-' + name;
+      if (!this.sheet) { this.sheet = document.createElement('style'); document.head.appendChild(this.sheet); }
+      this.sheet.appendChild(document.createTextNode(`.shard.${c}{background-image:url(${gemSprite(name).toDataURL()})}\n`));
+      this.sprites.set(name, c);
+    }
+    return c;
   }
 }

@@ -1,13 +1,15 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609261155';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609261155';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609261155';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609261155';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609261155';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609261155';
-import * as Sim from '../src/core/sim.js?v=202609261155';
-import { ScoreManager } from '../src/core/score.js?v=202609261155';
+import { Board, createBlock } from '../src/core/board.js?v=202609261436';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609261436';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609261436';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609261436';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609261436';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609261436';
+import * as Sim from '../src/core/sim.js?v=202609261436';
+import { DealerCore } from '../src/core/dealer.js?v=202609261436';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609261436';
+import { ScoreManager } from '../src/core/score.js?v=202609261436';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609261155';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609261436';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -807,6 +809,60 @@ console.log('スコア倍率');
   eq(s.addAllClear(), ALL_CLEAR_BONUS * 2, '全消しボーナスにも COMBO 倍率');
   const t = new ScoreManager(); t.endTurn(true);
   eq(t.addAllClear(), ALL_CLEAR_BONUS, 'COMBO 1 の全消しはボーナスそのまま');
+}
+
+console.log('軽い盤面での判定は、盤面本体での判定と同じ（ドラッグ中の仮置き・縦横どちらを先に発動するか）');
+{
+  let seed = 77, okLines = true, okDecide = true, both = 0;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let t = 0; t < 3000; t++) {
+    const b = new Board(), p = 0.3 + rnd() * 0.7;
+    for (let x = 0; x < 8; x++) for (let r = 0; r < 8; r++) if (isInside(x, r) && rnd() < p) b.set(x, r, createBlock('x'));
+    if (JSON.stringify(Sim.fullLines(Sim.fromBoard(b))) !== JSON.stringify(b.fullLines())) okLines = false;
+    // 盤面本体だけでの読み（元のやり方）: それぞれの最小ラインを発動してから連鎖が終わるまでの回数を比べる
+    const lines = b.fullLines(), minOf = (k) => { const ns = lines.filter((l) => l.kind === k).map((l) => l.n); return ns.length ? Math.min(...ns) : 0; };
+    const c = minOf('col'), r = minOf('row');
+    if (!c || !r) continue;
+    both++;
+    const len = (kind, n) => { const bb = b.clone(); boardResolveLine(bb, kind, n); return 1 + boardChainLength(bb); };
+    const lc = len('col', c), lr = len('row', r);
+    const want = lr > lc ? { act: { kind: 'row', n: r }, tie: false } : { act: { kind: 'col', n: c }, tie: lr === lc };
+    if (JSON.stringify(decide(b)) !== JSON.stringify(want)) okDecide = false;
+  }
+  eq(okLines, true, '満杯のライン一覧が同じ（3000盤面）');
+  eq([okDecide, both > 500], [true, true], `縦横どちらを先に発動するか・同点かが同じ（縦横とも満杯の ${both} 盤面）`);
+}
+
+console.log('手駒の決め方・おすすめを別スレッド（dealer）に任せても、同じ乱数・同じ時間の進み方なら同じ進行になる');
+{
+  // 探索は時間で打ち切るので、時計を「呼ぶたびに少し進む」偽物にして、同期・非同期で同じ時間の進み方にする
+  const realNow = performance.now.bind(performance);
+  let clock = 0;
+  performance.now = () => (clock += 0.37);
+  const play = async (async) => {
+    clock = 0;
+    let seed = 2468; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const core = async ? new DealerCore(rnd) : null;
+    const later = (f) => new Promise((res) => setTimeout(() => res(f()), 0));
+    const dealer = async ? { reset: () => core.reset(), deal: (c) => later(() => core.deal(c)), hint: (c, n) => later(() => core.hint(c, n)) } : null;
+    const g = new Game({ random: rnd, dealer });
+    if (async) await g.trayReady;
+    const log = [];
+    let waits = 0, emptyWhileWaiting = true;
+    for (let t = 0; t < 60 && !g.gameOver; t++) {
+      const h = async ? await g.hintAsync() : g.hint();
+      if (!h) break;
+      const turn = g.placePiece(h.slot, h.ox, h.oy);
+      if (turn.trayReady) { waits++; if (!g.tray.every((p) => !p)) emptyWhileWaiting = false; await turn.trayReady; }
+      log.push([h.slot, h.ox, h.oy, h.plan, turn.steps.length, turn.score, turn.gameOver, g.tray.map((p) => p && p.name).join(','), JSON.stringify(g.planTray)]);
+    }
+    if (async) eq([waits > 5, emptyWhileWaiting], [true, true], `補充 ${waits} 回: 別スレッドの手駒が届くまでトレイは空`);
+    return { log, over: g.gameOver, score: g.score.score };
+  };
+  const a = await play(false), b = await play(true);
+  performance.now = realNow;
+  eq(a.log.length > 20, true, `${a.log.length} 手進む`);
+  eq(JSON.stringify(b), JSON.stringify(a), '手駒・おすすめ・連鎖・点数・詰みの判定がすべて同じ');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
