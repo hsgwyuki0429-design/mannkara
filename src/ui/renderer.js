@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260806';
-import { Shards } from './shards.js?v=202609260806';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260809';
+import { Shards } from './shards.js?v=202609260809';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -307,19 +307,6 @@ export class Renderer {
     }
     this.litLines(lines, piece.color);
     this.goal.classList.toggle('ready', willClear);
-  }
-  /** 盤面の長方形 { x, r, w, h } を囲む枠（盤面と一緒に回るので、画面ではひし形に見える） */
-  rectFrame({ x, r, w, h }, cls) {
-    const c = this.cell, d = document.createElement('div');
-    d.className = cls;
-    d.style.transform = `translate(${x * c}px,${r * c}px)`;
-    d.style.width = w * c + 'px'; d.style.height = h * c + 'px';
-    return d;
-  }
-  /** 長方形がそろった: 枠がきゅっと締まって消える */
-  rectDone(rect) {
-    if (this.rush) return;
-    this.addFx(this.fxLayer, this.rectFrame(rect, 'rect-frame done'), 600);
   }
   /** 発動するラインの番号を光らせる */
   litLines(lines, color) {

@@ -1,12 +1,12 @@
-import { Game } from '../core/game.js?v=202609260806';
-import { Board } from '../core/board.js?v=202609260806';
-import { resolveChains } from '../core/mancala.js?v=202609260806';
-import * as Sim from '../core/sim.js?v=202609260806';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609260806';
-import { Renderer, delay } from './renderer.js?v=202609260806';
-import { Sfx } from './sfx.js?v=202609260806';
-import { Scenes } from './scenes.js?v=202609260806';
-import { colorOf } from './palette.js?v=202609260806';
+import { Game } from '../core/game.js?v=202609260809';
+import { Board } from '../core/board.js?v=202609260809';
+import { resolveChains } from '../core/mancala.js?v=202609260809';
+import * as Sim from '../core/sim.js?v=202609260809';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609260809';
+import { Renderer, delay } from './renderer.js?v=202609260809';
+import { Sfx } from './sfx.js?v=202609260809';
+import { Scenes } from './scenes.js?v=202609260809';
+import { colorOf } from './palette.js?v=202609260809';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -80,7 +80,6 @@ const game = new Game({
       // 穴にぴったり・凹みを埋めて長方形: 置いた瞬間に手応え（連鎖の文字が出ればそちらで上書き）
       if (turn.fit === 'perfect' || turn.rect) {
         sfx.fit();
-        if (turn.rect) renderer.rectDone(turn.rect);
         renderer.showText(`${turn.fit === 'perfect' ? 'PERFECT FIT!' : 'NICE FIT!'}<small>+${turn.fitBonus.toLocaleString('en-US')}</small>`, 't2');
       }
       // 前のターンの再生がまだ終わっていなければ、残りを一気に最後まで進める（表示を盤面に追いつかせる）。
