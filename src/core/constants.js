@@ -70,26 +70,21 @@ export const LINEUP_BUDGET_MS = 25;
 /** 埋まり具合 f のときの置き方の数の目標 */
 export const targetWays = (f) => Math.max(1, Math.round(Math.pow(WAYS_MAX, 1 - Math.min(1, Math.max(0, f)))));
 /**
- * 全消しのチャンス: ブロックが残っている盤面（埋まり具合は問わない）で、補充のたびに ALL_CLEAR_RATE の確率で
+ * 全消しのチャンス: 埋まり具合が ALL_CLEAR_MAX_FILL 以下の盤面では、補充のたびに（確率なしで）必ず
  * 「ALL_CLEAR_MIN_PIECES〜ALL_CLEAR_MAX_PIECES 個（3個ずつ配るので3の倍数）を、この順番・この場所に置くと
- * 最後の1個でちょうど全消し」の手順を今の盤面から計算し、3個ずつ配る。
- * 手順どおりの盤面にならなかったら（違う置き方をしたら）、その盤面からもう一度手順を探す。
- * 手順が見つからなかったときは、次の補充でもう一度探す。全消しできるまで続く
+ * 最後の1個でちょうど全消し」の手順を今の盤面から探し、3個ずつ配る。それより埋まっている盤面では探さない。
+ *  - 手順どおりに置いていれば、埋まり具合に関係なく続きを配る
+ *  - 手順どおりの盤面にならなかったら（違う置き方をしたら）、その盤面から探し直す（埋まり具合が上限以下のとき）
+ *  - 見つからなかったときは普通の手駒にして、次の補充でもう一度探す
+ * 盤面が空のとき（ゲーム開始・全消しの直後）は探さずに、手順集（allclear-library.js）から1本選んで配る。
  */
-export const ALL_CLEAR_RATE = 0.2;
+export const ALL_CLEAR_MAX_FILL = 0.4;     // ブロック 11 個まで
 export const ALL_CLEAR_MIN_PIECES = 6;
 export const ALL_CLEAR_MAX_PIECES = 21;
 /** 手順の長さの下限の候補（毎回ここから選ぶので、短い手順ばかりにならない） */
 export const ALL_CLEAR_PIECES = [6, 9, 12, 15, 18, 21];
-/**
- * 盤面が空のとき（ゲーム開始・全消しの直後）は EMPTY_ALL_CLEAR_RATE の確率で、手順集（allclear-library.js）から
- * 「6個以上（主に9個）をこの順番・この場所に置くと、最後の1個でちょうど全消し」の手順を選び、3個ずつ配る。
- * 手順どおりの盤面になっていないと（違う置き方をしたら）、上と同じくその盤面から手順を探し直す。
- * （空の盤面では上の計算はしない）
- */
-export const EMPTY_ALL_CLEAR_RATE = 0.6;
 /** 全消しの手順探しにかける時間の上限（ms）。見つからなければ普通の手駒にする */
-export const ALL_CLEAR_BUDGET_MS = 60;
+export const ALL_CLEAR_BUDGET_MS = 40;
 /** 全消しの手順探しのビームの幅と、1手ごとに試す形の数 */
 export const ALL_CLEAR_BEAM = 4;
 export const ALL_CLEAR_SAMPLE = 6;

@@ -1,5 +1,6 @@
-import { Piece, SHAPES } from './pieces.js?v=202609260234';
-import * as Sim from './sim.js?v=202609260234';
+import { Piece, SHAPES } from './pieces.js?v=202609260258';
+import * as Bits from './bitboard.js?v=202609260258';
+import * as Sim from './sim.js?v=202609260258';
 
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 const CELLS = Object.fromEntries(SHAPES.map((s) => [s.name, new Piece(s.name).cells]));
@@ -92,37 +93,45 @@ export function planAllClear(board, {
  * 1回ぶんのビームサーチ。各手数で「全消しまでの遠さ」(clearCost) が小さい盤面を beam 個だけ残して進む。
  * 形は出現率どおりに sample 個ずつ抽選して試すので、特定の形ばかりにはならない。
  * 全消しにしてよい手数（lo 以上 hi 以下の step の倍数）では全部の形を試し、空になったらその手順を返す。
+ * 盤面はビット（bitboard.js）で持ち、手順は親をたどって最後に組み立てる（途中でコピーを作らない）。
  */
 function beamSearch(start, lo, hi, step, random, beam, sample, deadline, ok) {
-  let states = [{ s: start, seq: [] }];
+  const [slo, shi] = Bits.fromSim(start);
+  let states = [{ lo: slo, hi: shi, parent: null, move: null, types: {} }];
   for (let d = 1; d <= hi; d++) {
     const finish = d >= lo && d % step === 0;
     const kids = new Map();
     for (const st of states) {
       for (const name of finish ? ALL : sampleShapes(random, sample)) {
-        if (!ok(name) || !allowed(st.seq, name)) continue;
-        const cells = CELLS[name];
-        for (const [ox, oy] of Sim.placements(st.s, cells)) {
-          const b = Sim.cloneSim(st.s);
-          Sim.place(b, cells, ox, oy);
-          Sim.resolveAll(b);
-          if (Sim.blocks(b) === 0) {
-            if (finish) return [...st.seq, { name, ox, oy }];
+        if (!ok(name) || !allowedType(st.types, name)) continue;
+        for (const p of Bits.PLACEMENTS[name]) {
+          const key = Bits.play(st.lo, st.hi, p);
+          if (key < 0) continue;
+          if (key === 0) {
+            if (finish) return seqOf({ parent: st, move: p });
             continue;                                         // 途中で空になる手順は使わない
           }
           if (d === hi) continue;
-          const score = Sim.clearCost(b) + random() * 2;      // 少し揺らして毎回違う手順に
-          const key = Sim.keyOf(b);
           const prev = kids.get(key);
-          if (!prev || prev.score > score) kids.set(key, { s: b, seq: [...st.seq, { name, ox, oy }], score });
+          const klo = Bits.loOf(key), khi = Bits.hiOf(key);
+          const base = prev ? prev.base : Bits.clearCost(klo, khi);   // 同じ盤面の遠さは1回だけ計算
+          const score = base + random() * 2;                  // 少し揺らして毎回違う手順に
+          if (!prev || prev.score > score) kids.set(key, { lo: klo, hi: khi, parent: st, move: p, score, base });
         }
       }
       if (now() > deadline) return null;
     }
     states = [...kids.values()].sort((a, b) => a.score - b.score).slice(0, beam);
+    for (const st of states) st.types = { ...st.parent.types, [TYPE_OF[st.move.name]]: (st.parent.types[TYPE_OF[st.move.name]] ?? 0) + 1 };
     if (!states.length) return null;
   }
   return null;
+}
+/** 親をたどって手順 [{ name, ox, oy }, …] を組み立てる */
+function seqOf(st) {
+  const seq = [];
+  for (let s = st; s.move; s = s.parent) seq.push({ name: s.move.name, ox: s.move.ox, oy: s.move.oy });
+  return seq.reverse();
 }
 
 /**
@@ -130,10 +139,10 @@ function beamSearch(start, lo, hi, step, random, beam, sample, deadline, ok) {
  * （1マスは1個まで、ほかは同じ種類2個まで）
  */
 const TYPE_OF = Object.fromEntries(SHAPES.map((s) => [s.name, s.type]));
-function allowed(seq, name) {
+/** types = これまでの手順に入っている種類ごとの数 */
+function allowedType(types, name) {
   const type = TYPE_OF[name];
-  const same = seq.filter((m) => TYPE_OF[m.name] === type).length;
-  return same < (type === 'Dot' ? 1 : 2);
+  return (types[type] ?? 0) < (type === 'Dot' ? 1 : 2);
 }
 
 /** 出現率どおりの重みで、重複なしに k 個の形を選ぶ */

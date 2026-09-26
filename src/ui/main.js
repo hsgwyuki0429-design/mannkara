@@ -1,11 +1,11 @@
-import { Game } from '../core/game.js?v=202609260234';
-import { Board } from '../core/board.js?v=202609260234';
-import { resolveChains } from '../core/mancala.js?v=202609260234';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609260234';
-import { Renderer, delay } from './renderer.js?v=202609260234';
-import { Sfx } from './sfx.js?v=202609260234';
-import { Scenes } from './scenes.js?v=202609260234';
-import { colorOf } from './palette.js?v=202609260234';
+import { Game } from '../core/game.js?v=202609260258';
+import { Board } from '../core/board.js?v=202609260258';
+import { resolveChains } from '../core/mancala.js?v=202609260258';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609260258';
+import { Renderer, delay } from './renderer.js?v=202609260258';
+import { Sfx } from './sfx.js?v=202609260258';
+import { Scenes } from './scenes.js?v=202609260258';
+import { colorOf } from './palette.js?v=202609260258';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
