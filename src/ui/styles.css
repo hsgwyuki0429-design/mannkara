@@ -155,9 +155,16 @@ button{font-family:inherit;cursor:pointer;}
 .slot.hinted .piece{animation:trayHint 900ms ease-in-out infinite alternate;}
 @keyframes trayHint{from{scale:.94}to{scale:1.08}}
 .ghost.strong{opacity:.72;filter:saturate(1) brightness(1.08);}
-/* 穴にぴったりはまる場所: 濃く出して、吸い込まれるようにきゅっと縮んで収まる（光らせず、動きだけ） */
-.ghost.fit{opacity:.8;filter:saturate(1);animation:ghostFit 260ms cubic-bezier(.3,1.6,.5,1);}
+/* 穴・凹みにはまる場所: 吸い込まれるようにきゅっと縮んで収まる（光らせず、動きだけ）。ぴったり・長方形はさらに濃く */
+.ghost.fit{animation:ghostFit 260ms cubic-bezier(.3,1.6,.5,1);}
+.ghost.perfect,.ghost.rect{opacity:.8;filter:saturate(1);}
 @keyframes ghostFit{0%{scale:1.2;opacity:.2}55%{scale:.9}100%{scale:1}}
+/* 置くと長方形がそろう場所を囲む白い枠（ベタ塗りの線。置くと締まって消える） */
+.rect-frame{position:absolute;left:0;top:0;box-sizing:border-box;border:2.5px solid #fff;border-radius:10px;pointer-events:none;
+  animation:rectIn 200ms ease-out;}
+.rect-frame.done{animation:rectDone 560ms cubic-bezier(.3,1.4,.5,1) forwards;}
+@keyframes rectIn{from{scale:1.12}}
+@keyframes rectDone{0%{scale:1.1}35%{scale:.96}70%{scale:1.02;opacity:1}100%{scale:1;opacity:0}}
 @keyframes ghostIn{from{scale:1.12;opacity:.15}}
 /* 仮置き中に消える列: 既存ブロックの上に持っているピースの色を重ね、斜辺側から順に入ってから脈打つ（光らせず、濃さだけ） */
 .hi{opacity:1;animation:hiPulse 620ms ease-in-out infinite alternate;}

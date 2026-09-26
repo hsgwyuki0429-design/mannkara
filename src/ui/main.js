@@ -1,12 +1,12 @@
-import { Game } from '../core/game.js?v=202609260753';
-import { Board } from '../core/board.js?v=202609260753';
-import { resolveChains } from '../core/mancala.js?v=202609260753';
-import * as Sim from '../core/sim.js?v=202609260753';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609260753';
-import { Renderer, delay } from './renderer.js?v=202609260753';
-import { Sfx } from './sfx.js?v=202609260753';
-import { Scenes } from './scenes.js?v=202609260753';
-import { colorOf } from './palette.js?v=202609260753';
+import { Game } from '../core/game.js?v=202609260805';
+import { Board } from '../core/board.js?v=202609260805';
+import { resolveChains } from '../core/mancala.js?v=202609260805';
+import * as Sim from '../core/sim.js?v=202609260805';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609260805';
+import { Renderer, delay } from './renderer.js?v=202609260805';
+import { Sfx } from './sfx.js?v=202609260805';
+import { Scenes } from './scenes.js?v=202609260805';
+import { colorOf } from './palette.js?v=202609260805';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -77,9 +77,11 @@ const game = new Game({
       // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように）
       sfx.place();
       turn.seq = ++turnSeq;
-      if (turn.fit === 'perfect') {                // 穴にぴったり: 置いた瞬間に手応え（連鎖の文字が出ればそちらで上書き）
+      // 穴にぴったり・凹みを埋めて長方形: 置いた瞬間に手応え（連鎖の文字が出ればそちらで上書き）
+      if (turn.fit === 'perfect' || turn.rect) {
         sfx.fit();
-        renderer.showText(`PERFECT FIT!<small>+${turn.fitBonus.toLocaleString('en-US')}</small>`, 't2');
+        if (turn.rect) renderer.rectDone(turn.rect);
+        renderer.showText(`${turn.fit === 'perfect' ? 'PERFECT FIT!' : 'NICE FIT!'}<small>+${turn.fitBonus.toLocaleString('en-US')}</small>`, 't2');
       }
       // 前のターンの再生がまだ終わっていなければ、残りを一気に最後まで進める（表示を盤面に追いつかせる）。
       // ルールは置いた瞬間に確定しているので、遅れた表示のまま新しいピースを出すと古いブロックに重なって見える
@@ -272,7 +274,7 @@ function renderTray(enter = false) {
 let drag = null; // { slot, piece, lift, ox, oy, valid, chain, pointerId, x, y }
 
 function previewInfo(piece, ox, oy) {
-  const fit = Sim.fitOf(Sim.fromBoard(game.board), piece.cells, ox, oy).kind === 'perfect';
+  const fit = Sim.fitOf(Sim.fromBoard(game.board), piece.cells, ox, oy);
   const b = game.board.clone();
   b.place(piece, ox, oy);
   const lines = b.fullLines();
@@ -342,7 +344,7 @@ function updateDrag(e) {
     renderer.showPreview(drag.piece, ox, oy, cells, chain, lines, fit);
     // 消える場所に入った瞬間だけ、期待をあおる上昇音と軽い振動。穴にぴったりの場所はカチッ
     if (chain > 0 && chain !== drag.chain) sfx.anticipate(chain);
-    else if (!chain && fit) sfx.fitHover();
+    else if (!chain && (fit.kind === 'perfect' || fit.rect)) sfx.fitHover();
     else if (!chain) sfx.hover();
     drag.chain = chain;
   } else {

@@ -1,7 +1,7 @@
 import {
-  SCORE_PER_CELL_PLACED, SCORE_PER_GOAL, ALL_CLEAR_BONUS, SCORE_PER_PERFECT_FIT_CELL,
+  SCORE_PER_CELL_PLACED, SCORE_PER_GOAL, ALL_CLEAR_BONUS, SCORE_PER_PERFECT_FIT_CELL, SCORE_PER_RECT_CELL,
   chainMultiplier, streakMultiplier,
-} from './constants.js?v=202609260753';
+} from './constants.js?v=202609260805';
 
 export class ScoreManager {
   constructor() { this.reset(); }
@@ -9,7 +9,7 @@ export class ScoreManager {
     this.score = 0; this.goals = 0;
     this.lastChain = 0; this.bestChain = 0;
     this.streak = 0; this.bestStreak = 0;
-    this.allClears = 0; this.perfectFits = 0;
+    this.allClears = 0; this.perfectFits = 0; this.rects = 0;
   }
   addPlaced(cells) {
     this.score += cells * SCORE_PER_CELL_PLACED;
@@ -24,10 +24,11 @@ export class ScoreManager {
     this.score += gained;
     return gained;
   }
-  /** 穴にぴったり置いたボーナス */
-  addPerfectFit(cells) {
-    this.perfectFits++;
-    const gained = cells * SCORE_PER_PERFECT_FIT_CELL;
+  /** 気持ちよくはまった置き方のボーナス（Sim.fitOf の結果）。穴にぴったり + 長方形ができた、は足す */
+  addFit({ kind, rect }, cells) {
+    let gained = 0;
+    if (kind === 'perfect') { this.perfectFits++; gained += cells * SCORE_PER_PERFECT_FIT_CELL; }
+    if (rect) { this.rects++; gained += rect.w * rect.h * SCORE_PER_RECT_CELL; }
     this.score += gained;
     return gained;
   }

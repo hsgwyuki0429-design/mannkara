@@ -1,17 +1,17 @@
-import { Board } from './board.js?v=202609260753';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609260753';
-import { ScoreManager } from './score.js?v=202609260753';
-import { nextActivation, lineMoves } from './mancala.js?v=202609260753';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609260753';
-import * as Sim from './sim.js?v=202609260753';
-import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609260753';
-import { bestMove } from './advisor.js?v=202609260753';
+import { Board } from './board.js?v=202609260805';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609260805';
+import { ScoreManager } from './score.js?v=202609260805';
+import { nextActivation, lineMoves } from './mancala.js?v=202609260805';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609260805';
+import * as Sim from './sim.js?v=202609260805';
+import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609260805';
+import { bestMove } from './advisor.js?v=202609260805';
 import {
-  TRAY_SIZE, CHAIN_PIECE_RATE, FIT_PIECE_RATE, FIT_PERFECT_WEIGHT, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
+  TRAY_SIZE, CHAIN_PIECE_RATE, FIT_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609260753';
+} from './constants.js?v=202609260805';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -60,10 +60,10 @@ export class Game {
       const i = this.planTray.findIndex((m) => m.name === piece.name && m.ox === ox && m.oy === oy);
       this.planTray = i < 0 ? null : this.planTray.filter((_, j) => j !== i);
     }
-    const fit = Sim.fitOf(Sim.fromBoard(this.board), piece.cells, ox, oy).kind;
+    const { kind: fit, rect } = Sim.fitOf(Sim.fromBoard(this.board), piece.cells, ox, oy);
     const placed = this.board.place(piece, ox, oy);
     this.score.addPlaced(placed.length);
-    const fitBonus = fit === 'perfect' ? this.score.addPerfectFit(placed.length) : 0;
+    const fitBonus = this.score.addFit({ kind: fit, rect }, placed.length);
     const scoreAfterPlace = this.score.score;
 
     const steps = this.resolve();
@@ -80,7 +80,7 @@ export class Game {
     if (!this.hasMove()) this.gameOver = true;
 
     const turn = {
-      slot, piece, placed, steps, refilled, scoreAfterPlace, fit, fitBonus,
+      slot, piece, placed, steps, refilled, scoreAfterPlace, fit, rect, fitBonus,
       allClear, allClearBonus,
       score: this.score.score, streak: this.score.streak, gameOver: this.gameOver,
     };
@@ -281,7 +281,7 @@ export class Game {
     return tray;
   }
 
-  /** 条件なしの1回分の抽選（各枠 CHAIN_PIECE_RATE で連鎖ピース、それ以外の枠は FIT_PIECE_RATE で穴にはまる形） */
+  /** 条件なしの1回分の抽選（各枠 CHAIN_PIECE_RATE で連鎖ピース、それ以外の枠は FIT_PIECE_RATE で穴・凹みにはまる形） */
   drawTray() {
     return Array.from({ length: TRAY_SIZE }, () => {
       const r = this.generator.random();
@@ -297,8 +297,8 @@ export class Game {
   }
 
   /**
-   * 今の盤面の穴・くぼみにはまる形の向き一覧 [{name, fit, weight}]（Sim.fitOf。同じ盤面なら前回の結果を使う）。
-   * ぴったり（perfect）は FIT_PERFECT_WEIGHT 倍、大きい形ほど選びやすい
+   * 今の盤面の穴・凹みに気持ちよくはまる形の向き一覧 [{name, fit, weight}]（Sim.fitOf。同じ盤面なら前回の結果を使う）。
+   * 置ける場所のうち一番気持ちよいはまり方で、FIT_WEIGHTS × 形のマス数の重み
    */
   fitPieces() {
     const start = Sim.fromBoard(this.board);
@@ -310,10 +310,10 @@ export class Game {
       let best = null;
       for (const [ox, oy] of Sim.placements(start, cells)) {
         const { kind } = Sim.fitOf(start, cells, ox, oy);
-        if (kind === 'perfect') { best = kind; break; }
-        if (kind) best = kind;
+        if (kind && (!best || FIT_WEIGHTS[kind] > FIT_WEIGHTS[best])) best = kind;
+        if (best === 'perfect') break;
       }
-      if (best) out.push({ name: shape.name, fit: best, weight: cells.length * (best === 'perfect' ? FIT_PERFECT_WEIGHT : 1) });
+      if (best) out.push({ name: shape.name, fit: best, weight: cells.length * FIT_WEIGHTS[best] });
     }
     this.fitCache = { key, list: out };
     return out;

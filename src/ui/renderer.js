@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260753';
-import { Shards } from './shards.js?v=202609260753';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260805';
+import { Shards } from './shards.js?v=202609260805';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -279,7 +279,7 @@ export class Renderer {
    * 仮置きのプレビュー。消える列は既存ブロックごと「持っているピースの色」に塗り替えて光らせ、
    * その列の番号とゴールも光らせる（ここに置けば消える、という期待を先に見せる）。
    */
-  showPreview(piece, ox, oy, clearCells, chainCount, lines = [], fit = false) {
+  showPreview(piece, ox, oy, clearCells, chainCount, lines = [], fit = null) {
     const c = this.cell;
     const key = `${ox},${oy},${chainCount}`;
     const fresh = key !== this._pvKey;
@@ -289,10 +289,12 @@ export class Renderer {
     const willClear = clearCells.length > 0;
     for (const cc of piece.cells) {
       const d = document.createElement('div');
-      d.className = `cell ghost c-${piece.color}` + (willClear ? ' strong' : '') + (fit ? ' fit' : '');
+      d.className = `cell ghost c-${piece.color}` + (willClear ? ' strong' : '') + (fit?.kind ? ` fit ${fit.kind}` : '');
       d.style.transform = `translate(${(ox + cc.x) * c}px,${(oy + cc.y) * c}px)`;
       this.ghostLayer.appendChild(d);
     }
+    // 置くと長方形がそろう場所: その長方形を白い枠で囲む（消える列を見せるときは出さない）
+    if (fit?.rect && !willClear) this.ghostLayer.appendChild(this.rectFrame(fit.rect, 'rect-frame'));
     // 斜辺側の端から順に光が走り込むよう、少しずつ遅らせる
     const seen = new Set();
     for (const { x, r } of clearCells) {
@@ -307,6 +309,19 @@ export class Renderer {
     }
     this.litLines(lines, piece.color);
     this.goal.classList.toggle('ready', willClear);
+  }
+  /** 盤面の長方形 { x, r, w, h } を囲む枠（盤面と一緒に回るので、画面ではひし形に見える） */
+  rectFrame({ x, r, w, h }, cls) {
+    const c = this.cell, d = document.createElement('div');
+    d.className = cls;
+    d.style.transform = `translate(${x * c}px,${r * c}px)`;
+    d.style.width = w * c + 'px'; d.style.height = h * c + 'px';
+    return d;
+  }
+  /** 長方形がそろった: 枠がきゅっと締まって消える */
+  rectDone(rect) {
+    if (this.rush) return;
+    this.addFx(this.fxLayer, this.rectFrame(rect, 'rect-frame done'), 600);
   }
   /** 発動するラインの番号を光らせる */
   litLines(lines, color) {

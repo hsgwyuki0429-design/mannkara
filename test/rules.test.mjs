@@ -1,13 +1,13 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609260753';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609260753';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609260753';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609260753';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609260753';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609260753';
-import * as Sim from '../src/core/sim.js?v=202609260753';
-import { ScoreManager } from '../src/core/score.js?v=202609260753';
+import { Board, createBlock } from '../src/core/board.js?v=202609260805';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609260805';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609260805';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609260805';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609260805';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609260805';
+import * as Sim from '../src/core/sim.js?v=202609260805';
+import { ScoreManager } from '../src/core/score.js?v=202609260805';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609260753';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609260805';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -745,26 +745,32 @@ console.log('ゲーム進行');
   eq(g.score.score > 0, true, 'スコアが入る');
 }
 
-console.log('穴にはまる形: ぴったりの判定・約30% の確率で配る・ボーナス');
+console.log('穴・凹みにはまる形: はまり方の判定・約30% の確率で配る・ボーナス');
 {
-  // 横8 (r=0) の左端 2 マスだけ空けて、まわりをブロックで囲む → I2 横がぴったり
-  const b = new Board();
-  for (let x = 0; x < 8; x++) b.set(x, 0, x >= 2 ? createBlock('red') : null);
-  b.set(0, 1, createBlock('red')); b.set(1, 1, createBlock('red'));
-  const s = Sim.fromBoard(b);
-  const I2 = new Piece('I20').cells, Dot = new Piece('Dot0').cells;
-  eq(Sim.fitOf(s, I2, 0, 0).kind, 'perfect', '囲まれた穴をちょうど埋めるとぴったり');
-  eq(Sim.fitOf(s, Dot, 1, 0).kind, 'snug', '穴の一部だけならくぼみ');
-  eq(Sim.fitOf(Sim.fromBoard(new Board()), Dot, 0, 0).kind, null, '空の盤面の角はぴったりではない');
+  const B = (cells) => { const b = new Board(); for (const [x, r] of cells) b.set(x, r, createBlock('red')); return b; };
+  const I2 = new Piece('I20').cells, Dot = new Piece('Dot0').cells, O = new Piece('O0').cells;
+  // 横8 (r=0) の左端 2 マスだけ空けて、まわりをブロックで囲む → I2 横がぴったり（2×2 は小さいので長方形には数えない）
+  const hole = B([[2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], [0, 1], [1, 1]]);
+  const s = Sim.fromBoard(hole);
+  const f = Sim.fitOf(s, I2, 0, 0);
+  eq([f.kind, f.rect], ['perfect', null], '囲まれた穴をちょうど埋めるとぴったり');
+  eq(Sim.fitOf(s, Dot, 1, 0).kind, 'dent', '穴の一部だけなら凹み');
+  eq(Sim.fitOf(Sim.fromBoard(new Board()), Dot, 0, 0).kind, null, '空の盤面の角は何でもない');
+  // L 字に並んだブロック（5個）の凹みに O を置くと 3×3 の長方形がそろう（空きにも接しているので perfect ではない）
+  const L = B([[1, 1], [2, 1], [3, 1], [3, 2], [3, 3]]);
+  const fl = Sim.fitOf(Sim.fromBoard(L), O, 1, 2);
+  eq([fl.kind, fl.rect], ['rect', { x: 1, r: 1, w: 3, h: 3 }], 'L 字の凹みを埋めると 3×3 の長方形');
+  eq(Sim.fitOf(Sim.fromBoard(L), O, 5, 0).kind, null, '離れた所に置いても何でもない');
+  eq(Sim.fitOf(Sim.fromBoard(B([[2, 2]])), Dot, 3, 2).rect, null, 'ブロック1個の横に1マスは長方形にならない（前からのブロックが2個以上要る）');
 
   let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd });
-  g.board = b.clone();
+  g.board = hole.clone();
   const fitters = g.fitPieces();
-  eq(fitters.some((f) => f.name === 'I20' && f.fit === 'perfect'), true, `ぴったりの形が見つかる (${fitters.length}種)`);
+  eq(fitters.some((x) => x.name === 'I20' && x.fit === 'perfect'), true, `ぴったりの形が見つかる (${fitters.length}種)`);
   const st = Sim.fromBoard(g.board);
   eq(fitters.every(({ name, fit }) => Sim.placements(st, new Piece(name).cells)
-    .some(([ox, oy]) => Sim.fitOf(st, new Piece(name).cells, ox, oy).kind === fit)), true, '選ばれる形は実際にはまる場所がある');
+    .some(([ox, oy]) => Sim.fitOf(st, new Piece(name).cells, ox, oy).kind === fit)), true, '選ばれる形は実際にそのはまり方をする場所がある');
   // 確率: 連鎖ピースを無くして、通常抽選(next)を通らなかった枠を数える
   g.chainPieces = () => [];
   const orig = g.generator.next.bind(g.generator);
@@ -772,13 +778,22 @@ console.log('穴にはまる形: ぴったりの判定・約30% の確率で配�
   g.generator.next = () => { natural++; return orig(); };
   for (let i = 0; i < 4000; i++) { g.drawTray(); total += 3; }
   const rate = (total - natural) / total;
-  eq(rate > 0.27 && rate < 0.33, true, `穴にはまる形の割合 ${(rate * 100).toFixed(1)}%`);
-  // 置いたらボーナス
+  eq(rate > 0.27 && rate < 0.33, true, `穴・凹みにはまる形の割合 ${(rate * 100).toFixed(1)}%`);
+  // 置いたらボーナス: ぴったり 2マス×25
   g.generator.next = orig;
   g.tray = [new Piece('I20'), new Piece('Dot0'), new Piece('Dot0')];
-  const before = g.score.score;
   const t = g.placePiece(0, 0, 0);
-  eq([t.fit, t.fitBonus, g.score.score - before], ['perfect', 2 * 25, 2 + 2 * 25 + (t.steps.length ? g.score.score - t.scoreAfterPlace : 0)], 'ぴったり置くとボーナス');
+  eq([t.fit, t.fitBonus, t.scoreAfterPlace], ['perfect', 2 * 25, 2 + 2 * 25], 'ぴったりのボーナス');
+  // 穴を埋めて長方形もそろうなら両方: 横8 の左端2マスの穴 + その下 2×2 がブロック → 2×3 の長方形
+  const g3 = new Game({ random: rnd });
+  g3.board = B([[2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2]]);
+  g3.tray = [new Piece('I20'), new Piece('Dot0'), new Piece('Dot0')];
+  const t3 = g3.placePiece(0, 0, 0);
+  eq([t3.fit, t3.rect && t3.rect.w * t3.rect.h, t3.fitBonus], ['perfect', 6, 2 * 25 + 6 * 10], 'ぴったり + 長方形のボーナスは足す');
+  const g2 = new Game({ random: rnd });
+  g2.board = L.clone(); g2.tray = [new Piece('O0'), new Piece('Dot0'), new Piece('Dot0')];
+  const t2 = g2.placePiece(0, 1, 2);
+  eq([t2.fit, t2.fitBonus], ['rect', 9 * 10], '長方形ができたボーナス');
 }
 
 console.log('スコア倍率');
