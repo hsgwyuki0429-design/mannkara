@@ -1,11 +1,11 @@
-import { Game } from '../core/game.js?v=202609252223';
-import { Board } from '../core/board.js?v=202609252223';
-import { resolveChains } from '../core/mancala.js?v=202609252223';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609252223';
-import { Renderer, delay } from './renderer.js?v=202609252223';
-import { Sfx } from './sfx.js?v=202609252223';
-import { Scenes } from './scenes.js?v=202609252223';
-import { colorOf } from './palette.js?v=202609252223';
+import { Game } from '../core/game.js?v=202609260706';
+import { Board } from '../core/board.js?v=202609260706';
+import { resolveChains } from '../core/mancala.js?v=202609260706';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609260706';
+import { Renderer, delay } from './renderer.js?v=202609260706';
+import { Sfx } from './sfx.js?v=202609260706';
+import { Scenes } from './scenes.js?v=202609260706';
+import { colorOf } from './palette.js?v=202609260706';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -95,6 +95,8 @@ const game = new Game({
   },
 });
 
+const allClearText = (turn) => `ALL CLEAR!<small>BONUS +${turn.allClearBonus.toLocaleString('en-US')}</small>`;
+
 async function playTurn(turn) {
   // 途中でリスタート（モードの切り替えなど）したら、古いゲームの続き（点数・ゲームオーバー）は出さない
   const gen = generation, stale = () => gen !== generation;
@@ -103,7 +105,7 @@ async function playTurn(turn) {
   showScore(turn.scoreAfterPlace);
   if (rush) {                                            // 早送り: 演出なしで盤面と点数だけ最後まで進める
     for (const step of turn.steps) { await renderer.playStep(step, 1); if (stale()) return; }
-    if (turn.allClear) { renderer.showText('ALL CLEAR!', 't5'); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
+    if (turn.allClear) { renderer.showText(allClearText(turn), 't5'); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
     showScore(turn.score);
     return;
   }
@@ -138,7 +140,8 @@ async function playTurn(turn) {
     if (stale()) return;
   }
   if (turn.allClear) {
-    renderer.showText('ALL CLEAR!', 't5');
+    renderer.showText(allClearText(turn), 't5');
+    renderer.floatScore(turn.allClearBonus, 5);
     renderer.allClearBlast();
     sfx.fanfare();
   }

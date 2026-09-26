@@ -1,7 +1,7 @@
 import {
-  SCORE_PER_CELL_PLACED, SCORE_PER_GOAL,
+  SCORE_PER_CELL_PLACED, SCORE_PER_GOAL, ALL_CLEAR_BONUS,
   chainMultiplier, streakMultiplier,
-} from './constants.js?v=202609252223';
+} from './constants.js?v=202609260706';
 
 export class ScoreManager {
   constructor() { this.reset(); }
@@ -9,6 +9,7 @@ export class ScoreManager {
     this.score = 0; this.goals = 0;
     this.lastChain = 0; this.bestChain = 0;
     this.streak = 0; this.bestStreak = 0;
+    this.allClears = 0;
   }
   addPlaced(cells) {
     this.score += cells * SCORE_PER_CELL_PLACED;
@@ -20,6 +21,13 @@ export class ScoreManager {
     this.bestChain = Math.max(this.bestChain, step.chain);
     const base = step.goals * SCORE_PER_GOAL;
     const gained = Math.round(base * chainMultiplier(step.chain) * streakMultiplier(Math.max(1, this.streak + 1)));
+    this.score += gained;
+    return gained;
+  }
+  /** 全消しのボーナス。endTurn のあと（streak = このターンを含む連続発動手数）に呼ぶ */
+  addAllClear() {
+    this.allClears++;
+    const gained = Math.round(ALL_CLEAR_BONUS * streakMultiplier(Math.max(1, this.streak)));
     this.score += gained;
     return gained;
   }

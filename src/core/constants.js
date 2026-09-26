@@ -92,9 +92,15 @@ export const TRAY_RETRIES = 40;
 // ===== スコア（調整用） =====
 export const SCORE_PER_CELL_PLACED = 1;
 export const SCORE_PER_GOAL = 100;          // ゴールへ入った1個
-export const CHAIN_MULTIPLIERS = [1, 1, 1.5, 2, 3, 4, 6, 8, 10, 13, 16, 20];
+/** 連鎖倍率（index = 連鎖数）。2連鎖目から伸び、長い連鎖ほど大きく跳ねる */
+export const CHAIN_MULTIPLIERS = [1, 1, 2, 3, 5, 8, 12, 16, 20, 25, 30, 40, 50];
 export const chainMultiplier = (chain) => CHAIN_MULTIPLIERS[Math.min(chain, CHAIN_MULTIPLIERS.length - 1)];
-export const streakMultiplier = (streak) => 1 + Math.min(streak - 1, 8) * 0.25;
+/** 連続発動ターン(COMBO)倍率: 1ターン増えるごとに +0.5、COMBO 11 で最大 ×6 */
+export const STREAK_STEP = 0.5;
+export const STREAK_CAP = 10;
+export const streakMultiplier = (streak) => 1 + Math.min(Math.max(0, streak - 1), STREAK_CAP) * STREAK_STEP;
+/** 全消し（ALL CLEAR）のボーナス。そのターンの COMBO 倍率も掛ける */
+export const ALL_CLEAR_BONUS = 5000;
 
 // ===== アニメーション時間（ms・調整用） =====
 export const ANIM = {

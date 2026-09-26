@@ -1,11 +1,13 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609252223';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609252223';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609252223';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609252223';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609252223';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609252223';
-import * as Sim from '../src/core/sim.js?v=202609252223';
-import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS } from '../src/core/constants.js?v=202609252223';
+import { Board, createBlock } from '../src/core/board.js?v=202609260706';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609260706';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609260706';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609260706';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609260706';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609260706';
+import * as Sim from '../src/core/sim.js?v=202609260706';
+import { ScoreManager } from '../src/core/score.js?v=202609260706';
+import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609260706';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -576,6 +578,7 @@ function findPlay(board, tray, goal) {
   const play = ok && findPlay(g.board, g.tray, (s) => Sim.blocks(s) === 0);
   for (const m of play || []) { last = g.placePiece(m.slot, m.ox, m.oy); placed++; }
   eq([ok && !!play, last?.allClear, placed >= 6], [true, true, true], `手順どおり ${placed} 個置いたところで ALL CLEAR`);
+  eq(last?.allClearBonus >= ALL_CLEAR_BONUS && g.score.allClears >= 1, true, '全消しでボーナスが入る');
 }
 {
   // 計画と違う置き方をしたら、そこで計画はおしまい（探し直して助けない）
@@ -653,6 +656,7 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
   const play = ok && findPlay(g.board, g.tray, (s) => Sim.blocks(s) === 0);
   for (const m of play || []) { last = g.placePiece(m.slot, m.ox, m.oy); placed++; }
   eq([ok && !!play, last?.allClear, placed >= 6], [true, true, true], `手順どおり ${placed} 個置いたところで ALL CLEAR`);
+  eq(last?.allClearBonus >= ALL_CLEAR_BONUS && g.score.allClears >= 1, true, '全消しでボーナスが入る');
 }
 {
   // 手順と違う置き方をしたら、そこで計画はおしまい（探し直して助けない）
@@ -731,6 +735,19 @@ console.log('ゲーム進行');
   await placeAny(1); await placeAny(2);
   eq(g.tray.filter(Boolean).length, 3, '使い切ったら3つ補充');
   eq(g.score.score > 0, true, 'スコアが入る');
+}
+
+console.log('スコア倍率');
+{
+  eq([1, 2, 3, 4, 5, 8, 12, 99].map(chainMultiplier), [1, 2, 3, 5, 8, 20, 50, 50], '連鎖倍率');
+  eq([1, 2, 3, 5, 11, 20].map(streakMultiplier), [1, 1.5, 2, 3, 6, 6], 'COMBO 倍率（最大 ×6）');
+  const s = new ScoreManager();
+  s.streak = 2;                                              // このターンで COMBO 3
+  eq(s.addStep({ goals: 2, chain: 3 }), 2 * 100 * 3 * 2, '3連鎖目・COMBO 3 のゴール2個');
+  s.endTurn(true);
+  eq(s.addAllClear(), ALL_CLEAR_BONUS * 2, '全消しボーナスにも COMBO 倍率');
+  const t = new ScoreManager(); t.endTurn(true);
+  eq(t.addAllClear(), ALL_CLEAR_BONUS, 'COMBO 1 の全消しはボーナスそのまま');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
