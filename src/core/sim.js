@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells } from './constants.js?v=202609261155';
+import { SIZE, isInside, lineCells } from './constants.js?v=202609261436';
 
 /**
  * 探索用の軽い盤面（手駒の組み合わせ探索・全消しの計画で何万回も試すため）。
@@ -42,6 +42,12 @@ function empty(s, i) {
 
 /** ライン(kind 'col' | 'row', n) にあるブロックの数 */
 export const lineCount = (s, kind, n) => s[cntAt(kind === 'col' ? 0 : 1, n)];
+/** 満杯のライン一覧 [{kind, n}]（Board.fullLines と同じ並び: 縦 1…8 → 横 1…8） */
+export function fullLines(s) {
+  const out = [];
+  for (const kind of ['col', 'row']) for (let n = 1; n <= SIZE; n++) if (lineCount(s, kind, n) === n) out.push({ kind, n });
+  return out;
+}
 
 export function blocks(s) {
   let n = 0;
@@ -173,6 +179,8 @@ function nextActivation(s) {
   const lenCol = chainFrom(s, K.col, c), lenRow = chainFrom(s, K.row, r);
   return lenRow > lenCol ? [K.row, r] : [K.col, c];     // 同じなら縦
 }
+/** ライン(kind 'col' | 'row', n) を発動してから連鎖が終わるまでの発動回数（そのライン自身を含む。mancala.decide 用） */
+export const chainIfActivated = (s, kind, n) => chainFrom(s, K[kind], n);
 const memo = new Map();
 function chainFrom(s, kind, n) {
   const b = s.slice();

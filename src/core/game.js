@@ -1,17 +1,17 @@
-import { Board } from './board.js?v=202609261155';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609261155';
-import { ScoreManager } from './score.js?v=202609261155';
-import { nextActivation, lineMoves } from './mancala.js?v=202609261155';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609261155';
-import * as Sim from './sim.js?v=202609261155';
-import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609261155';
-import { bestMove } from './advisor.js?v=202609261155';
+import { Board } from './board.js?v=202609261436';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609261436';
+import { ScoreManager } from './score.js?v=202609261436';
+import { nextActivation, lineMoves } from './mancala.js?v=202609261436';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609261436';
+import * as Sim from './sim.js?v=202609261436';
+import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609261436';
+import { bestMove } from './advisor.js?v=202609261436';
 import {
-  TRAY_SIZE, CHAIN_PIECE_RATE, FIT_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
+  SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609261155';
+} from './constants.js?v=202609261436';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -21,23 +21,72 @@ import {
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 
 export class Game {
-  constructor({ random = Math.random, hooks = {} } = {}) {
+  /**
+   * dealer: 手駒の決め方（spawnTray）を別スレッドで動かすもの（{ reset(), deal(cells) → Promise }。ui/tray-dealer.js）。
+   * 手駒を決める探索は時間で打ち切る作りで、1回に 100ms 近くかかることがある。このスレッドで動かすと、その間は
+   * 置いたピースの表示も連鎖の再生も止まるので、画面では別スレッドに任せる。決め方のコードは同じ（dealer.js が
+   * このクラスの spawnTray をそのまま使う）。無ければ今までどおり、このスレッドで同期的に決める（テストなど）
+   */
+  constructor({ random = Math.random, hooks = {}, dealer = null } = {}) {
     this.generator = new PieceGenerator(random);
     this.hooks = hooks;
+    this.dealer = dealer;
+    this.dealSeq = 0;             // 新しいゲームにするたびに増やす（前のゲームの手駒が後から届いても使わない）
     this.reset();
+  }
+
+  /** 手駒を決めることだけに使う Game（盤面は使う側が毎回入れる。最初の手駒は配らない。dealer.js） */
+  static forDealing(random = Math.random) {
+    const g = Object.create(Game.prototype);
+    g.generator = new PieceGenerator(random);
+    g.hooks = {};
+    g.dealer = null;
+    g.board = new Board();
+    g.resetDealing();
+    return g;
   }
 
   reset() {
     this.board = new Board();
     this.score = new ScoreManager();
+    this.resetDealing();
+    this.dealSeq++;
+    if (this.dealer) {
+      // 最初の手駒も別スレッドで決める（決まるまでトレイは空。届いたら hooks.onTray）
+      this.dealer.reset();
+      this.tray = new Array(TRAY_SIZE).fill(null);
+      this.trayReady = this.dealAsync(true);
+    } else this.tray = this.spawnTray();
+    this.gameOver = false;
+  }
+
+  /** 手駒の決め方の状態（全消しの計画・ループの判定の履歴など）を最初に戻す */
+  resetDealing() {
     this.planTray = null;         // 今のトレイで、全消しの手順どおりにまだ置いていない手 [{ name, ox, oy }]
     this.plan = null;             // 全消しの計画の続き { key: ここまで手順どおりに置いた盤面, rest: 残りの手順 }
     this.wantAllClear = false;    // 全消しのチャンスを引いたが、まだ手順が見つかっていない
     this.wantTight = false;       // 置き方の少ない組み合わせのチャンスを引いたが、まだ見つかっていない
     this.history = new Set();     // これまでに手駒を配った時の盤面（ループの判定用）
     this.lastLineup = null;       // 直前に配った手駒の決め方（デバッグ・テスト用）
-    this.tray = this.spawnTray();
-    this.gameOver = false;
+  }
+
+  /**
+   * 今の盤面で、別スレッドに手駒を決めてもらう。届いたら tray・planTray を入れ替え、（補充なら）詰みを判定して
+   * hooks.onTray を呼ぶ。返り値は届いた時に { gameOver } になる Promise（その間に新しいゲームになったら null）
+   */
+  dealAsync(initial) {
+    const seq = this.dealSeq;
+    const cells = [];
+    for (const { x, r } of this.board.entries()) cells.push(r * SIZE + x);
+    return this.dealer.deal(cells).then((res) => {
+      if (seq !== this.dealSeq) return null;
+      this.tray = res.names.map((name) => new Piece(name));
+      this.planTray = res.planTray;
+      this.lastLineup = res.lastLineup;
+      if (!initial && !this.hasMove()) this.gameOver = true;     // 同期のときと同じく、補充のときだけ詰みを判定する
+      this.hooks.onTray?.({ initial, gameOver: this.gameOver });
+      return { gameOver: this.gameOver };
+    });
   }
 
   canPlace(slot, ox, oy) {
@@ -71,19 +120,22 @@ export class Game {
     const allClear = steps.length > 0 && this.board.totalBlocks() === 0;
     const allClearBonus = allClear ? this.score.addAllClear() : 0;
 
-    let refilled = false;
+    let refilled = false, trayReady = null;
     if (this.tray.every((p) => !p)) {
       this.planTray = null;
-      this.tray = this.spawnTray();
+      if (this.dealer) trayReady = this.dealAsync(false);     // 別スレッドで決める（詰みの判定は届いてから）
+      else this.tray = this.spawnTray();
       refilled = true;
     }
-    if (!this.hasMove()) this.gameOver = true;
+    if (!trayReady && !this.hasMove()) this.gameOver = true;
 
     const turn = {
       slot, piece, placed, steps, refilled, scoreAfterPlace, fit, rect, fitBonus,
       allClear, allClearBonus,
       score: this.score.score, streak: this.score.streak, gameOver: this.gameOver,
     };
+    // 手駒を別スレッドで決めているときは、届いた時に解決する（その時に gameOver を入れ直す）
+    if (trayReady) turn.trayReady = trayReady.then((r) => { if (r) turn.gameOver = r.gameOver; return r; });
     this.hooks.onTurn?.(turn);
     return turn;
   }
@@ -345,12 +397,32 @@ export class Game {
    */
   hint() {
     if (this.gameOver) return null;
+    const planned = this.planHint();
+    if (planned) return planned;
+    const m = bestMove(this.board, this.tray);
+    return m && { ...m, plan: false };
+  }
+
+  /** 全消しの手順どおりの次の手（今のトレイで置けるもの）。無ければ null */
+  planHint() {
     for (const m of this.planTray ?? []) {
       const slot = this.tray.findIndex((p) => p?.name === m.name);
       if (slot >= 0 && this.board.canPlace(this.tray[slot], m.ox, m.oy)) return { slot, ox: m.ox, oy: m.oy, plan: true };
     }
-    const m = bestMove(this.board, this.tray);
-    return m && { ...m, plan: false };
+    return null;
+  }
+
+  /**
+   * hint と同じ答えを Promise で返す。総当たり（bestMove）は dealer があれば別スレッドで行う
+   * （時間の上限つきの総当たりで、画面を止めないように）。dealer が無ければ hint と同じくこの場で
+   */
+  hintAsync() {
+    if (this.gameOver || !this.dealer) return Promise.resolve(this.hint());
+    const planned = this.planHint();
+    if (planned) return Promise.resolve(planned);
+    const cells = [];
+    for (const { x, r } of this.board.entries()) cells.push(r * SIZE + x);
+    return this.dealer.hint(cells, this.tray.map((p) => p && p.name)).then((m) => m && { ...m, plan: false });
   }
 
   hasMove() {

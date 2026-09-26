@@ -1,5 +1,6 @@
-import { Board } from './board.js?v=202609261155';
-import { KIND_PRIORITY } from './constants.js?v=202609261155';
+import { Board } from './board.js?v=202609261436';
+import * as Sim from './sim.js?v=202609261436';
+import { KIND_PRIORITY } from './constants.js?v=202609261436';
 
 /**
  * ライン(kind, n) の発動を1move ずつ進めるジェネレータ。縦列・横列で完全に同じ処理。
@@ -57,12 +58,14 @@ export function decide(board) {
   };
   const col = minOf('col'), row = minOf('row');
   if (!col || !row) return { act: col ?? row, tie: false };
-  const lenCol = chainFrom(board, col), lenRow = chainFrom(board, row);
+  // 連鎖数の読みは探索用の軽い盤面で（盤面の複製を何度も作ると、長い連鎖で重くなる。結果は同じ: テストで確認）
+  const s = Sim.fromBoard(board);
+  const lenCol = Sim.chainIfActivated(s, 'col', col.n), lenRow = Sim.chainIfActivated(s, 'row', row.n);
   if (lenRow > lenCol) return { act: row, tie: false };
   return { act: col, tie: lenRow === lenCol };
 }
 
-/* 連鎖数シミュレーション（盤面ごとにメモ化） */
+/* 連鎖数シミュレーション（盤面ごとにメモ化）。decide は sim.js の同じ計算を使う（こちらは互換のために残す） */
 const memo = new Map();
 const keyOf = (board) => board.grid.map((row) => row.map((v) => (v ? 1 : 0)).join('')).join('');
 /** act を発動してから連鎖が終わるまでの発動回数（act 自身を含む） */

@@ -209,7 +209,9 @@ button{font-family:inherit;cursor:pointer;}
 .pop.t3{--tc:var(--gold);font-size:35px;}
 .pop.t4{--tc:#ff9ad6;font-size:38px;}
 /* 最高段階は、主な文字の色がブロックの7色を順に移っていく（説明の小さい文字は白） */
-.pop.t5{--tc:#fff;font-size:40px;animation:popText 1000ms cubic-bezier(.2,.9,.3,1),rainbow 1400ms linear infinite;}
+/* 色の移り変わりは1周だけ（文字は popText の 1000ms で消えるので、それより後は見えない。
+   infinite にすると、消えた後も毎フレーム色の計算と描き直しが続いて全体が重くなる） */
+.pop.t5{--tc:#fff;font-size:40px;animation:popText 1000ms cubic-bezier(.2,.9,.3,1),rainbow 1400ms linear;}
 @keyframes rainbow{0%,100%{color:#ff7a92}16%{color:#ffb35a}33%{color:#ffe45c}50%{color:#7ff0a4}66%{color:#7fe6ff}83%{color:#c29bff}}
 
 /* 連続発動（COMBO）: 盤面の上に白と金の文字 */

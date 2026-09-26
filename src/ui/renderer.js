@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609261155';
-import { Shards } from './shards.js?v=202609261155';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609261436';
+import { Shards } from './shards.js?v=202609261436';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -235,9 +235,11 @@ export class Renderer {
     return el;
   }
   setPos(el, p, dur = 0, ease = '') {
-    el.style.setProperty('--t', dur + 'ms');
-    el.style.setProperty('--e', ease || 'cubic-bezier(.2,.8,.3,1)');
-    el.style.transform = `translate(${p.x}px,${p.y}px)`;
+    // 前と同じ値は書き込まない（連鎖の再生中は毎フレーム呼ばれるので、同じ値の書き込みもスタイルの計算し直しになる）
+    const t = dur + 'ms', e = ease || 'cubic-bezier(.2,.8,.3,1)', tf = `translate(${p.x}px,${p.y}px)`;
+    if (el.__t !== t) { el.style.setProperty('--t', t); el.__t = t; }
+    if (el.__e !== e) { el.style.setProperty('--e', e); el.__e = e; }
+    if (el.__tf !== tf) { el.style.transform = tf; el.__tf = tf; }
     el.__pos = p;
   }
   removeEl(id) {
@@ -264,8 +266,9 @@ export class Renderer {
     placed.forEach(({ block, x, r }, i) => {
       const el = this.ensureEl(block);
       this.setPos(el, this.pos(x, r), 0);
-      el.classList.remove('pop-in');
-      void el.offsetWidth;
+      // 弾みのアニメを最初からやり直すのは、前の弾みが残っているときだけ（置いたブロックは新しい要素なので普通は無い。
+      // offsetWidth を読むと、そのたびにページ全体のスタイルとレイアウトを計算し直すことになる）
+      if (el.classList.contains('pop-in')) { el.classList.remove('pop-in'); void el.offsetWidth; }
       el.style.setProperty('--d', i * 18 + 'ms');
       el.classList.add('pop-in');
       clearTimeout(el.__landT);
@@ -545,7 +548,7 @@ export class Renderer {
     for (const block of list) {
       const el = this.els.get(block.id);
       if (!el) continue;
-      el.style.setProperty('--t', '0ms');
+      el.style.setProperty('--t', '0ms'); el.__t = '0ms';
       if (this.rush) { this.removeEl(block.id); continue; }
       el.classList.add('fly');
       setTimeout(() => this.removeEl(block.id), 220);

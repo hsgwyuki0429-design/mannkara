@@ -1,12 +1,12 @@
-import { Game } from '../core/game.js?v=202609261155';
-import { Board } from '../core/board.js?v=202609261155';
-import { resolveChains } from '../core/mancala.js?v=202609261155';
-import * as Sim from '../core/sim.js?v=202609261155';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609261155';
-import { Renderer, delay } from './renderer.js?v=202609261155';
-import { Sfx } from './sfx.js?v=202609261155';
-import { Scenes } from './scenes.js?v=202609261155';
-import { colorOf } from './palette.js?v=202609261155';
+import { Game } from '../core/game.js?v=202609261436';
+import { Board } from '../core/board.js?v=202609261436';
+import * as Sim from '../core/sim.js?v=202609261436';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609261436';
+import { Renderer, delay } from './renderer.js?v=202609261436';
+import { Sfx } from './sfx.js?v=202609261436';
+import { Scenes } from './scenes.js?v=202609261436';
+import { colorOf } from './palette.js?v=202609261436';
+import { TrayDealer } from './tray-dealer.js?v=202609261436';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -70,10 +70,19 @@ const catchUpSpeed = () => Math.min(CATCH_UP_MAX, CATCH_UP + (performance.now() 
 let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
+/** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609261436', import.meta.url));
 const game = new Game({
+  dealer,
   hooks: {
+    /** 別スレッドで決めた手駒が届いた（initial = ゲームの最初の手駒） */
+    onTray({ initial }) {
+      renderTray(true);
+      if (initial) { updateDanger(); updateHint(); }
+      else sfx.refill();
+    },
     onTurn(turn) {
-      // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように）
+      // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように。補充の手駒は届いたら onTray で出す）
       sfx.place();
       turn.seq = ++turnSeq;
       // 穴にぴったり・凹みを埋めて長方形: 置いた瞬間に手応え（連鎖の文字が出ればそちらで上書き）
@@ -85,9 +94,10 @@ const game = new Game({
       // ルールは置いた瞬間に確定しているので、遅れた表示のまま新しいピースを出すと古いブロックに重なって見える
       if (pending > 0) { rushBefore = turn.seq; renderer.setRush(true); }
       renderer.popIn(turn.placed);
-      renderer.clearHint();
-      renderTray(turn.refilled);
-      if (turn.refilled) sfx.refill();
+      dropHint();
+      const refilledNow = turn.refilled && !turn.trayReady;
+      renderTray(refilledNow);
+      if (refilledNow) sfx.refill();
       updateDebug();
       pending++;
       const gen = generation;
@@ -150,6 +160,8 @@ async function playTurn(turn) {
     sfx.fanfare();
   }
   showScore(turn.score);
+  // 補充の手駒を別スレッドで決めているときは、届いてから（詰みの判定・ピンチ・おすすめは手駒で決まる）
+  if (turn.trayReady) { await turn.trayReady; if (stale()) return; }
   updateDanger();
   if (pending <= 1) updateHint();                  // 再生待ちが無くなったら、次のおすすめを出す
   if (turn.gameOver) {
@@ -189,8 +201,10 @@ function showScore(v, bump = false) {
   const frame = (now) => {
     const p = dur ? Math.min(1, (now - t0) / dur) : 1;
     const cur = Math.round(from + (v - from) * (1 - Math.pow(1 - p, 3)));
-    s.textContent = cur.toLocaleString('en-US');
-    $('best').textContent = Math.max(best, cur);
+    // 同じ文字の書き込みでも文字の置き換え（レイアウトと描き直し）になるので、変わったときだけ書く
+    const txt = cur.toLocaleString('en-US'), bestTxt = String(Math.max(best, cur)), bestEl = $('best');
+    if (s.textContent !== txt) s.textContent = txt;
+    if (bestEl.textContent !== bestTxt) bestEl.textContent = bestTxt;
     if (p < 1) rollRaf = requestAnimationFrame(frame);
   };
   frame(t0);
@@ -236,13 +250,24 @@ function pieceScreenCenter(piece, s) {
   }
   return { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
 }
-function renderTray(enter = false) {
-  const wrap = $('tray');
-  wrap.innerHTML = '';
+/**
+ * トレイの1枠の大きさ。測るとレイアウトの計算し直しになるので、トレイの大きさが変わったとき（画面の回転・リサイズ）だけ測り直す
+ */
+let slotBoxCache = null;
+function measureSlotBox(wrap) {
+  if (slotBoxCache) return slotBoxCache;
   const cols = wrap.clientWidth ? getComputedStyle(wrap) : null;
   const gap = cols ? parseFloat(cols.columnGap) || 0 : 0;
   const pad = cols ? parseFloat(cols.paddingLeft) + parseFloat(cols.paddingRight) : 0;
-  const slotBox = { width: (wrap.clientWidth - pad - gap * 2) / 3, height: wrap.clientHeight };
+  const box = { width: (wrap.clientWidth - pad - gap * 2) / 3, height: wrap.clientHeight };
+  if (wrap.clientWidth) slotBoxCache = box;                 // まだ並んでいない（幅 0）ときは覚えない
+  return box;
+}
+try { new ResizeObserver(() => { slotBoxCache = null; }).observe($('tray')); } catch {}
+function renderTray(enter = false) {
+  const wrap = $('tray');
+  const slotBox = measureSlotBox(wrap);                     // 中身を消す前に測る（消した後だと、その場でレイアウトの計算になる）
+  wrap.innerHTML = '';
   game.tray.forEach((piece, i) => {
     const slot = document.createElement('div');
     slot.className = 'slot' + (enter ? ' enter' : '') + (drag?.slot === i ? ' dragging' : '');
@@ -273,13 +298,18 @@ function renderTray(enter = false) {
 /* ---------- ドラッグ ---------- */
 let drag = null; // { slot, piece, lift, ox, oy, valid, chain, pointerId, x, y }
 
+/**
+ * 仮置きの情報: 消えるラインとそのマス・連鎖数・穴へのはまり方。
+ * 盤面の複製（ブロックごとの複製と連鎖のシミュレーション）は重いので、探索用の軽い盤面（sim.js）で計算する
+ * （満杯のライン・連鎖数は本体の盤面と同じになる。テストで確認している）
+ */
 function previewInfo(piece, ox, oy) {
-  const fit = Sim.fitOf(Sim.fromBoard(game.board), piece.cells, ox, oy);
-  const b = game.board.clone();
-  b.place(piece, ox, oy);
-  const lines = b.fullLines();
+  const s = Sim.fromBoard(game.board);
+  const fit = Sim.fitOf(s, piece.cells, ox, oy);
+  Sim.place(s, piece.cells, ox, oy);
+  const lines = Sim.fullLines(s);
   const cells = lines.flatMap(({ kind, n }) => lineCells(kind, n));
-  const chain = resolveChains(b).length;
+  const chain = Sim.resolveAll(s);
   return { cells, chain, lines, fit };
 }
 
@@ -291,6 +321,10 @@ function renderDragPiece(fx, fy) {
   const { piece, lift } = drag;
   const c = renderer.cell;
   const layer = $('dragLayer');
+  const cx = fx, cy = fy - lift;
+  // 盤面の位置は、ピースを動かす（書き込む）前に読む。書いた後に読むと、そのたびにレイアウトの計算し直しになる
+  // （ドラッグ中のピースは盤面の外の層なので、動かしても盤面の位置は変わらない）
+  const local = renderer.clientToLocal(cx, cy);
   if (!layer.childElementCount) {
     layer.style.transform = renderer.boardTransform();
     for (const cc of piece.cells) {
@@ -301,10 +335,9 @@ function renderDragPiece(fx, fy) {
       layer.appendChild(d);
     }
   }
-  const cx = fx, cy = fy - lift;
   layer.style.left = cx + 'px';
   layer.style.top = cy + 'px';
-  return renderer.clientToLocal(cx, cy);
+  return local;
 }
 
 /**
@@ -389,7 +422,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   sfx.pick();
   const lift = e.pointerType === 'mouse' ? 0 : renderer.cell * (1.2 + Math.max(piece.width, piece.height) * 0.5);
   drag = { slot, piece, lift, ox: null, oy: null, valid: false, chain: 0, pointerId: e.pointerId, x: e.clientX, y: e.clientY, t0: performance.now() };
-  renderer.clearHint();
+  dropHint();
   slotEl.classList.add('dragging');
   $('dragLayer').innerHTML = '';
   updateDrag(e);
@@ -419,14 +452,25 @@ window.addEventListener('pagehide', () => saveBest());
  * 学習モードでは、次に置くとよいピースと場所を光らせる（Game.hint: 全消しの手順中はその手順、
  * それ以外は今の盤面での総当たり）。スコアとベストスコアは通常モードとは別
  */
+let hintSeq = 0;               // おすすめを頼んだ回数（答えが届くまでに状況が変わったら、その答えは出さない）
 function updateHint() {
-  document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
-  if (mode !== 'learn' || game.gameOver || drag || pending > 1) { renderer.clearHint(); return; }
-  const h = game.hint();
-  if (!h) { renderer.clearHint(); return; }
-  renderer.showHint(game.tray[h.slot], h.ox, h.oy, h.plan);
-  document.querySelector(`.slot[data-slot="${h.slot}"]`)?.classList.add('hinted');
+  const seq = ++hintSeq;
+  if (mode !== 'learn' || game.gameOver || drag || pending > 1) {
+    document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
+    renderer.clearHint();
+    return;
+  }
+  // 総当たりは別スレッドで（Game.hintAsync。答えは Game.hint と同じ）
+  game.hintAsync().then((h) => {
+    if (seq !== hintSeq || drag || game.gameOver) return;
+    document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
+    if (!h) { renderer.clearHint(); return; }
+    renderer.showHint(game.tray[h.slot], h.ox, h.oy, h.plan);
+    document.querySelector(`.slot[data-slot="${h.slot}"]`)?.classList.add('hinted');
+  });
 }
+/** おすすめを消す（頼んでいる途中の答えも出さない） */
+function dropHint() { hintSeq++; renderer.clearHint(); }
 function applyMode() {
   const learn = mode === 'learn';
   document.body.classList.toggle('learn', learn);
@@ -519,11 +563,20 @@ function restart() {
 applyMode();
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); saveBest(); restart(); });
 window.addEventListener('resize', () => {
+  slotBoxCache = null;
   renderTray();
   // 持っているピースはマスの大きさが変わったので作り直す（盤面は renderer が先に合わせ直している）
   if (drag) { $('dragLayer').innerHTML = ''; drag.ox = null; updateDrag({ clientX: drag.x, clientY: drag.y }); }
 });
 restart();
+// 宝石のかけらの絵（7色）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
+// まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
+{
+  const jobs = [...renderer.shardLayer.warmJobs(), ...scenes.warmJobs()];
+  const idle = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 2000 }) : (f) => setTimeout(f, 120);
+  const next = () => { const job = jobs.shift(); if (!job) return; job(); idle(next); };
+  setTimeout(() => idle(next), 300);
+}
 window.__booted = true;
 window.__game = game;
 window.__renderer = renderer;
