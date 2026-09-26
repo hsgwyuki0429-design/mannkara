@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260952';
-import { Shards } from './shards.js?v=202609260952';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609261121';
+import { Shards } from './shards.js?v=202609261121';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -524,10 +524,9 @@ export class Renderer {
     if (!this.rush) this.bounce([[0, 1], [0.3, 1.012], [0.6, 0.997], [1, 1]], 220);
   }
 
-  /** 配られたブロックがラインの中で止まった: ぽよんと弾み、小さな音 */
+  /** 配られたブロックがラインの中で止まった: 小さな音だけ（弾ませない） */
   settle(el, p, color, i = 0) {
     if (this.rush) return;
-    el.animate([{ scale: '1.18 .82' }, { scale: '.94 1.06', offset: 0.45 }, { scale: '1' }], { duration: 260, easing: 'ease-out' });
     this.sfx?.settle?.(i);
   }
 
