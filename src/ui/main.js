@@ -1,12 +1,12 @@
-import { Game } from '../core/game.js?v=202609260809';
-import { Board } from '../core/board.js?v=202609260809';
-import { resolveChains } from '../core/mancala.js?v=202609260809';
-import * as Sim from '../core/sim.js?v=202609260809';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609260809';
-import { Renderer, delay } from './renderer.js?v=202609260809';
-import { Sfx } from './sfx.js?v=202609260809';
-import { Scenes } from './scenes.js?v=202609260809';
-import { colorOf } from './palette.js?v=202609260809';
+import { Game } from '../core/game.js?v=202609260952';
+import { Board } from '../core/board.js?v=202609260952';
+import { resolveChains } from '../core/mancala.js?v=202609260952';
+import * as Sim from '../core/sim.js?v=202609260952';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609260952';
+import { Renderer, delay } from './renderer.js?v=202609260952';
+import { Sfx } from './sfx.js?v=202609260952';
+import { Scenes } from './scenes.js?v=202609260952';
+import { colorOf } from './palette.js?v=202609260952';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();

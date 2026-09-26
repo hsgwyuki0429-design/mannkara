@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260809';
-import { Shards } from './shards.js?v=202609260809';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260952';
+import { Shards } from './shards.js?v=202609260952';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -623,28 +623,10 @@ export class Renderer {
   /** マス中心のローカル px -> rotWrap 内の座標 */
   cellCenter(p) { return this.localToWrap(p.x + this.cell / 2, p.y + this.cell / 2); }
 
-  /** ラインの発動: 盤面が揺れ、大きな連鎖では画面がぐっと寄る（光や粒は出さない）。3連鎖目からは盤面のブロックが波打つ */
+  /** ラインの発動: 盤面が揺れ、大きな連鎖では画面がぐっと寄る（光や粒は出さない） */
   lineBlast(kind, n, color = 'yellow', chain = 1, moving = [], before = null) {
     this.shake(Math.min(2 + chain * 1.2, 11), 180 + Math.min(chain, 8) * 20);
     if (chain >= 4) this.punch(Math.min(0.01 + chain * 0.003, 0.035));
-    if (chain >= 3 && this.q >= 0.75 && before) this.ripple(before, kind, SIZE - n, Math.min(0.04 + chain * 0.01, 0.1), new Set(moving.map((b) => b.id)));
-  }
-
-  /**
-   * 盤面のブロックが、発動したラインから外へ向かって順にぽよんと沈んで戻る（波紋を線ではなく動きで）。
-   * 動かすのは各ブロックの scale だけ（合成だけで済む）
-   */
-  ripple(snap, kind, at, amount, skip = new Set()) {
-    if (reducedMotion()) return;
-    // snap = この発動の直前に見えている盤面（this._board は連鎖の最後まで進んだ状態なので使わない）
-    for (const [id, { x, r }] of snap) {
-      if (skip.has(id)) continue;
-      const el = this.els.get(id);
-      if (!el) continue;
-      const dist = Math.abs((kind === 'col' ? x : r) - at);
-      el.animate([{ scale: '1' }, { scale: `${1 - amount}` }, { scale: `${1 + amount * 0.35}` }, { scale: '1' }],
-        { duration: 300, delay: 40 + dist * 45, easing: 'ease-in-out' });
-    }
   }
 
   /** 画面が一瞬ぐっと寄って戻る（大きな連鎖の衝撃）。scale だけを動かす */
