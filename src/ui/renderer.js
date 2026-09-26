@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260805';
-import { Shards } from './shards.js?v=202609260805';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609260806';
+import { Shards } from './shards.js?v=202609260806';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -293,8 +293,6 @@ export class Renderer {
       d.style.transform = `translate(${(ox + cc.x) * c}px,${(oy + cc.y) * c}px)`;
       this.ghostLayer.appendChild(d);
     }
-    // 置くと長方形がそろう場所: その長方形を白い枠で囲む（消える列を見せるときは出さない）
-    if (fit?.rect && !willClear) this.ghostLayer.appendChild(this.rectFrame(fit.rect, 'rect-frame'));
     // 斜辺側の端から順に光が走り込むよう、少しずつ遅らせる
     const seen = new Set();
     for (const { x, r } of clearCells) {
