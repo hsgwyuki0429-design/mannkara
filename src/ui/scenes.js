@@ -1,4 +1,4 @@
-import { gemSprite } from './shards.js?v=202609261134';
+import { gemSprite } from './shards.js?v=202609261155';
 
 /**
  * 画面全体の演出（シーン）。盤面の外側まで使う、大きな色の変化のための層。
@@ -15,9 +15,6 @@ import { gemSprite } from './shards.js?v=202609261134';
  */
 const TAU = Math.PI * 2;
 const RAINBOW = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
-const clamp01 = (t) => Math.max(0, Math.min(1, t));
-/** 行き過ぎてから戻る（浮かび上がって止まる） */
-const easeOutBack = (t, c = 1.4) => 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
 
 export class Scenes {
   constructor({ sfx, colorOf } = {}) {
@@ -81,7 +78,6 @@ export class Scenes {
     if (from) this.burst(from.x + from.width / 2, from.y + from.height / 2, 16, 380);
     this.fountain(0);
     this.fountain(520);
-    this.spell('NEW BEST', { at: 120, popAt: 1900, row: 0.3 });
     this.kick();
   }
 
@@ -131,77 +127,6 @@ export class Scenes {
   /** コンボが5の倍数に届いた: 画面の下から桃〜青紫に染まる */
   comboWave() {
     if (this.quality() >= 0.45) this.wash('warm', 1500, 0.6);
-  }
-
-  /* =====================================================================
-   * 文字（新記録の風船）
-   * ===================================================================== */
-
-  /**
-   * 文字を1つずつ風船にして、下からふわっと浮かんで並ぶ。空白は間を空ける。
-   * at ms 後から少しずつずらして出し、popAt ms 後から左から順にはじける。row は止まる高さ（画面の上からの割合）
-   */
-  spell(text, { at = 0, popAt = 2000, row = 0.22 } = {}) {
-    const now = performance.now(), gen = this.gen;
-    const chars = [...text];
-    const slot = Math.min(50, (Math.min(this.W, 560) - 24) / chars.length);
-    const x0 = this.W / 2 - (slot * chars.length) / 2 + slot / 2;
-    const items = [];
-    let k = 0;
-    chars.forEach((ch, i) => {
-      if (ch === ' ') return;
-      items.push({
-        ch, color: RAINBOW[(k * 2 + 1) % RAINBOW.length], x: x0 + i * slot, size: slot * 0.96,
-        yT: this.H * row + (k % 2 ? 8 : -6), t0: now + at + k * 70, popAt: now + popAt + k * 85, ph: Math.random() * TAU, k,
-      });
-      k++;
-    });
-    this.actors.push({ draw: (t) => gen === this.gen && this.drawLetters(items, t) });
-    this.kick();
-  }
-
-  drawLetters(items, now) {
-    const f = this.fctx, H = this.H;
-    let alive = 0;
-    for (const it of items) {
-      if (now >= it.popAt) { this.popLetter(it, now); continue; }
-      items[alive++] = it;
-      if (now < it.t0) continue;
-      const t = clamp01((now - it.t0) / 1250);
-      const bob = Math.sin(now * 0.0032 + it.ph) * 4 * t;
-      const x = it.x + Math.sin(now * 0.0021 + it.ph) * 3;
-      const y = H + it.size + (it.yT - H - it.size) * easeOutBack(t) + bob;                  // 下から浮かんでくる
-      it.cx = x; it.cy = y;
-      const w = it.size, h = w * 1.25;
-      // ひもの代わりに、小さな丸が3つ連なってぶら下がる
-      for (let j = 1; j <= 3; j++) {
-        const sw = Math.sin(now * 0.004 + it.ph + j * 0.6) * 3 * j;
-        f.fillStyle = `rgba(255,255,255,${0.75 - j * 0.15})`;
-        f.beginPath(); f.arc(x + sw, y + h * 0.52 + j * w * 0.16, w * (0.07 - j * 0.012), 0, TAU); f.fill();
-      }
-      f.drawImage(this.balloon(it.color, it.ch), x - w / 2, y - h / 2, w, h);
-    }
-    items.length = alive;
-    return alive > 0;
-  }
-
-  /** 風船がはじける: 丸い粒が飛び散り、ポンと鳴る（割れるごとに音が上がる） */
-  popLetter(it, now) {
-    if (it.cx == null) return;
-    this.splash(it.cx, it.cy, it.size * 0.5, it.color);
-    this.sfx?.pop?.(it.k);
-  }
-
-  /** 風船が割れた: 風船の色（3個に1個はほかの色）のかけらがはじける */
-  splash(x, y, r, color) {
-    const n = Math.round(10 * this.quality()) + 4;
-    const now = performance.now();
-    for (let i = 0; i < n; i++) {
-      const a = (TAU * i) / n + Math.random() * 0.4, v = 140 + Math.random() * 200 + r * 3;
-      this.bits.push({ t0: now, life: 700 + Math.random() * 300, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80, g: 800,
-        size: Math.max(9, r * (0.5 + Math.random() * 0.25)), color: i % 3 === 2 ? RAINBOW[(i + 2) % RAINBOW.length] : color });
-    }
-    this.kick();
   }
 
   /* =====================================================================
@@ -281,41 +206,6 @@ export class Scenes {
   }
   canvas(w, h = w) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 
-  letter(g, ch, cx, cy, size, fill = '#fff', stroke = 'rgba(40,20,90,.35)') {
-    g.font = `900 ${size}px Nunito, "M PLUS Rounded 1c", sans-serif`;
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
-    g.strokeStyle = stroke; g.lineWidth = size * 0.13;
-    g.strokeText(ch, cx, cy);
-    g.fillStyle = fill;
-    g.fillText(ch, cx, cy);
-  }
-
-  /** 文字の書かれた風船 */
-  balloon(color, ch) {
-    return this.cached('balloon:' + color + ':' + ch, () => {
-      const c = this.colorOf(color), S = 2, img = this.canvas(64 * S, 80 * S), g = img.getContext('2d');
-      g.scale(S, S);
-      const body = g.createRadialGradient(22, 22, 3, 32, 34, 36);
-      body.addColorStop(0, c.hi); body.addColorStop(0.45, c.col); body.addColorStop(1, c.lo);
-      g.fillStyle = body;
-      g.beginPath();
-      g.moveTo(32, 66);
-      g.bezierCurveTo(12, 58, 4, 42, 5, 30);
-      g.bezierCurveTo(6, 13, 18, 3, 32, 3);
-      g.bezierCurveTo(46, 3, 58, 13, 59, 30);
-      g.bezierCurveTo(60, 42, 52, 58, 32, 66);
-      g.fill();
-      g.fillStyle = c.lo;                                      // 結び目（丸）
-      g.beginPath(); g.arc(32, 67, 3.2, 0, TAU); g.fill();
-      g.fillStyle = 'rgba(255,255,255,.55)';
-      g.beginPath(); g.ellipse(20, 19, 6.5, 9.5, -0.5, 0, TAU); g.fill();
-      g.fillStyle = 'rgba(255,255,255,.8)';
-      g.beginPath(); g.ellipse(17.5, 14.5, 2.2, 3.2, -0.5, 0, TAU); g.fill();
-      this.letter(g, ch, 32, 36, 31);
-      return img;
-    });
-  }
-
   /**
    * 虹色の絵（400px）: なめらかな色相の輪を、外側へ向かって透明にしたもの。
    * 扇形を並べるとつなぎ目が放射状の線に見えるので、conic グラデーション 1 枚で描き、丸いグラデーションで抜く
@@ -344,10 +234,5 @@ export class Scenes {
     });
   }
 
-  /** 文字の絵をフォントの読み込み後に作り直す（先に作ると別のフォントで描かれるため） */
-  async warm() {
-    try { await document.fonts?.load('900 31px Nunito'); } catch {}
-    for (const k of [...this.sprites.keys()]) if (/^balloon:/.test(k)) this.sprites.delete(k);
-  }
 }
 

@@ -1,19 +1,18 @@
-import { Game } from '../core/game.js?v=202609261134';
-import { Board } from '../core/board.js?v=202609261134';
-import { resolveChains } from '../core/mancala.js?v=202609261134';
-import * as Sim from '../core/sim.js?v=202609261134';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609261134';
-import { Renderer, delay } from './renderer.js?v=202609261134';
-import { Sfx } from './sfx.js?v=202609261134';
-import { Scenes } from './scenes.js?v=202609261134';
-import { colorOf } from './palette.js?v=202609261134';
+import { Game } from '../core/game.js?v=202609261155';
+import { Board } from '../core/board.js?v=202609261155';
+import { resolveChains } from '../core/mancala.js?v=202609261155';
+import * as Sim from '../core/sim.js?v=202609261155';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609261155';
+import { Renderer, delay } from './renderer.js?v=202609261155';
+import { Sfx } from './sfx.js?v=202609261155';
+import { Scenes } from './scenes.js?v=202609261155';
+import { colorOf } from './palette.js?v=202609261155';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
 const renderer = new Renderer(sfx);
 /** 画面全体の演出（新記録の風船・大連鎖やコンボの色の変化など。画面を覆う演出は使わない） */
 const scenes = new Scenes({ sfx, colorOf });
-scenes.warm();
 
 /* ---------- モード（通常 / 学習）とベストスコア（端末ごと・モードごとに別） ---------- */
 const MODE_KEY = 'stair-mancala-mode';
@@ -208,8 +207,8 @@ function showScore(v, bump = false) {
   if (!bestCelebrated && best > 0 && v > best) {
     bestCelebrated = true;
     const pill = document.querySelector('.best-pill');
-    // 盤面の上の大きな文字は出さない（風船の NEW BEST と重なるので、風船だけにする）
     scenes.newBest(pill?.getBoundingClientRect());
+    renderer.showText('NEW BEST!', 't5');
     sfx.fanfare();
     pill?.classList.add('beat');
     pill?.animate([{ scale: '1' }, { scale: '1.25', offset: 0.3 }, { scale: '.96', offset: 0.6 }, { scale: '1' }],

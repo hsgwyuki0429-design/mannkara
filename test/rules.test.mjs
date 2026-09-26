@@ -1,13 +1,13 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609261134';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609261134';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609261134';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609261134';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609261134';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609261134';
-import * as Sim from '../src/core/sim.js?v=202609261134';
-import { ScoreManager } from '../src/core/score.js?v=202609261134';
+import { Board, createBlock } from '../src/core/board.js?v=202609261155';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609261155';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609261155';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609261155';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609261155';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609261155';
+import * as Sim from '../src/core/sim.js?v=202609261155';
+import { ScoreManager } from '../src/core/score.js?v=202609261155';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609261134';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609261155';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
