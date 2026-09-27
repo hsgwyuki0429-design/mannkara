@@ -1,12 +1,12 @@
-import { Game } from '../core/game.js?v=202609270003';
-import { Board } from '../core/board.js?v=202609270003';
-import * as Sim from '../core/sim.js?v=202609270003';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270003';
-import { Renderer, delay } from './renderer.js?v=202609270003';
-import { Sfx } from './sfx.js?v=202609270003';
-import { Scenes } from './scenes.js?v=202609270003';
-import { colorOf } from './palette.js?v=202609270003';
-import { TrayDealer } from './tray-dealer.js?v=202609270003';
+import { Game } from '../core/game.js?v=202609270257';
+import { Board } from '../core/board.js?v=202609270257';
+import * as Sim from '../core/sim.js?v=202609270257';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270257';
+import { Renderer, delay } from './renderer.js?v=202609270257';
+import { Sfx } from './sfx.js?v=202609270257';
+import { Scenes } from './scenes.js?v=202609270257';
+import { colorOf } from './palette.js?v=202609270257';
+import { TrayDealer } from './tray-dealer.js?v=202609270257';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -109,13 +109,14 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270003', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270257', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
     /** 別スレッドで決めた手駒が届いた（initial = ゲームの最初の手駒） */
     onTray({ initial }) {
       renderTray(true);
+      saveGame();
       if (initial) { updateDanger(); updateHint(); }
       else sfx.refill();
     },
@@ -212,6 +213,8 @@ async function playTurn(turn) {
     const isBest = saveBest();
     $('finalScore').textContent = game.score.score.toLocaleString('en-US');
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best}`;
+    clearSave();
+    updateUndo();
     $('gameOver').classList.remove('hidden');
   }
 }
@@ -486,16 +489,21 @@ window.addEventListener('pointerup', (e) => {
   const { slot, ox, oy, valid } = drag;
   const overBoard = ox !== null && ox > -3 && oy > -3 && ox < SIZE + 1 && oy < SIZE + 1;
   endDrag();
-  if (valid) game.placePiece(slot, ox, oy);
+  if (valid) {
+    const before = undo.used ? null : game.exportState();
+    if (game.placePiece(slot, ox, oy) && before) undo.snap = before;
+    updateUndo();
+    saveGame();
+  }
   else { if (overBoard) sfx.invalid(); renderTray(); updateHint(); }
 });
 window.addEventListener('pointercancel', (e) => { if (mine(e)) cancelDrag(); });
 // アプリの切り替え・通知などで指が離れたのが届かないことがある。そのときは持っているピースを戻す
 window.addEventListener('blur', cancelDrag);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { cancelDrag(); saveBest(); }            // 途中でアプリを閉じてもベストスコアが残るように
+  if (document.hidden) { cancelDrag(); saveBest(); saveGame(); }  // 途中でアプリを閉じてもベストスコアと盤面が残るように
 });
-window.addEventListener('pagehide', () => saveBest());
+window.addEventListener('pagehide', () => { saveBest(); saveGame(); });
 
 /* ---------- 学習モード ---------- */
 /**
@@ -531,11 +539,12 @@ function applyMode() {
 $('btnLearn').addEventListener('click', () => {
   sfx.unlock();
   saveBest();                                      // 切り替える前のモードのベストを残してから
+  if (!pending) saveGame();                        // 切り替える前のモードの続きも残す（再生の途中なら、置いた時に残した分）
   mode = mode === 'learn' ? 'normal' : 'learn';
   try { localStorage.setItem(MODE_KEY, mode); } catch {}
   loadBest();
   applyMode();
-  restart();
+  startOrResume();
   renderer.showText(mode === 'learn' ? 'LEARN MODE' : 'NORMAL MODE', 't2');
 });
 
@@ -591,11 +600,65 @@ $('btnRunChain').addEventListener('click', () => {
   $('debugText').textContent += `\norder: ${trace.join(' -> ') || '(none)'}`;
 });
 
+/* ---------- 途中から再開・1手戻す ---------- */
+/**
+ * ゲームの途中の状態を端末に残し、次に開いたときはその盤面から続ける（説明などは出さない。モードごとに別）。
+ * 1手戻すは1ゲーム1回。置く直前の状態を覚えておき、戻したら使い切り（再開しても使ったことは残る）
+ */
+const saveKey = () => (mode === 'learn' ? 'stair-mancala-save-learn' : 'stair-mancala-save');
+let undo = { used: false, snap: null };
+function saveGame() {
+  try {
+    if (game.gameOver) { localStorage.removeItem(saveKey()); return; }
+    localStorage.setItem(saveKey(), JSON.stringify({ state: game.exportState(), undo }));
+  } catch {}
+}
+function clearSave() { try { localStorage.removeItem(saveKey()); } catch {} }
+function readSave() {
+  try { const d = JSON.parse(localStorage.getItem(saveKey()) || 'null'); return d?.state?.v === 1 && !d.state.gameOver ? d : null; } catch { return null; }
+}
+/** 状態 st の盤面・トレイ・スコアをそのまま画面に出す（再生の途中のものは打ち切る） */
+function showState(st) {
+  generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
+  endDrag();
+  game.importState(st);
+  renderer.reset();
+  scenes.clear();
+  renderer.bindBoard(game.board);
+  $('gameOver').classList.add('hidden');
+  renderTray(true);
+  updateHud();
+  bestCelebrated = best > 0 && game.score.score >= best;     // もう超えた記録で、もう一度お祝いしない
+  updateDanger();
+  updateDebug();
+  updateHint();
+  updateUndo();
+}
+function updateUndo() {
+  const ok = !undo.used && !!undo.snap;
+  $('btnUndo').disabled = !ok;
+  $('btnUndo').classList.toggle('off', !ok);
+  $('btnUndoOver').classList.toggle('hidden', !ok);
+}
+function doUndo() {
+  if (undo.used || !undo.snap || drag) return;
+  sfx.unlock();
+  const snap = undo.snap;
+  undo = { used: true, snap: null };
+  showState(snap);
+  sfx.pick();
+  saveGame();
+}
+$('btnUndo').addEventListener('click', doUndo);
+$('btnUndoOver').addEventListener('click', doUndo);
+
 /* ---------- 開始 ---------- */
 function restart() {
   // ベストスコアは呼ぶ側で残しておく（ここで残すと、モードを切り替えたときに前のモードの点数が新しいモードのベストになる）
   generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   bestCelebrated = false;
+  undo = { used: false, snap: null };
+  clearSave();
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
   endDrag();
@@ -609,6 +672,13 @@ function restart() {
   updateDanger();
   updateDebug();
   updateHint();
+  updateUndo();
+}
+/** 保存があればその盤面から、無ければ新しいゲーム */
+function startOrResume() {
+  const saved = readSave();
+  restart();
+  if (saved) { undo = saved.undo ?? { used: false, snap: null }; showState(saved.state); saveGame(); }
 }
 applyMode();
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); saveBest(); restart(); });
@@ -618,7 +688,7 @@ window.addEventListener('resize', () => {
   // 持っているピースはマスの大きさが変わったので作り直す（盤面は renderer が先に合わせ直している）
   if (drag) { $('dragLayer').innerHTML = ''; drag.ox = null; updateDrag({ clientX: drag.x, clientY: drag.y }); }
 });
-restart();
+startOrResume();
 // 宝石のかけらの絵（7色）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
 // まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
 {

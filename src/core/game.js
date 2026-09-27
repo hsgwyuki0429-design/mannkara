@@ -1,17 +1,17 @@
-import { Board } from './board.js?v=202609270003';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609270003';
-import { ScoreManager } from './score.js?v=202609270003';
-import { nextActivation, lineMoves } from './mancala.js?v=202609270003';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609270003';
-import * as Sim from './sim.js?v=202609270003';
-import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609270003';
-import { bestMove } from './advisor.js?v=202609270003';
+import { Board, createBlock } from './board.js?v=202609270257';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609270257';
+import { ScoreManager } from './score.js?v=202609270257';
+import { nextActivation, lineMoves } from './mancala.js?v=202609270257';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609270257';
+import * as Sim from './sim.js?v=202609270257';
+import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609270257';
+import { bestMove } from './advisor.js?v=202609270257';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609270003';
+} from './constants.js?v=202609270257';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -50,6 +50,7 @@ export class Game {
     this.board = new Board();
     this.score = new ScoreManager();
     this.resetDealing();
+    this.dealerState = null;      // dealer（別スレッド）が持っている手駒の決め方の状態の写し（保存・1手戻す用）
     this.dealSeq++;
     if (this.dealer) {
       // 最初の手駒も別スレッドで決める（決まるまでトレイは空。届いたら hooks.onTray）
@@ -82,11 +83,55 @@ export class Game {
       if (seq !== this.dealSeq) return null;
       this.tray = res.names.map((name) => new Piece(name));
       this.planTray = res.planTray;
+      this.dealerState = res.state ?? null;
       this.lastLineup = res.lastLineup;
       if (!initial && !this.hasMove()) this.gameOver = true;     // 同期のときと同じく、補充のときだけ詰みを判定する
       this.hooks.onTray?.({ initial, gameOver: this.gameOver });
       return { gameOver: this.gameOver };
     });
+  }
+
+  /**
+   * 今のゲームの状態（途中から再開・1手戻す用。JSON にできる形）。
+   * 盤面（位置と色）・トレイ・全消しの手順・スコア・詰み・手駒の決め方の状態（全消しの計画・ループの判定の履歴など）
+   */
+  exportState() {
+    const board = [];
+    for (const { block, x, r } of this.board.entries()) board.push([x, r, block.color]);
+    return {
+      v: 1, board, tray: this.tray.map((p) => p && p.name), planTray: this.planTray, score: { ...this.score },
+      gameOver: this.gameOver, dealing: this.dealingState(),
+    };
+  }
+
+  /** exportState で残した状態に戻す（トレイが空なら、その盤面で手駒を決め直す） */
+  importState(st) {
+    this.dealSeq++;                                            // 決めている途中の手駒が後から届いても使わない
+    this.board = new Board();
+    for (const [x, r, color] of st.board) this.board.set(x, r, createBlock(color));
+    this.tray = st.tray.map((name) => name && new Piece(name));
+    this.planTray = st.planTray ?? null;
+    this.score = Object.assign(new ScoreManager(), st.score);
+    this.gameOver = !!st.gameOver;
+    this.lastLineup = null;
+    this.trayReady = null;
+    const d = st.dealing;
+    if (this.dealer) {
+      this.dealerState = d ?? null;
+      if (d) this.dealer.load(d); else this.dealer.reset();
+    } else if (d) {
+      this.plan = d.plan; this.history = new Set(d.history); this.wantAllClear = d.wantAllClear; this.wantTight = d.wantTight;
+    }
+    if (!this.gameOver && this.tray.every((p) => !p)) {
+      if (this.dealer) this.trayReady = this.dealAsync(false);
+      else { this.tray = this.spawnTray(); if (!this.hasMove()) this.gameOver = true; }
+    }
+  }
+
+  /** 手駒の決め方の状態（全消しの計画・ループの判定の履歴・チャンスを引いたか） */
+  dealingState() {
+    if (this.dealer) return this.dealerState;
+    return { plan: this.plan, history: [...this.history], wantAllClear: this.wantAllClear, wantTight: this.wantTight };
   }
 
   canPlace(slot, ox, oy) {

@@ -1,8 +1,8 @@
-import { Game } from './game.js?v=202609270003';
-import { Piece } from './pieces.js?v=202609270003';
-import { bestMove } from './advisor.js?v=202609270003';
-import { Board } from './board.js?v=202609270003';
-import { SIZE } from './constants.js?v=202609270003';
+import { Game } from './game.js?v=202609270257';
+import { Piece } from './pieces.js?v=202609270257';
+import { bestMove } from './advisor.js?v=202609270257';
+import { Board } from './board.js?v=202609270257';
+import { SIZE } from './constants.js?v=202609270257';
 
 /**
  * 手駒の決め方（Game.spawnTray）だけを受け持つ。画面では Web Worker の中で動かす（dealer-worker.js）。
@@ -35,7 +35,18 @@ export class DealerCore {
     const tray = g.spawnTray();
     const lineup = g.lastLineup && { ...g.lastLineup };
     if (lineup?.tray) lineup.tray = lineup.tray.map((p) => p.name);   // Piece はそのまま送れないので名前だけ
-    return { names: tray.map((p) => p.name), planTray: g.planTray, lastLineup: lineup };
+    return { names: tray.map((p) => p.name), planTray: g.planTray, lastLineup: lineup, state: this.state() };
+  }
+
+  /** 手駒の決め方の状態（途中から再開・1手戻す用） */
+  state() {
+    const g = this.game;
+    return { plan: g.plan, history: [...g.history], wantAllClear: g.wantAllClear, wantTight: g.wantTight };
+  }
+  /** state() で残した状態に戻す */
+  load(st) {
+    const g = this.game;
+    g.plan = st.plan ?? null; g.history = new Set(st.history ?? []); g.wantAllClear = !!st.wantAllClear; g.wantTight = !!st.wantTight;
   }
 
   /** 学習モードのおすすめの総当たり（advisor.bestMove そのまま）。names = トレイの形の名前（使った枠は null） */

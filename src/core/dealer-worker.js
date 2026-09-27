@@ -1,4 +1,4 @@
-import { DealerCore } from './dealer.js?v=202609270003';
+import { DealerCore } from './dealer.js?v=202609270257';
 
 /**
  * 手駒の決め方と、学習モードのおすすめの総当たりを動かす Web Worker（ui/tray-dealer.js から使う）。
@@ -8,6 +8,7 @@ import { DealerCore } from './dealer.js?v=202609270003';
 const core = new DealerCore(Math.random);
 self.onmessage = ({ data }) => {
   if (data.type === 'reset') { core.reset(); return; }
+  if (data.type === 'load') { core.load(data.state); return; }
   try {
     const result = data.type === 'deal' ? core.deal(data.cells) : core.hint(data.cells, data.names);
     self.postMessage({ id: data.id, result });

@@ -1,4 +1,4 @@
-import { DealerCore } from '../core/dealer.js?v=202609270003';
+import { DealerCore } from '../core/dealer.js?v=202609270257';
 
 /**
  * 手駒の決め方（と学習モードのおすすめの総当たり）を Web Worker（core/dealer-worker.js）で動かすための窓口。
@@ -26,8 +26,15 @@ export class TrayDealer {
   }
 
   reset() {
+    this.lastLoad = null;
     if (this.local) this.local.reset();
     else this.worker.postMessage({ type: 'reset' });
+  }
+  /** 手駒の決め方の状態を戻す（途中から再開・1手戻す） */
+  load(state) {
+    this.lastLoad = state;
+    if (this.local) this.local.load(state);
+    else this.worker.postMessage({ type: 'load', state });
   }
 
   /** 手駒を決める（cells = 埋まっているマスの番号）→ { names, planTray, lastLineup } */
@@ -68,6 +75,7 @@ export class TrayDealer {
     try { this.worker.terminate(); } catch {}
     this.worker = null;
     this.local = new DealerCore(Math.random);
+    if (this.lastLoad) this.local.load(this.lastLoad);
     const pending = [...this.waiting.values()];
     this.waiting.clear();
     for (const req of pending) this.runLocal(req);
