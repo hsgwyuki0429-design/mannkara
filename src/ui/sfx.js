@@ -7,7 +7,9 @@ const note = (i, base = 523.25) => base * Math.pow(2, PENTA[Math.min(i, 8)] / 12
 export class Sfx {
   constructor() { this.ctx = null; this.enabled = true; }
   unlock() {
-    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    // iOS Safari は 'suspended' だけでなく、コントロールセンターを開く・画面収録・着信などで
+    // 独自の 'interrupted' にもなる。running 以外なら戻す
+    if (this.ctx) { if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {}); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     this.ctx = new AC();
