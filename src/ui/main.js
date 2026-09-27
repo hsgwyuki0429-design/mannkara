@@ -1,12 +1,14 @@
-import { Game } from '../core/game.js?v=202609270257';
-import { Board } from '../core/board.js?v=202609270257';
-import * as Sim from '../core/sim.js?v=202609270257';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270257';
-import { Renderer, delay } from './renderer.js?v=202609270257';
-import { Sfx } from './sfx.js?v=202609270257';
-import { Scenes } from './scenes.js?v=202609270257';
-import { colorOf } from './palette.js?v=202609270257';
-import { TrayDealer } from './tray-dealer.js?v=202609270257';
+import { Game } from '../core/game.js?v=202609270824';
+import { Board, createBlock } from '../core/board.js?v=202609270824';
+import { Piece } from '../core/pieces.js?v=202609270824';
+import * as Sim from '../core/sim.js?v=202609270824';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270824';
+import { Renderer, delay } from './renderer.js?v=202609270824';
+import { Sfx } from './sfx.js?v=202609270824';
+import { Scenes } from './scenes.js?v=202609270824';
+import { colorOf } from './palette.js?v=202609270824';
+import { TrayDealer } from './tray-dealer.js?v=202609270824';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270824';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -25,8 +27,10 @@ function loadBest() {
   try { best = Number(localStorage.getItem(bestKey())) || 0; } catch {}
 }
 loadBest();
+/** チュートリアル中なら { i: ステップ, placed: 置いた（次のステップを待っている） }。チュートリアルの点数・盤面は残さない */
+let tutorial = null;
 function saveBest() {
-  if (game.score.score <= best) return false;
+  if (tutorial || game.score.score <= best) return false;
   best = game.score.score;
   try { localStorage.setItem(bestKey(), String(best)); } catch {}
   return true;
@@ -109,7 +113,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270257', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270824', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -147,6 +151,7 @@ const game = new Game({
         pending = Math.max(0, pending - 1);
         if (!pending) caughtUp();
       });
+      if (tutorial) tutorialPlaced();
     },
   },
 });
@@ -212,9 +217,8 @@ async function playTurn(turn) {
     sfx.over();
     const isBest = saveBest();
     $('finalScore').textContent = game.score.score.toLocaleString('en-US');
-    $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best}`;
+    $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best.toLocaleString('en-US')}`;
     clearSave();
-    updateUndo();
     $('gameOver').classList.remove('hidden');
   }
 }
@@ -245,7 +249,7 @@ function showScore(v, bump = false) {
     const p = dur ? Math.min(1, (now - t0) / dur) : 1;
     const cur = Math.round(from + (v - from) * (1 - Math.pow(1 - p, 3)));
     // 同じ文字の書き込みでも文字の置き換え（レイアウトと描き直し）になるので、変わったときだけ書く
-    const txt = cur.toLocaleString('en-US'), bestTxt = String(Math.max(best, cur)), bestEl = $('best');
+    const txt = cur.toLocaleString('en-US'), bestTxt = Math.max(best, cur).toLocaleString('en-US'), bestEl = $('best');
     if (s.textContent !== txt) s.textContent = txt;
     if (bestEl.textContent !== bestTxt) bestEl.textContent = bestTxt;
     if (p < 1) rollRaf = requestAnimationFrame(frame);
@@ -391,10 +395,13 @@ const SNAP_RANGE = 1.6;
 const SNAP_RANGE_BLIND = 0.75;
 function nearestPlacement(slot, piece, fx, fy, range = SNAP_RANGE) {
   let best = null;
-  for (let oy = Math.floor(fy) - 2; oy <= Math.ceil(fy) + 2; oy++) {
-    for (let ox = Math.floor(fx) - 2; ox <= Math.ceil(fx) + 2; ox++) {
+  const target = tutorialTarget();
+  if (target) range = TUTORIAL_SNAP;
+  for (let oy = Math.floor(fy) - 3; oy <= Math.ceil(fy) + 3; oy++) {
+    for (let ox = Math.floor(fx) - 3; ox <= Math.ceil(fx) + 3; ox++) {
       const d = Math.hypot(ox - fx, oy - fy);
       if (d > range || (best && d >= best.d)) continue;
+      if (target && (ox !== target.ox || oy !== target.oy)) continue;     // チュートリアルでは決めた場所にだけ置ける
       if (game.canPlace(slot, ox, oy)) best = { ox, oy, d };
     }
   }
@@ -490,9 +497,7 @@ window.addEventListener('pointerup', (e) => {
   const overBoard = ox !== null && ox > -3 && oy > -3 && ox < SIZE + 1 && oy < SIZE + 1;
   endDrag();
   if (valid) {
-    const before = undo.used ? null : game.exportState();
-    if (game.placePiece(slot, ox, oy) && before) undo.snap = before;
-    updateUndo();
+    game.placePiece(slot, ox, oy);
     saveGame();
   }
   else { if (overBoard) sfx.invalid(); renderTray(); updateHint(); }
@@ -513,6 +518,7 @@ window.addEventListener('pagehide', () => { saveBest(); saveGame(); });
 let hintSeq = 0;               // おすすめを頼んだ回数（答えが届くまでに状況が変わったら、その答えは出さない）
 function updateHint() {
   const seq = ++hintSeq;
+  if (tutorial) { showTutorialTarget(); return; }
   if (mode !== 'learn' || game.gameOver || drag || pending > 1) {
     document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
     renderer.clearHint();
@@ -528,7 +534,11 @@ function updateHint() {
   });
 }
 /** おすすめを消す（頼んでいる途中の答えも出さない） */
-function dropHint() { hintSeq++; renderer.clearHint(); }
+function dropHint() {
+  hintSeq++;
+  if (tutorial) { showTutorialTarget(); return; }     // チュートリアルでは置く場所を見せたまま、指の絵だけ消す
+  renderer.clearHint();
+}
 function applyMode() {
   const learn = mode === 'learn';
   document.body.classList.toggle('learn', learn);
@@ -600,17 +610,16 @@ $('btnRunChain').addEventListener('click', () => {
   $('debugText').textContent += `\norder: ${trace.join(' -> ') || '(none)'}`;
 });
 
-/* ---------- 途中から再開・1手戻す ---------- */
+/* ---------- 途中から再開 ---------- */
 /**
- * ゲームの途中の状態を端末に残し、次に開いたときはその盤面から続ける（説明などは出さない。モードごとに別）。
- * 1手戻すは1ゲーム1回。置く直前の状態を覚えておき、戻したら使い切り（再開しても使ったことは残る）
+ * ゲームの途中の状態を端末に残し、次に開いたときはその盤面から続ける（説明などは出さない。モードごとに別）
  */
 const saveKey = () => (mode === 'learn' ? 'stair-mancala-save-learn' : 'stair-mancala-save');
-let undo = { used: false, snap: null };
 function saveGame() {
+  if (tutorial) return;
   try {
     if (game.gameOver) { localStorage.removeItem(saveKey()); return; }
-    localStorage.setItem(saveKey(), JSON.stringify({ state: game.exportState(), undo }));
+    localStorage.setItem(saveKey(), JSON.stringify({ state: game.exportState() }));
   } catch {}
 }
 function clearSave() { try { localStorage.removeItem(saveKey()); } catch {} }
@@ -632,32 +641,14 @@ function showState(st) {
   updateDanger();
   updateDebug();
   updateHint();
-  updateUndo();
 }
-function updateUndo() {
-  const ok = !undo.used && !!undo.snap;
-  $('btnUndo').disabled = !ok;
-  $('btnUndo').classList.toggle('off', !ok);
-  $('btnUndoOver').classList.toggle('hidden', !ok);
-}
-function doUndo() {
-  if (undo.used || !undo.snap || drag) return;
-  sfx.unlock();
-  const snap = undo.snap;
-  undo = { used: true, snap: null };
-  showState(snap);
-  sfx.pick();
-  saveGame();
-}
-$('btnUndo').addEventListener('click', doUndo);
-$('btnUndoOver').addEventListener('click', doUndo);
 
 /* ---------- 開始 ---------- */
 function restart() {
   // ベストスコアは呼ぶ側で残しておく（ここで残すと、モードを切り替えたときに前のモードの点数が新しいモードのベストになる）
+  stopTutorial();
   generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   bestCelebrated = false;
-  undo = { used: false, snap: null };
   clearSave();
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
@@ -672,14 +663,157 @@ function restart() {
   updateDanger();
   updateDebug();
   updateHint();
-  updateUndo();
 }
 /** 保存があればその盤面から、無ければ新しいゲーム */
 function startOrResume() {
   const saved = readSave();
   restart();
-  if (saved) { undo = saved.undo ?? { used: false, snap: null }; showState(saved.state); saveGame(); }
+  if (saved) { showState(saved.state); saveGame(); }
 }
+
+/* ---------- チュートリアル（はじめて遊ぶ人向け。遊びながらルールを覚える） ---------- */
+/**
+ * 決めた盤面・手駒で1手ずつ置かせる（src/ui/tutorial-steps.js）。置く場所は金色の枠で示し、指の絵がトレイから運んで見せる。
+ * 決めた場所にしか置けない（近くで離せば吸い付く）。補充・詰み・点数の記録・途中の保存は無し。
+ * 最初に開いたとき（ベストスコアも途中の保存も無い）に出て、一時停止の「遊び方」からもう一度見られる。
+ * 遊んでいる途中に見たときは、終わったらそのゲームの続きから
+ */
+const TUTORIAL_KEY = 'stair-mancala-tutorial';
+const TUTORIAL_SNAP = 2.6;                       // 決めた場所へ吸い付く距離（マス）。慣れていない人でも置けるように広め
+const TUTORIAL_SLOT = 1;                         // 手駒はまん中の枠に出す
+function isFirstRun() {
+  try {
+    return ![TUTORIAL_KEY, 'stair-mancala-best', 'stair-mancala-best-learn', 'stair-mancala-save', 'stair-mancala-save-learn']
+      .some((k) => localStorage.getItem(k));
+  } catch { return false; }
+}
+/** 今置かせたい手（置いた後・最後の説明の間は null） */
+function tutorialTarget() {
+  const st = tutorial && !tutorial.placed && TUTORIAL_STEPS[tutorial.i];
+  return st ? { slot: TUTORIAL_SLOT, ox: st.ox, oy: st.oy, piece: game.tray[TUTORIAL_SLOT] } : null;
+}
+function startTutorial() {
+  saveBest();
+  if (!pending) saveGame();                      // 遊んでいる途中のゲームは残しておき、終わったら続きから
+  const first = TUTORIAL_STEPS[0];
+  tutorial = { i: 0, placed: false };
+  // トレイを空にすると手駒を決め始めてしまうので、最初の手駒を入れた状態から始める
+  showState({ v: 1, board: [], tray: [null, first.piece, null], planTray: null, score: {}, gameOver: false, dealing: null });
+  game.scripted = true;
+  bestCelebrated = true;                         // チュートリアルの点数で新記録のお祝いはしない
+  tutorialStep(0);
+}
+function tutorialStep(i) {
+  tutorial.i = i; tutorial.placed = false;
+  const st = TUTORIAL_STEPS[i];
+  if (!st) { showTutorialText(TUTORIAL_END, true); showTutorialTarget(); return; }
+  // 前のステップで残ったブロックはそのまま、足りないブロックだけ足す
+  const added = [];
+  for (const [x, r, color = 'blue'] of st.board) {
+    if (game.board.get(x, r)) continue;
+    const block = createBlock(color);
+    game.board.set(x, r, block);
+    added.push({ block, x, r });
+  }
+  if (added.length) { renderer.syncBoard(game.board); renderer.popIn(added); }
+  game.tray = [null, null, null];
+  game.tray[TUTORIAL_SLOT] = new Piece(st.piece);
+  renderTray(true);
+  if (i > 0) sfx.refill();
+  showTutorialText(st.text, false);
+  updateDanger();
+  updateHint();
+}
+/** 置いた: 連鎖の再生中は「置いた後」の説明を出し、再生が終わったら次のステップへ */
+function tutorialPlaced() {
+  tutorial.placed = true;
+  showTutorialTarget();
+  const i = tutorial.i, st = TUTORIAL_STEPS[i];
+  if (st.after) showTutorialText(st.after, false);
+  enqueue(async () => {
+    await renderer.wait(st.expectChain ? 1400 : 700);
+    if (tutorial && tutorial.i === i) tutorialStep(i + 1);
+  });
+}
+function showTutorialText(html, end) {
+  const card = $('tutorial');
+  $('tutText').innerHTML = html;
+  $('tutStart').classList.toggle('hidden', !end);
+  $('tutSkip').classList.toggle('hidden', end);
+  document.body.classList.add('tutorial-on');
+  card.classList.remove('hidden');
+  card.animate([{ scale: '.94' }, { scale: '1.03', offset: 0.5 }, { scale: '1' }], { duration: 260, easing: 'ease-out' });
+  placeTutorialText();
+}
+/**
+ * 説明はスコアの場所（上のボタンと GOAL の間）に出す。盤面とトレイの間は狭い画面だと入らない。
+ * 最後の説明（「はじめる」つき）は、もう置く物が無いので盤面の上に重ねる
+ */
+function placeTutorialText() {
+  const card = $('tutorial');
+  if (card.classList.contains('hidden')) return;
+  const h = card.offsetHeight, headerBottom = document.querySelector('.top').getBoundingClientRect().bottom;
+  const goalTop = $('goal').getBoundingClientRect().top;
+  let top;
+  if (!$('tutStart').classList.contains('hidden')) {
+    const W = SIZE * renderer.cell;
+    const boardBottom = Math.max(...[[0, 0], [W, 0], [0, W]].map(([x, y]) => renderer.localToClient(x, y).y));
+    top = (goalTop + boardBottom) / 2 - h / 2;
+  } else top = Math.max(headerBottom + 6, Math.min($('score').getBoundingClientRect().top, goalTop - h - 6));
+  card.style.top = Math.round(top) + 'px';
+}
+/** 置く場所（金色の枠）・トレイの手駒の弾み・指の絵を出す（持っている間・置いた後は消す） */
+function showTutorialTarget() {
+  document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
+  const t = tutorialTarget();
+  if (!t || !t.piece || game.gameOver) { renderer.clearHint(); hideHand(); return; }
+  renderer.showHint(t.piece, t.ox, t.oy, true);                     // 持っている間も置く場所は見せたまま
+  if (drag) { hideHand(); return; }
+  document.querySelector(`.slot[data-slot="${t.slot}"]`)?.classList.add('hinted');
+  moveHand();
+}
+/** 指の絵: トレイの手駒をつまんで、置く場所まで運んで離す（を繰り返す）。指で持つとピースは指より上に浮くので、そのぶん下を通る */
+function moveHand() {
+  const hand = $('tutHand');
+  hand.__anim?.cancel();
+  const t = tutorialTarget();
+  const slotEl = t && document.querySelector(`.slot[data-slot="${t.slot}"]`);
+  if (!slotEl || drag) { hand.classList.add('hidden'); return; }
+  const a = slotEl.getBoundingClientRect();
+  const from = { x: a.left + a.width / 2, y: a.top + a.height / 2 };
+  const c = renderer.cell;
+  const to = renderer.localToClient((t.ox + t.piece.width / 2) * c, (t.oy + t.piece.height / 2) * c);
+  if (matchMedia('(pointer: coarse)').matches) to.y += c * (1.2 + Math.max(t.piece.width, t.piece.height) * 0.5);
+  const at = (p, s) => `translate(${p.x - 20}px,${p.y - 1}px) scale(${s})`;   // 指先（絵の左上から 20px, 1px）を点に合わせる
+  hand.classList.remove('hidden');
+  hand.__anim = hand.animate([
+    { transform: at(from, 0) },
+    { transform: at(from, 1), offset: 0.1 },
+    { transform: at(from, 0.86), offset: 0.2 },
+    { transform: at(to, 0.86), offset: 0.62, easing: 'ease-out' },
+    { transform: at(to, 1), offset: 0.74 },
+    { transform: at(to, 1), offset: 0.88 },
+    { transform: at(to, 0) },
+  ], { duration: 2400, easing: 'ease-in-out' });
+  hand.__anim.onfinish = () => { if (tutorialTarget()) moveHand(); else hideHand(); };
+}
+function hideHand() { const hand = $('tutHand'); hand.__anim?.cancel(); hand.classList.add('hidden'); }
+function stopTutorial() {
+  if (!tutorial) return;
+  tutorial = null;
+  try { localStorage.setItem(TUTORIAL_KEY, '1'); } catch {}
+  $('tutorial').classList.add('hidden');
+  $('tutSkip').classList.add('hidden');
+  document.body.classList.remove('tutorial-on');
+  hideHand();
+  renderer.clearHint();
+}
+/** 「はじめる」「スキップ」: 本番のゲームへ（途中のゲームがあればその続き） */
+function endTutorial() { sfx.unlock(); stopTutorial(); startOrResume(); }
+$('tutStart').addEventListener('click', endTutorial);
+$('tutSkip').addEventListener('click', endTutorial);
+$('btnHowto').addEventListener('click', () => { sfx.unlock(); setPaused(false); startTutorial(); });
+
 applyMode();
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); saveBest(); restart(); });
 window.addEventListener('resize', () => {
@@ -687,8 +821,11 @@ window.addEventListener('resize', () => {
   renderTray();
   // 持っているピースはマスの大きさが変わったので作り直す（盤面は renderer が先に合わせ直している）
   if (drag) { $('dragLayer').innerHTML = ''; drag.ox = null; updateDrag({ clientX: drag.x, clientY: drag.y }); }
+  if (tutorial) { placeTutorialText(); showTutorialTarget(); }
 });
+const firstRun = isFirstRun();                   // 始める前に見る（始めると途中の保存ができる）
 startOrResume();
+if (firstRun) startTutorial();
 // 宝石のかけらの絵（7色）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
 // まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
 {

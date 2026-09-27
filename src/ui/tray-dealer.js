@@ -1,4 +1,4 @@
-import { DealerCore } from '../core/dealer.js?v=202609270257';
+import { DealerCore } from '../core/dealer.js?v=202609270824';
 
 /**
  * 手駒の決め方（と学習モードのおすすめの総当たり）を Web Worker（core/dealer-worker.js）で動かすための窓口。
@@ -30,7 +30,7 @@ export class TrayDealer {
     if (this.local) this.local.reset();
     else this.worker.postMessage({ type: 'reset' });
   }
-  /** 手駒の決め方の状態を戻す（途中から再開・1手戻す） */
+  /** 手駒の決め方の状態を戻す（途中から再開） */
   load(state) {
     this.lastLoad = state;
     if (this.local) this.local.load(state);

@@ -1,8 +1,8 @@
-import { Game } from './game.js?v=202609270257';
-import { Piece } from './pieces.js?v=202609270257';
-import { bestMove } from './advisor.js?v=202609270257';
-import { Board } from './board.js?v=202609270257';
-import { SIZE } from './constants.js?v=202609270257';
+import { Game } from './game.js?v=202609270824';
+import { Piece } from './pieces.js?v=202609270824';
+import { bestMove } from './advisor.js?v=202609270824';
+import { Board } from './board.js?v=202609270824';
+import { SIZE } from './constants.js?v=202609270824';
 
 /**
  * 手駒の決め方（Game.spawnTray）だけを受け持つ。画面では Web Worker の中で動かす（dealer-worker.js）。
@@ -38,7 +38,7 @@ export class DealerCore {
     return { names: tray.map((p) => p.name), planTray: g.planTray, lastLineup: lineup, state: this.state() };
   }
 
-  /** 手駒の決め方の状態（途中から再開・1手戻す用） */
+  /** 手駒の決め方の状態（途中から再開用） */
   state() {
     const g = this.game;
     return { plan: g.plan, history: [...g.history], wantAllClear: g.wantAllClear, wantTight: g.wantTight };
