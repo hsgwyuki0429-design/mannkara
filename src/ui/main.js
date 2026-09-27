@@ -1,12 +1,12 @@
-import { Game } from '../core/game.js?v=202609262352';
-import { Board } from '../core/board.js?v=202609262352';
-import * as Sim from '../core/sim.js?v=202609262352';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609262352';
-import { Renderer, delay } from './renderer.js?v=202609262352';
-import { Sfx } from './sfx.js?v=202609262352';
-import { Scenes } from './scenes.js?v=202609262352';
-import { colorOf } from './palette.js?v=202609262352';
-import { TrayDealer } from './tray-dealer.js?v=202609262352';
+import { Game } from '../core/game.js?v=202609270003';
+import { Board } from '../core/board.js?v=202609270003';
+import * as Sim from '../core/sim.js?v=202609270003';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270003';
+import { Renderer, delay } from './renderer.js?v=202609270003';
+import { Sfx } from './sfx.js?v=202609270003';
+import { Scenes } from './scenes.js?v=202609270003';
+import { colorOf } from './palette.js?v=202609270003';
+import { TrayDealer } from './tray-dealer.js?v=202609270003';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -64,14 +64,52 @@ function planSpeeds(steps) {
 }
 /** 再生中に次のピースが置かれて待ちが溜まっていたら、さらに速める */
 const backlog = () => (pending > 1 ? BACKLOG_SPEED : 1);
-/** 再生中にピースを持ち上げたときの再生の速さ（置くまでに表示を盤面に追いつかせる）。長く持っているほど速める */
-const CATCH_UP = 4, CATCH_UP_MAX = 12;
-const catchUpSpeed = () => Math.min(CATCH_UP_MAX, CATCH_UP + (performance.now() - drag.t0) / 150);
+/**
+ * 再生中にピースを持ち上げたときの再生の速さ（置くまでに表示を盤面に追いつかせる）:
+ *  - 持っているだけ（盤面へ近づけていない）なら速めない
+ *  - 盤面へ近づけているときは、今の近づく速さで盤面に届くまでの時間を見積もり、それまでに再生が終わらない分だけ速める
+ *    （間に合うなら速めない。盤面の上にあるときは、もうすぐ置くものとして CATCH_UP_ETA ms で終わる速さ）。最大 CATCH_UP_MAX 倍
+ */
+const CATCH_UP_MAX = 12, CATCH_UP_ETA = 200;
+/** 近づいているとみなす速さ（px/ms）と、指が止まってから「持っているだけ」とみなすまでの時間 */
+const APPROACH_MIN = 0.05, STILL_MS = 120;
+function catchUpSpeed(now) {
+  if (!drag || !(playLeft > 0)) return 1;
+  const d = distToBoard(drag.x, drag.y - drag.lift);
+  let eta;
+  if (d <= 0) eta = CATCH_UP_ETA;
+  else if (drag.approach > APPROACH_MIN && now - drag.movedAt < STILL_MS) eta = d / drag.approach;
+  else return 1;
+  return Math.max(1, Math.min(CATCH_UP_MAX, playLeft / eta));
+}
+/** 画面の点から盤面（の外接四角）までの距離 px（中なら 0） */
+function distToBoard(x, y) {
+  const r = drag.boardRect;
+  const dx = Math.max(r.left - x, 0, x - r.right), dy = Math.max(r.top - y, 0, y - r.bottom);
+  return Math.hypot(dx, dy);
+}
+/**
+ * 再生の残り時間のおおよそ（再生の時間で ms）。置いたターンの分を足し、再生が進んだ分（速めた分も含む）を引く
+ */
+let playLeft = 0, playRaf = 0, playLast = 0;
+function turnPlayCost(turn) {
+  const sp = planSpeeds(turn.steps);
+  return turn.steps.reduce((a, s, i) => a + ((9 + s.stack.length) * ANIM.step + ANIM.betweenChains) / sp[i], turn.steps.length ? ANIM.charge : 0);
+}
+function playTick(now) {
+  playRaf = 0;
+  if (!pending) { playLeft = 0; return; }
+  if (playLast) playLeft = Math.max(0, playLeft - Math.max(0, now - playLast) * renderer.timeScale);
+  playLast = now;
+  if (drag && !paused) renderer.timeScale = catchUpSpeed(now);    // 持っている間は、毎フレーム速さを見直す（止まっている指はイベントが来ない）
+  playRaf = requestAnimationFrame(playTick);
+}
+function startPlayTick() { if (!playRaf) { playLast = 0; playRaf = requestAnimationFrame(playTick); } }
 let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609262352', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270003', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -100,6 +138,8 @@ const game = new Game({
       if (refilledNow) sfx.refill();
       updateDebug();
       pending++;
+      playLeft += turnPlayCost(turn);
+      startPlayTick();
       const gen = generation;
       enqueue(() => playTurn(turn)).finally(() => {
         if (gen !== generation) return;
@@ -359,8 +399,17 @@ function nearestPlacement(slot, piece, fx, fy, range = SNAP_RANGE) {
 }
 
 function updateDrag(e) {
+  // 盤面へ近づく速さ（px/ms。なめらかに平均）
+  const now = performance.now();
+  const d = distToBoard(e.clientX, e.clientY - drag.lift);
+  if (drag.lastD != null && now > drag.lastT) {
+    const v = (drag.lastD - d) / (now - drag.lastT);
+    drag.approach = drag.approach * 0.5 + v * 0.5;
+    if (e.clientX !== drag.x || e.clientY !== drag.y) drag.movedAt = now;
+  }
+  drag.lastD = d; drag.lastT = now;
   drag.x = e.clientX; drag.y = e.clientY;
-  if (pending > 0 && !paused) renderer.timeScale = catchUpSpeed();
+  if (pending > 0 && !paused) renderer.timeScale = catchUpSpeed(now);
   const center = renderDragPiece(e.clientX, e.clientY);
   const c = renderer.cell;
   const fx = center.x / c - drag.piece.width / 2;
@@ -421,7 +470,8 @@ $('tray').addEventListener('pointerdown', (e) => {
   sfx.unlock();
   sfx.pick();
   const lift = e.pointerType === 'mouse' ? 0 : renderer.cell * (1.2 + Math.max(piece.width, piece.height) * 0.5);
-  drag = { slot, piece, lift, ox: null, oy: null, valid: false, chain: 0, pointerId: e.pointerId, x: e.clientX, y: e.clientY, t0: performance.now() };
+  drag = { slot, piece, lift, ox: null, oy: null, valid: false, chain: 0, pointerId: e.pointerId, x: e.clientX, y: e.clientY, t0: performance.now(),
+    boardRect: renderer.pf.getBoundingClientRect(), approach: 0, movedAt: 0, lastD: null, lastT: 0 };
   dropHint();
   slotEl.classList.add('dragging');
   $('dragLayer').innerHTML = '';
@@ -544,7 +594,7 @@ $('btnRunChain').addEventListener('click', () => {
 /* ---------- 開始 ---------- */
 function restart() {
   // ベストスコアは呼ぶ側で残しておく（ここで残すと、モードを切り替えたときに前のモードの点数が新しいモードのベストになる）
-  generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0;
+  generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   bestCelebrated = false;
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
