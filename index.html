@@ -21,7 +21,7 @@
     else if (/Android/i.test(ua)) location.href = 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=' + location.protocol.replace(':', '') + ';package=com.android.chrome;end';
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609270831" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609270951" />
 </head>
 <body>
 <div id="app">
@@ -117,12 +117,17 @@
     <p class="over-label">SCORE</p>
     <p id="finalScore" class="over-score">0</p>
     <p id="finalBest" class="over-best"></p>
+    <div class="over-stats">
+      <div class="stat"><span class="stat-label">最大連鎖</span><span id="statChain" class="stat-val">0</span><span id="recChain" class="stat-rec"></span></div>
+      <div class="stat"><span class="stat-label">最大コンボ</span><span id="statCombo" class="stat-val">0</span><span id="recCombo" class="stat-rec"></span></div>
+    </div>
     <button id="btnRetry" class="primary">もう一度</button>
   </div>
 </div>
 <div id="pauseOverlay" class="overlay hidden">
   <div class="overlay-box">
     <p class="over-title">一時停止中</p>
+    <p id="pauseRecords" class="pause-rec"></p>
     <button id="btnResume" class="primary">つづける</button>
     <button id="btnHowto" class="link howto">遊び方</button>
   </div>
@@ -137,6 +142,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609270831"></script>
+<script type="module" src="./src/ui/main.js?v=202609270951"></script>
 </body>
 </html>

@@ -1,14 +1,14 @@
-import { Game } from '../core/game.js?v=202609270831';
-import { Board, createBlock } from '../core/board.js?v=202609270831';
-import { Piece } from '../core/pieces.js?v=202609270831';
-import * as Sim from '../core/sim.js?v=202609270831';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270831';
-import { Renderer, delay } from './renderer.js?v=202609270831';
-import { Sfx } from './sfx.js?v=202609270831';
-import { Scenes } from './scenes.js?v=202609270831';
-import { colorOf } from './palette.js?v=202609270831';
-import { TrayDealer } from './tray-dealer.js?v=202609270831';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270831';
+import { Game } from '../core/game.js?v=202609270951';
+import { Board, createBlock } from '../core/board.js?v=202609270951';
+import { Piece } from '../core/pieces.js?v=202609270951';
+import * as Sim from '../core/sim.js?v=202609270951';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270951';
+import { Renderer, delay } from './renderer.js?v=202609270951';
+import { Sfx } from './sfx.js?v=202609270951';
+import { Scenes } from './scenes.js?v=202609270951';
+import { colorOf } from './palette.js?v=202609270951';
+import { TrayDealer } from './tray-dealer.js?v=202609270951';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270951';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -22,18 +22,35 @@ let mode = 'normal';
 try { mode = localStorage.getItem(MODE_KEY) === 'learn' ? 'learn' : 'normal'; } catch {}
 const bestKey = () => (mode === 'learn' ? 'stair-mancala-best-learn' : 'stair-mancala-best');
 let best = 0;
+/** 最大連鎖・最大コンボの記録（端末ごと・モードごとに別） */
+const recordsKey = () => (mode === 'learn' ? 'stair-mancala-records-learn' : 'stair-mancala-records');
+let records = { chain: 0, combo: 0 };
 function loadBest() {
   best = 0;
+  records = { chain: 0, combo: 0 };
   try { best = Number(localStorage.getItem(bestKey())) || 0; } catch {}
+  try { records = { ...records, ...JSON.parse(localStorage.getItem(recordsKey()) || '{}') }; } catch {}
 }
 loadBest();
 /** チュートリアル中なら { i: ステップ, placed: 置いた（次のステップを待っている） }。チュートリアルの点数・盤面は残さない */
 let tutorial = null;
 function saveBest() {
+  saveRecords();
   if (tutorial || game.score.score <= best) return false;
   best = game.score.score;
   try { localStorage.setItem(bestKey(), String(best)); } catch {}
   return true;
+}
+
+/** このゲームの最大連鎖・最大コンボを記録に残す。更新した方を返す（チュートリアルでは残さない） */
+function saveRecords() {
+  const { bestChain, bestStreak } = game.score;
+  const up = { chain: !tutorial && bestChain > records.chain, combo: !tutorial && bestStreak > records.combo };
+  if (!up.chain && !up.combo) return up;
+  if (up.chain) records.chain = bestChain;
+  if (up.combo) records.combo = bestStreak;
+  try { localStorage.setItem(recordsKey(), JSON.stringify(records)); } catch {}
+  return up;
 }
 
 /* ---------- ゲーム ---------- */
@@ -61,7 +78,7 @@ const enqueue = (fn) => {
  */
 function planSpeeds(steps) {
   const base = steps.map((s) => Math.min(CHAIN_SPEED_MAX, Math.pow(CHAIN_SPEED_GROWTH, s.chain - 1)));
-  const cost = (s) => (9 + s.stack.length) * ANIM.step + ANIM.betweenChains;
+  const cost = (s) => Renderer.stepCells(s) * ANIM.step + ANIM.betweenChains;
   const total = steps.reduce((a, s, i) => a + cost(s) / base[i], 0);
   const k = Math.max(1, total / TURN_PLAY_BUDGET);
   return base.map((v) => v * k);
@@ -77,14 +94,19 @@ const backlog = () => (pending > 1 ? BACKLOG_SPEED : 1);
 const CATCH_UP_MAX = 12, CATCH_UP_ETA = 200;
 /** 近づいているとみなす速さ（px/ms）と、指が止まってから「持っているだけ」とみなすまでの時間 */
 const APPROACH_MIN = 0.05, STILL_MS = 120;
+/** 見積もりより再生が長引いても（全消しの演出など）、再生中は速められるように残りをこれより少なく見ない（ms） */
+const PLAY_LEFT_MIN = 300;
 function catchUpSpeed(now) {
-  if (!drag || !(playLeft > 0)) return 1;
+  if (!drag || !pending) return 1;
+  const left = Math.max(playLeft, PLAY_LEFT_MIN);
   const d = distToBoard(drag.x, drag.y - drag.lift);
+  if (d > 0) drag.overAt = null;
   let eta;
-  if (d <= 0) eta = CATCH_UP_ETA;
+  // 盤面の上: 着いた時から CATCH_UP_ETA 後に終わる速さ（毎回「今から ETA 後」にすると、残りが減るほど遅くなってしまう）
+  if (d <= 0) { drag.overAt ??= now; eta = Math.max(16, drag.overAt + CATCH_UP_ETA - now); }
   else if (drag.approach > APPROACH_MIN && now - drag.movedAt < STILL_MS) eta = d / drag.approach;
   else return 1;
-  return Math.max(1, Math.min(CATCH_UP_MAX, playLeft / eta));
+  return Math.max(1, Math.min(CATCH_UP_MAX, left / eta));
 }
 /** 画面の点から盤面（の外接四角）までの距離 px（中なら 0） */
 function distToBoard(x, y) {
@@ -98,7 +120,7 @@ function distToBoard(x, y) {
 let playLeft = 0, playRaf = 0, playLast = 0;
 function turnPlayCost(turn) {
   const sp = planSpeeds(turn.steps);
-  return turn.steps.reduce((a, s, i) => a + ((9 + s.stack.length) * ANIM.step + ANIM.betweenChains) / sp[i], turn.steps.length ? ANIM.charge : 0);
+  return turn.steps.reduce((a, s, i) => a + (Renderer.stepCells(s) * ANIM.step + ANIM.betweenChains) / sp[i], turn.steps.length ? ANIM.charge : 0);
 }
 function playTick(now) {
   playRaf = 0;
@@ -113,7 +135,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270831', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270951', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -215,11 +237,24 @@ async function playTurn(turn) {
     if (stale()) return;
     renderer.setFever(0);
     sfx.over();
+    const prev = { ...records };
     const isBest = saveBest();
     $('finalScore').textContent = game.score.score.toLocaleString('en-US');
+    showOverStats(prev);
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best.toLocaleString('en-US')}`;
     clearSave();
     $('gameOver').classList.remove('hidden');
+  }
+}
+
+/** ゲームオーバー画面: このゲームの最大連鎖・最大コンボと、これまでの記録（超えたら NEW RECORD!） */
+function showOverStats(prev) {
+  const { bestChain, bestStreak } = game.score;
+  for (const [val, rec, mine, before] of [['statChain', 'recChain', bestChain, prev.chain], ['statCombo', 'recCombo', bestStreak, prev.combo]]) {
+    $(val).textContent = mine;
+    const isNew = before > 0 && mine > before;
+    $(rec).textContent = isNew ? 'NEW RECORD!' : `記録 ${Math.max(before, mine)}`;
+    $(rec).classList.toggle('new', isNew);
   }
 }
 
@@ -572,6 +607,10 @@ function setPaused(v) {
   paused = v;
   if (v) cancelDrag();
   renderer.timeScale = v ? 0 : 1;
+  if (v) {
+    const chain = Math.max(records.chain, tutorial ? 0 : game.score.bestChain), combo = Math.max(records.combo, tutorial ? 0 : game.score.bestStreak);
+    $('pauseRecords').innerHTML = `記録　最大連鎖 ${chain}・最大コンボ ${combo}`;
+  }
   $('pauseOverlay').classList.toggle('hidden', !v);
 }
 $('btnPause').addEventListener('click', () => { sfx.unlock(); if (!game.gameOver) setPaused(true); });
