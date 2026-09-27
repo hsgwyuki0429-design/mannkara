@@ -1,14 +1,14 @@
-import { Game } from '../core/game.js?v=202609271413';
-import { Board, createBlock } from '../core/board.js?v=202609271413';
-import { Piece } from '../core/pieces.js?v=202609271413';
-import * as Sim from '../core/sim.js?v=202609271413';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609271413';
-import { Renderer, delay } from './renderer.js?v=202609271413';
-import { Sfx } from './sfx.js?v=202609271413';
-import { Scenes } from './scenes.js?v=202609271413';
-import { colorOf } from './palette.js?v=202609271413';
-import { TrayDealer } from './tray-dealer.js?v=202609271413';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609271413';
+import { Game } from '../core/game.js?v=202609271513';
+import { Board, createBlock } from '../core/board.js?v=202609271513';
+import { Piece } from '../core/pieces.js?v=202609271513';
+import * as Sim from '../core/sim.js?v=202609271513';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609271513';
+import { Renderer, delay } from './renderer.js?v=202609271513';
+import { Sfx } from './sfx.js?v=202609271513';
+import { Scenes } from './scenes.js?v=202609271513';
+import { colorOf } from './palette.js?v=202609271513';
+import { TrayDealer } from './tray-dealer.js?v=202609271513';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609271513';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -97,7 +97,7 @@ const backlog = () => (pending > 1 ? BACKLOG_SPEED : 1);
  *  - 盤面へ近づけているときは、今の近づく速さで盤面に届くまでの時間を見積もり、それまでに再生が終わらない分だけ速める
  *    （間に合うなら速めない。盤面の上にあるときは、もうすぐ置くものとして CATCH_UP_ETA ms で終わる速さ）。最大 CATCH_UP_MAX 倍
  */
-const CATCH_UP_MAX = 12, CATCH_UP_ETA = 200;
+const CATCH_UP_MAX = 6, CATCH_UP_ETA = 200;    // 12倍の0.5倍
 /** 近づいているとみなす速さ（px/ms）と、指が止まってから「持っているだけ」とみなすまでの時間 */
 const APPROACH_MIN = 0.05, STILL_MS = 120;
 /** 見積もりより再生が長引いても（全消しの演出など）、再生中は速められるように残りをこれより少なく見ない（ms） */
@@ -141,7 +141,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609271413', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609271513', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
