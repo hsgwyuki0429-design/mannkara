@@ -201,3 +201,7 @@ src/ui/     renderer.js scenes.js shards.js palette.js main.js sfx.js styles.css
 test/       rules.test.mjs
 scripts/    stamp.mjs build-allclear.mjs subset-fonts.py
 ```
+
+## ライセンス
+このリポジトリのコード・設計・ドキュメントは All rights reserved（無断でのコピー・改変・再配布不可）。詳しくは `LICENSE` を参照。
+同梱しているフォント（`src/ui/fonts/`）だけは別途 SIL Open Font License で配布されている（`src/ui/fonts/OFL.txt`）。
