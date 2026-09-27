@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609270927';
-import { Shards } from './shards.js?v=202609270927';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609270951';
+import { Shards } from './shards.js?v=202609270951';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -448,6 +448,20 @@ export class Renderer {
    *     入ってくるブロックの位置から計算する（= 常に接触したまま一緒に動く、隙間ができない）。
    *  連鎖が進むほど速く再生する。
    */
+  /**
+   * playStep の再生時間（speed 1 のとき、ms）。列車の 9 マス + 一番遠くまで入るブロックのマス数（playStep と同じ計算）。
+   * 再生中にピースを持ち上げたときに、残りの再生時間から速さを決めるのに使う
+   */
+  static stepCells(step) {
+    const { kind, stack, after } = step;
+    let longest = 1;
+    for (let k = 1; k < stack.length; k++) {
+      const a = after.get(stack[k].id);
+      longest = Math.max(longest, a ? SIZE - (kind === 'col' ? a.r : a.x) : k);
+    }
+    return 9 + longest;
+  }
+
   async playStep(step, speed = 1) {
     const { kind, n: N, stack, chain, before, after } = step;
     const gen = this.gen;                                    // 途中でリスタートしたら、古い盤面の続きは描かない
@@ -722,9 +736,9 @@ export class Renderer {
   }
 
   /** 連続発動（COMBO）の表示。盤面の上に金色の文字 */
-  showCombo(n, mult) {
+  showCombo(n) {
     const el = this.comboPop = fresh(this.comboPop);
-    el.innerHTML = `COMBO<b>${n}</b>` + (mult > 1 ? `<i>×${mult}</i>` : '');
+    el.innerHTML = `COMBO<b>${n}</b>`;
     el.className = `combo-pop show${n >= 5 ? ' hot' : ''}`;
   }
 

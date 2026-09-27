@@ -1,14 +1,14 @@
-import { Game } from '../core/game.js?v=202609270927';
-import { Board, createBlock } from '../core/board.js?v=202609270927';
-import { Piece } from '../core/pieces.js?v=202609270927';
-import * as Sim from '../core/sim.js?v=202609270927';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED, streakMultiplier } from '../core/constants.js?v=202609270927';
-import { Renderer, delay } from './renderer.js?v=202609270927';
-import { Sfx } from './sfx.js?v=202609270927';
-import { Scenes } from './scenes.js?v=202609270927';
-import { colorOf } from './palette.js?v=202609270927';
-import { TrayDealer } from './tray-dealer.js?v=202609270927';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270927';
+import { Game } from '../core/game.js?v=202609270951';
+import { Board, createBlock } from '../core/board.js?v=202609270951';
+import { Piece } from '../core/pieces.js?v=202609270951';
+import * as Sim from '../core/sim.js?v=202609270951';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270951';
+import { Renderer, delay } from './renderer.js?v=202609270951';
+import { Sfx } from './sfx.js?v=202609270951';
+import { Scenes } from './scenes.js?v=202609270951';
+import { colorOf } from './palette.js?v=202609270951';
+import { TrayDealer } from './tray-dealer.js?v=202609270951';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270951';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -78,7 +78,7 @@ const enqueue = (fn) => {
  */
 function planSpeeds(steps) {
   const base = steps.map((s) => Math.min(CHAIN_SPEED_MAX, Math.pow(CHAIN_SPEED_GROWTH, s.chain - 1)));
-  const cost = (s) => (9 + s.stack.length) * ANIM.step + ANIM.betweenChains;
+  const cost = (s) => Renderer.stepCells(s) * ANIM.step + ANIM.betweenChains;
   const total = steps.reduce((a, s, i) => a + cost(s) / base[i], 0);
   const k = Math.max(1, total / TURN_PLAY_BUDGET);
   return base.map((v) => v * k);
@@ -94,14 +94,19 @@ const backlog = () => (pending > 1 ? BACKLOG_SPEED : 1);
 const CATCH_UP_MAX = 12, CATCH_UP_ETA = 200;
 /** 近づいているとみなす速さ（px/ms）と、指が止まってから「持っているだけ」とみなすまでの時間 */
 const APPROACH_MIN = 0.05, STILL_MS = 120;
+/** 見積もりより再生が長引いても（全消しの演出など）、再生中は速められるように残りをこれより少なく見ない（ms） */
+const PLAY_LEFT_MIN = 300;
 function catchUpSpeed(now) {
-  if (!drag || !(playLeft > 0)) return 1;
+  if (!drag || !pending) return 1;
+  const left = Math.max(playLeft, PLAY_LEFT_MIN);
   const d = distToBoard(drag.x, drag.y - drag.lift);
+  if (d > 0) drag.overAt = null;
   let eta;
-  if (d <= 0) eta = CATCH_UP_ETA;
+  // 盤面の上: 着いた時から CATCH_UP_ETA 後に終わる速さ（毎回「今から ETA 後」にすると、残りが減るほど遅くなってしまう）
+  if (d <= 0) { drag.overAt ??= now; eta = Math.max(16, drag.overAt + CATCH_UP_ETA - now); }
   else if (drag.approach > APPROACH_MIN && now - drag.movedAt < STILL_MS) eta = d / drag.approach;
   else return 1;
-  return Math.max(1, Math.min(CATCH_UP_MAX, playLeft / eta));
+  return Math.max(1, Math.min(CATCH_UP_MAX, left / eta));
 }
 /** 画面の点から盤面（の外接四角）までの距離 px（中なら 0） */
 function distToBoard(x, y) {
@@ -115,7 +120,7 @@ function distToBoard(x, y) {
 let playLeft = 0, playRaf = 0, playLast = 0;
 function turnPlayCost(turn) {
   const sp = planSpeeds(turn.steps);
-  return turn.steps.reduce((a, s, i) => a + ((9 + s.stack.length) * ANIM.step + ANIM.betweenChains) / sp[i], turn.steps.length ? ANIM.charge : 0);
+  return turn.steps.reduce((a, s, i) => a + (Renderer.stepCells(s) * ANIM.step + ANIM.betweenChains) / sp[i], turn.steps.length ? ANIM.charge : 0);
 }
 function playTick(now) {
   playRaf = 0;
@@ -130,7 +135,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270927', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270951', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -182,17 +187,15 @@ async function playTurn(turn) {
   renderer.setRush(rush);
   showScore(turn.scoreAfterPlace);
   if (rush) {                                            // 早送り: 演出なしで盤面と点数だけ最後まで進める
-    setComboMeter(turn.steps.length ? turn.streak : 0);
     for (const step of turn.steps) { await renderer.playStep(step, 1); if (stale()) return; }
     if (turn.allClear) { renderer.showText(allClearText(turn), 't5'); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
     showScore(turn.score);
     return;
   }
   const speeds = planSpeeds(turn.steps);
-  setComboMeter(turn.steps.length ? turn.streak : 0, true);
   if (turn.steps.length) {
     renderer.setFever((turn.streak - 1) / 5);
-    if (turn.streak >= 2) { renderer.showCombo(turn.streak, streakMultiplier(turn.streak)); sfx.combo(turn.streak); }
+    if (turn.streak >= 2) { renderer.showCombo(turn.streak); sfx.combo(turn.streak); }
     if (turn.streak >= 5 && turn.streak % 5 === 0) scenes.comboWave();       // コンボ 5・10・15… で画面の下から桃色に染まる
   } else renderer.setFever(0);
   let shownTier = 0;                                       // このターンで画面の色を変えた褒め言葉の段階
@@ -253,25 +256,6 @@ function showOverStats(prev) {
     $(rec).textContent = isNew ? 'NEW RECORD!' : `記録 ${Math.max(before, mine)}`;
     $(rec).classList.toggle('new', isNew);
   }
-}
-
-/**
- * COMBO の倍率の表示（スコアの左下）。COMBO 2（×1.5）から、発動しない手で途切れるまで出したまま。
- * 増えたときは弾ませる
- */
-let comboShown = 0;
-function setComboMeter(streak, bump = false) {
-  const el = $('comboMeter');
-  const on = streak >= 2 && !tutorial;
-  el.classList.toggle('hidden', !on);
-  if (!on) { comboShown = 0; return; }
-  if (streak === comboShown) return;
-  const up = streak > comboShown;
-  comboShown = streak;
-  el.innerHTML = `<span class="cm-label">COMBO</span><span class="cm-n">${streak}</span><span class="cm-x">×${streakMultiplier(streak)}</span>`;
-  el.classList.toggle('hot', streak >= 5);
-  if (bump && up) el.animate([{ scale: '1' }, { scale: '1.22', offset: 0.3 }, { scale: '.97', offset: 0.65 }, { scale: '1' }],
-    { duration: 380, easing: 'cubic-bezier(.3,1.4,.5,1)' });
 }
 
 /**
@@ -693,7 +677,6 @@ function showState(st) {
   renderTray(true);
   updateHud();
   bestCelebrated = best > 0 && game.score.score >= best;     // もう超えた記録で、もう一度お祝いしない
-  setComboMeter(game.score.streak);
   updateDanger();
   updateDebug();
   updateHint();
@@ -705,7 +688,6 @@ function restart() {
   stopTutorial();
   generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   bestCelebrated = false;
-  setComboMeter(0);
   clearSave();
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
