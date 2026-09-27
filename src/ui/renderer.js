@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609270257';
-import { Shards } from './shards.js?v=202609270257';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609270831';
+import { Shards } from './shards.js?v=202609270831';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -151,6 +151,15 @@ export class Renderer {
     return {
       x: this.W / 2 + dx * Math.cos(a) - dy * Math.sin(a),
       y: this.W / 2 + dx * Math.sin(a) + dy * Math.cos(a),
+    };
+  }
+  /** 盤面（回転前）のローカル px 座標 -> 画面上の座標（clientToLocal の逆） */
+  localToClient(lx, ly) {
+    const pr = this.pf.getBoundingClientRect();
+    const a = (ROTATION * Math.PI) / 180, x = lx - this.W / 2, y = ly - this.W / 2;
+    return {
+      x: pr.left + pr.width / 2 + x * Math.cos(a) - y * Math.sin(a),
+      y: pr.top + pr.height / 2 + (x * Math.sin(a) + y * Math.cos(a)) * STRETCH_Y,
     };
   }
   /** 盤面ローカル px 座標 -> rotWrap 内の座標（回転しない要素を置くため） */

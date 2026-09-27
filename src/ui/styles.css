@@ -42,9 +42,6 @@ button{font-family:inherit;cursor:pointer;}
 #best{font-size:17px;font-weight:800;letter-spacing:0;font-variant-numeric:tabular-nums;transform:scaleX(.87);transform-origin:0 50%;}
 .top-btns{position:absolute;right:10px;top:0;display:flex;gap:10px;}
 .top-left{position:absolute;left:10px;top:0;display:flex;gap:10px;}
-.undo-btn svg{width:22px;height:22px;}
-.round-btn.undo-btn.off{opacity:.3;}
-.undo-over{display:block;margin:0 auto 12px;}
 .round-btn{width:36px;height:36px;border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;
   border:1.5px solid var(--line);background:rgba(120,160,255,.13);color:#fff;}
 .round-btn svg{width:21px;height:21px;fill:#fff;}
@@ -319,3 +316,18 @@ button{font-family:inherit;cursor:pointer;}
 .primary:active{background:rgba(120,160,255,.3);}
 .boot-error{position:fixed;left:16px;right:16px;top:40%;z-index:50;padding:16px;border-radius:14px;
   background:rgba(10,16,50,.92);color:#fff;font-size:14px;line-height:1.5;white-space:pre-wrap;text-align:center;}
+
+/* ---- チュートリアル（はじめて遊ぶ人向け。盤面とトレイの間に説明、指の絵がピースを運んで見せる） ---- */
+/* 説明はスコアの場所に出す（チュートリアル中の点数はベストスコアの枠に出ている） */
+body.tutorial-on .score-wrap{visibility:hidden;}
+.tutorial{position:fixed;left:50%;top:0;z-index:22;width:min(calc(100% - 32px),380px);translate:-50% 0;
+  padding:8px 12px;border-radius:16px;border:1.5px solid var(--line);background:#1d44b4;text-align:center;
+  box-shadow:0 3px 0 rgba(8,24,90,.35);animation:trayIn 300ms cubic-bezier(.3,1.4,.5,1) both;}
+.tut-text{margin:0;font-size:14px;font-weight:800;line-height:1.45;text-shadow:var(--ts);}
+.tut-text b{color:var(--gold);font-weight:900;}
+.tut-start{display:block;margin:10px auto 2px;}
+.tut-skip{position:fixed;right:14px;bottom:max(8px,env(safe-area-inset-bottom));z-index:22;padding:6px 4px;font-size:12px;font-weight:700;}
+.tut-hand{position:fixed;left:0;top:0;z-index:25;width:44px;height:53px;pointer-events:none;
+  filter:drop-shadow(0 2px 1.5px rgba(0,0,0,.3));}
+.tut-hand svg{width:100%;height:100%;fill:#fff;stroke:#1d3a9e;stroke-width:2.4;stroke-linejoin:round;}
+.howto{display:block;margin:18px auto 0;font-size:14px;font-weight:700;}
