@@ -1,6 +1,6 @@
-import { Board } from './board.js?v=202609270003';
-import * as Sim from './sim.js?v=202609270003';
-import { KIND_PRIORITY } from './constants.js?v=202609270003';
+import { Board } from './board.js?v=202609270257';
+import * as Sim from './sim.js?v=202609270257';
+import { KIND_PRIORITY } from './constants.js?v=202609270257';
 
 /**
  * ライン(kind, n) の発動を1move ずつ進めるジェネレータ。縦列・横列で完全に同じ処理。

@@ -41,7 +41,10 @@ button{font-family:inherit;cursor:pointer;}
 .best-label{font-family:"M PLUS Rounded 1c",sans-serif;font-size:8px;font-weight:800;letter-spacing:.02em;margin-bottom:2px;}
 #best{font-size:17px;font-weight:800;letter-spacing:0;font-variant-numeric:tabular-nums;transform:scaleX(.87);transform-origin:0 50%;}
 .top-btns{position:absolute;right:10px;top:0;display:flex;gap:10px;}
-.top-left{position:absolute;left:10px;top:0;display:flex;}
+.top-left{position:absolute;left:10px;top:0;display:flex;gap:10px;}
+.undo-btn svg{width:22px;height:22px;}
+.round-btn.undo-btn.off{opacity:.3;}
+.undo-over{display:block;margin:0 auto 12px;}
 .round-btn{width:36px;height:36px;border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;
   border:1.5px solid var(--line);background:rgba(120,160,255,.13);color:#fff;}
 .round-btn svg{width:21px;height:21px;fill:#fff;}
