@@ -1,14 +1,14 @@
-import { Game } from '../core/game.js?v=202609270824';
-import { Board, createBlock } from '../core/board.js?v=202609270824';
-import { Piece } from '../core/pieces.js?v=202609270824';
-import * as Sim from '../core/sim.js?v=202609270824';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270824';
-import { Renderer, delay } from './renderer.js?v=202609270824';
-import { Sfx } from './sfx.js?v=202609270824';
-import { Scenes } from './scenes.js?v=202609270824';
-import { colorOf } from './palette.js?v=202609270824';
-import { TrayDealer } from './tray-dealer.js?v=202609270824';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270824';
+import { Game } from '../core/game.js?v=202609270831';
+import { Board, createBlock } from '../core/board.js?v=202609270831';
+import { Piece } from '../core/pieces.js?v=202609270831';
+import * as Sim from '../core/sim.js?v=202609270831';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270831';
+import { Renderer, delay } from './renderer.js?v=202609270831';
+import { Sfx } from './sfx.js?v=202609270831';
+import { Scenes } from './scenes.js?v=202609270831';
+import { colorOf } from './palette.js?v=202609270831';
+import { TrayDealer } from './tray-dealer.js?v=202609270831';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270831';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -113,7 +113,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270824', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270831', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -178,7 +178,7 @@ async function playTurn(turn) {
   } else renderer.setFever(0);
   let shownTier = 0;                                       // このターンで画面の色を変えた褒め言葉の段階
   for (const [i, step] of turn.steps.entries()) {
-    const sp = speeds[i] * backlog();
+    const sp = speeds[i] * backlog() * tutorialSlow();
     // 再生中に次のピースが置かれたら、残りの発動は演出なしで一気に進める
     if (renderer.rush) { await renderer.playStep(step, 1); if (stale()) return; continue; }
     if (i === 0) await renderer.charge(step.kind, step.n, step.stack, ANIM.charge / backlog());
@@ -703,6 +703,8 @@ function startTutorial() {
   bestCelebrated = true;                         // チュートリアルの点数で新記録のお祝いはしない
   tutorialStep(0);
 }
+/** 連鎖の再生の速さ（チュートリアルで動きを見せたいステップはゆっくり） */
+function tutorialSlow() { return (tutorial && TUTORIAL_STEPS[tutorial.i]?.slow) || 1; }
 function tutorialStep(i) {
   tutorial.i = i; tutorial.placed = false;
   const st = TUTORIAL_STEPS[i];
@@ -769,6 +771,7 @@ function showTutorialTarget() {
   if (!t || !t.piece || game.gameOver) { renderer.clearHint(); hideHand(); return; }
   renderer.showHint(t.piece, t.ox, t.oy, true);                     // 持っている間も置く場所は見せたまま
   if (drag) { hideHand(); return; }
+  renderer.litLines((TUTORIAL_STEPS[tutorial.i].lit ?? []).map(([kind, n]) => ({ kind, n })), 'yellow');   // 見てほしいラインの番号
   document.querySelector(`.slot[data-slot="${t.slot}"]`)?.classList.add('hinted');
   moveHand();
 }
