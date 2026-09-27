@@ -1,14 +1,14 @@
-import { Game } from '../core/game.js?v=202609270951';
-import { Board, createBlock } from '../core/board.js?v=202609270951';
-import { Piece } from '../core/pieces.js?v=202609270951';
-import * as Sim from '../core/sim.js?v=202609270951';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270951';
-import { Renderer, delay } from './renderer.js?v=202609270951';
-import { Sfx } from './sfx.js?v=202609270951';
-import { Scenes } from './scenes.js?v=202609270951';
-import { colorOf } from './palette.js?v=202609270951';
-import { TrayDealer } from './tray-dealer.js?v=202609270951';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270951';
+import { Game } from '../core/game.js?v=202609271305';
+import { Board, createBlock } from '../core/board.js?v=202609271305';
+import { Piece } from '../core/pieces.js?v=202609271305';
+import * as Sim from '../core/sim.js?v=202609271305';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609271305';
+import { Renderer, delay } from './renderer.js?v=202609271305';
+import { Sfx } from './sfx.js?v=202609271305';
+import { Scenes } from './scenes.js?v=202609271305';
+import { colorOf } from './palette.js?v=202609271305';
+import { TrayDealer } from './tray-dealer.js?v=202609271305';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609271305';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -66,6 +66,12 @@ let shownScore = 0;
 let pending = 0;              // 再生待ち・再生中のターン数
 let generation = 0;           // restart で古い再生を打ち切るため
 let bestCelebrated = false;   // このゲームで新記録の演出をしたか
+/**
+ * 詰み（Game.gameOver）は置いた瞬間に確定するが、連鎖の再生中はまだプレイヤーに見えていないので、
+ * 「置ける場所がない！」画面が出るまではトレイのピースを掴んで動かせるようにする（実際には置ける場所が無いので、
+ * 離すとトレイへ戻る）。この間の掴めるかどうかは game.gameOver ではなく、画面に出したかどうかで判定する
+ */
+let gameOverShown = false;
 const enqueue = (fn) => {
   const gen = generation;
   queue = queue.then(() => (gen === generation ? fn() : null)).catch((e) => console.error(e));
@@ -135,7 +141,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270951', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609271305', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -237,6 +243,7 @@ async function playTurn(turn) {
     if (stale()) return;
     renderer.setFever(0);
     sfx.over();
+    gameOverShown = true;
     const prev = { ...records };
     const isBest = saveBest();
     $('finalScore').textContent = game.score.score.toLocaleString('en-US');
@@ -507,7 +514,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   // 最初の指（isPrimary）が下りたのにまだ持っている = 前の指が離れたのを取りこぼした。持っていたピースは戻す
   // （戻すとトレイを描き直すので、触った枠は番号で探し直す）
   if (drag && e.isPrimary) cancelDrag();
-  if (!hitSlot || game.gameOver || drag || paused) return;
+  if (!hitSlot || gameOverShown || drag || paused) return;
   const slot = Number(hitSlot.dataset.slot);
   const slotEl = document.querySelector(`.slot[data-slot="${slot}"]`);
   const piece = game.tray[slot];
@@ -613,7 +620,7 @@ function setPaused(v) {
   }
   $('pauseOverlay').classList.toggle('hidden', !v);
 }
-$('btnPause').addEventListener('click', () => { sfx.unlock(); if (!game.gameOver) setPaused(true); });
+$('btnPause').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) setPaused(true); });
 $('btnResume').addEventListener('click', () => setPaused(false));
 
 /* ---------- デバッグ（URL に ?debug を付けた時だけボタンを出す） ---------- */
@@ -674,6 +681,7 @@ function showState(st) {
   scenes.clear();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
+  gameOverShown = false;
   renderTray(true);
   updateHud();
   bestCelebrated = best > 0 && game.score.score >= best;     // もう超えた記録で、もう一度お祝いしない
@@ -696,6 +704,7 @@ function restart() {
   scenes.clear();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
+  gameOverShown = false;
   setPaused(false);
   renderTray(true);
   updateHud();
