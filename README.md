@@ -1,4 +1,4 @@
-# STAIR MANCALA
+# blockmancala
 
 三角形の盤面 × ブロックブラスト式配置 × マンカラ式配布のパズル。静的サイトのみ（バックエンド不要）。
 
@@ -174,6 +174,13 @@
 - 一時停止画面にも記録を出す
 - **全消しボーナス** +5,000（そのターンの COMBO 倍率も掛ける）。`ALL CLEAR!` の下に `BONUS +n` を出し、GOAL の上に得点が浮かぶ
 - すべて `src/core/constants.js`
+
+## ホーム画面に追加
+- `manifest.webmanifest`（アプリ名・アイコン・`display:standalone`）と、iOS Safari 用のメタタグ（`apple-touch-icon` など）を用意。
+  ブラウザの「ホーム画面に追加」でアイコン付きのアプリとして起動できる（オフライン対応はしていない。開くたびに通信は発生する）
+- アイコンは `icons/`（`icon-192.png` / `icon-512.png` / `icon-512-maskable.png` / `apple-touch-icon.png` / `favicon-16・32.png`）。
+  元絵は `index.html` 冒頭の `<link rel="icon">` に書いてあるインラインSVGと同じ意匠（階段の形）を、
+  サイズ別に書き出したもの。作り直すときはそのSVGを編集してから、大きさごとにラスタライズし直す
 
 ## 画面
 - 上: 学習モード・ベストスコア（王冠のピル）・サウンド・一時停止の各ボタン。中央に現在のスコア（ベストスコアも3桁区切り）
