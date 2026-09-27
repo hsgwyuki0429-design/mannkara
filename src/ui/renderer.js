@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609270831';
-import { Shards } from './shards.js?v=202609270831';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609270927';
+import { Shards } from './shards.js?v=202609270927';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -722,9 +722,9 @@ export class Renderer {
   }
 
   /** 連続発動（COMBO）の表示。盤面の上に金色の文字 */
-  showCombo(n) {
+  showCombo(n, mult) {
     const el = this.comboPop = fresh(this.comboPop);
-    el.innerHTML = `COMBO<b>${n}</b>`;
+    el.innerHTML = `COMBO<b>${n}</b>` + (mult > 1 ? `<i>×${mult}</i>` : '');
     el.className = `combo-pop show${n >= 5 ? ' hot' : ''}`;
   }
 

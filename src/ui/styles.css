@@ -34,7 +34,7 @@ button{font-family:inherit;cursor:pointer;}
 /* ---- HUD ---- */
 .top{position:relative;width:100%;height:36px;flex-shrink:0;display:flex;justify-content:center;align-items:flex-start;}
 .best-pill{position:relative;left:min(0px,calc(50% - 168px));   /* 狭い画面では右のボタンに重ならないよう左へ */
-  height:33px;width:132px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 0 0 14px;border-radius:17px;
+  height:33px;min-width:132px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px 0 14px;border-radius:17px;
   border:1.5px solid var(--line);background:none;}
 .crown{width:23px;height:20px;flex-shrink:0;margin-top:-1px;filter:drop-shadow(0 1.5px 1px rgba(0,0,0,.25));}
 .best-text{display:flex;flex-direction:column;align-items:flex-start;line-height:1;padding-left:2px;}
@@ -331,3 +331,24 @@ body.tutorial-on .score-wrap{visibility:hidden;}
   filter:drop-shadow(0 2px 1.5px rgba(0,0,0,.3));}
 .tut-hand svg{width:100%;height:100%;fill:#fff;stroke:#1d3a9e;stroke-width:2.4;stroke-linejoin:round;}
 .howto{display:block;margin:18px auto 0;font-size:14px;font-weight:700;}
+
+/* ---- COMBO の倍率（続いている間だけ、スコアの左下に出す）---- */
+.combo-meter{position:absolute;left:12px;top:calc(max(15px,env(safe-area-inset-top)) + 122px);   /* スコアのすぐ下 */
+  z-index:6;display:flex;align-items:baseline;gap:5px;padding:4px 11px 5px;
+  border-radius:99px;border:1.5px solid rgba(255,213,74,.8);background:#1d44b4;font-weight:900;font-style:italic;
+  text-shadow:var(--ts);white-space:nowrap;pointer-events:none;transform-origin:0 50%;}
+.combo-meter .cm-label{font-size:11px;letter-spacing:.06em;}
+.combo-meter .cm-n{font-size:22px;line-height:1;color:var(--gold);}
+.combo-meter .cm-x{font-size:15px;color:#fff;}
+.combo-meter.hot{border-color:#ffa55a;}
+.combo-meter.hot .cm-n{color:#ffa55a;}
+.combo-pop i{font-size:22px;color:#fff;font-style:italic;}
+
+/* ---- ゲームオーバー・一時停止の記録 ---- */
+.over-stats{display:flex;justify-content:center;gap:12px;margin:-12px 0 24px;}
+.stat{min-width:104px;padding:7px 10px 6px;border-radius:14px;border:1.5px solid var(--line);display:flex;flex-direction:column;align-items:center;}
+.stat-label{font-size:11px;font-weight:800;color:var(--dim);}
+.stat-val{font-size:28px;font-weight:900;line-height:1.15;text-shadow:var(--ts);}
+.stat-rec{font-size:11px;font-weight:800;color:var(--dim);min-height:1.3em;}
+.stat-rec.new{color:var(--gold);}
+.pause-rec{margin:-8px 0 22px;font-size:13px;font-weight:800;color:var(--dim);line-height:1.6;}

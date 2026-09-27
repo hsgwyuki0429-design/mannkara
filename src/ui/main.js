@@ -1,14 +1,14 @@
-import { Game } from '../core/game.js?v=202609270831';
-import { Board, createBlock } from '../core/board.js?v=202609270831';
-import { Piece } from '../core/pieces.js?v=202609270831';
-import * as Sim from '../core/sim.js?v=202609270831';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609270831';
-import { Renderer, delay } from './renderer.js?v=202609270831';
-import { Sfx } from './sfx.js?v=202609270831';
-import { Scenes } from './scenes.js?v=202609270831';
-import { colorOf } from './palette.js?v=202609270831';
-import { TrayDealer } from './tray-dealer.js?v=202609270831';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270831';
+import { Game } from '../core/game.js?v=202609270927';
+import { Board, createBlock } from '../core/board.js?v=202609270927';
+import { Piece } from '../core/pieces.js?v=202609270927';
+import * as Sim from '../core/sim.js?v=202609270927';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED, streakMultiplier } from '../core/constants.js?v=202609270927';
+import { Renderer, delay } from './renderer.js?v=202609270927';
+import { Sfx } from './sfx.js?v=202609270927';
+import { Scenes } from './scenes.js?v=202609270927';
+import { colorOf } from './palette.js?v=202609270927';
+import { TrayDealer } from './tray-dealer.js?v=202609270927';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609270927';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -22,18 +22,35 @@ let mode = 'normal';
 try { mode = localStorage.getItem(MODE_KEY) === 'learn' ? 'learn' : 'normal'; } catch {}
 const bestKey = () => (mode === 'learn' ? 'stair-mancala-best-learn' : 'stair-mancala-best');
 let best = 0;
+/** 最大連鎖・最大コンボの記録（端末ごと・モードごとに別） */
+const recordsKey = () => (mode === 'learn' ? 'stair-mancala-records-learn' : 'stair-mancala-records');
+let records = { chain: 0, combo: 0 };
 function loadBest() {
   best = 0;
+  records = { chain: 0, combo: 0 };
   try { best = Number(localStorage.getItem(bestKey())) || 0; } catch {}
+  try { records = { ...records, ...JSON.parse(localStorage.getItem(recordsKey()) || '{}') }; } catch {}
 }
 loadBest();
 /** チュートリアル中なら { i: ステップ, placed: 置いた（次のステップを待っている） }。チュートリアルの点数・盤面は残さない */
 let tutorial = null;
 function saveBest() {
+  saveRecords();
   if (tutorial || game.score.score <= best) return false;
   best = game.score.score;
   try { localStorage.setItem(bestKey(), String(best)); } catch {}
   return true;
+}
+
+/** このゲームの最大連鎖・最大コンボを記録に残す。更新した方を返す（チュートリアルでは残さない） */
+function saveRecords() {
+  const { bestChain, bestStreak } = game.score;
+  const up = { chain: !tutorial && bestChain > records.chain, combo: !tutorial && bestStreak > records.combo };
+  if (!up.chain && !up.combo) return up;
+  if (up.chain) records.chain = bestChain;
+  if (up.combo) records.combo = bestStreak;
+  try { localStorage.setItem(recordsKey(), JSON.stringify(records)); } catch {}
+  return up;
 }
 
 /* ---------- ゲーム ---------- */
@@ -113,7 +130,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270831', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609270927', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -165,15 +182,17 @@ async function playTurn(turn) {
   renderer.setRush(rush);
   showScore(turn.scoreAfterPlace);
   if (rush) {                                            // 早送り: 演出なしで盤面と点数だけ最後まで進める
+    setComboMeter(turn.steps.length ? turn.streak : 0);
     for (const step of turn.steps) { await renderer.playStep(step, 1); if (stale()) return; }
     if (turn.allClear) { renderer.showText(allClearText(turn), 't5'); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
     showScore(turn.score);
     return;
   }
   const speeds = planSpeeds(turn.steps);
+  setComboMeter(turn.steps.length ? turn.streak : 0, true);
   if (turn.steps.length) {
     renderer.setFever((turn.streak - 1) / 5);
-    if (turn.streak >= 2) { renderer.showCombo(turn.streak); sfx.combo(turn.streak); }
+    if (turn.streak >= 2) { renderer.showCombo(turn.streak, streakMultiplier(turn.streak)); sfx.combo(turn.streak); }
     if (turn.streak >= 5 && turn.streak % 5 === 0) scenes.comboWave();       // コンボ 5・10・15… で画面の下から桃色に染まる
   } else renderer.setFever(0);
   let shownTier = 0;                                       // このターンで画面の色を変えた褒め言葉の段階
@@ -215,12 +234,44 @@ async function playTurn(turn) {
     if (stale()) return;
     renderer.setFever(0);
     sfx.over();
+    const prev = { ...records };
     const isBest = saveBest();
     $('finalScore').textContent = game.score.score.toLocaleString('en-US');
+    showOverStats(prev);
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best.toLocaleString('en-US')}`;
     clearSave();
     $('gameOver').classList.remove('hidden');
   }
+}
+
+/** ゲームオーバー画面: このゲームの最大連鎖・最大コンボと、これまでの記録（超えたら NEW RECORD!） */
+function showOverStats(prev) {
+  const { bestChain, bestStreak } = game.score;
+  for (const [val, rec, mine, before] of [['statChain', 'recChain', bestChain, prev.chain], ['statCombo', 'recCombo', bestStreak, prev.combo]]) {
+    $(val).textContent = mine;
+    const isNew = before > 0 && mine > before;
+    $(rec).textContent = isNew ? 'NEW RECORD!' : `記録 ${Math.max(before, mine)}`;
+    $(rec).classList.toggle('new', isNew);
+  }
+}
+
+/**
+ * COMBO の倍率の表示（スコアの左下）。COMBO 2（×1.5）から、発動しない手で途切れるまで出したまま。
+ * 増えたときは弾ませる
+ */
+let comboShown = 0;
+function setComboMeter(streak, bump = false) {
+  const el = $('comboMeter');
+  const on = streak >= 2 && !tutorial;
+  el.classList.toggle('hidden', !on);
+  if (!on) { comboShown = 0; return; }
+  if (streak === comboShown) return;
+  const up = streak > comboShown;
+  comboShown = streak;
+  el.innerHTML = `<span class="cm-label">COMBO</span><span class="cm-n">${streak}</span><span class="cm-x">×${streakMultiplier(streak)}</span>`;
+  el.classList.toggle('hot', streak >= 5);
+  if (bump && up) el.animate([{ scale: '1' }, { scale: '1.22', offset: 0.3 }, { scale: '.97', offset: 0.65 }, { scale: '1' }],
+    { duration: 380, easing: 'cubic-bezier(.3,1.4,.5,1)' });
 }
 
 /**
@@ -572,6 +623,10 @@ function setPaused(v) {
   paused = v;
   if (v) cancelDrag();
   renderer.timeScale = v ? 0 : 1;
+  if (v) {
+    const chain = Math.max(records.chain, tutorial ? 0 : game.score.bestChain), combo = Math.max(records.combo, tutorial ? 0 : game.score.bestStreak);
+    $('pauseRecords').innerHTML = `記録　最大連鎖 ${chain}・最大コンボ ${combo}`;
+  }
   $('pauseOverlay').classList.toggle('hidden', !v);
 }
 $('btnPause').addEventListener('click', () => { sfx.unlock(); if (!game.gameOver) setPaused(true); });
@@ -638,6 +693,7 @@ function showState(st) {
   renderTray(true);
   updateHud();
   bestCelebrated = best > 0 && game.score.score >= best;     // もう超えた記録で、もう一度お祝いしない
+  setComboMeter(game.score.streak);
   updateDanger();
   updateDebug();
   updateHint();
@@ -649,6 +705,7 @@ function restart() {
   stopTutorial();
   generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   bestCelebrated = false;
+  setComboMeter(0);
   clearSave();
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
