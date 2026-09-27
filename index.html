@@ -5,8 +5,18 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
 <meta name="theme-color" content="#2451c4" />
-<title>STAIR MANCALA</title>
+<title>blockmancala</title>
+<meta name="description" content="三角形の盤面 × ブロックブラスト式配置 × マンカラ式配布のパズル" />
+<!-- ホーム画面に追加したときのアイコン・名前（Android/Chrome は manifest、iOS/Safari はこの下のタグを見る） -->
+<link rel="manifest" href="./manifest.webmanifest" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232b4bbf'/%3E%3Cpath d='M6 6h20v4H22v4h-4v4h-4v4h-4v4H6z' fill='%23ffd23f'/%3E%3C/svg%3E" />
+<link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="./icons/favicon-16.png" />
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="blockmancala" />
 <script>
   // LINE・Instagram・Facebook などのアプリ内ブラウザで開かれたら、いつものブラウザ（Safari / Chrome）で開き直す
   (function () {
@@ -22,7 +32,7 @@
     else if (/Android/i.test(ua)) location.href = 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=' + location.protocol.replace(':', '') + ';package=com.android.chrome;end';
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609271305" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609271413" />
 </head>
 <body>
 <div id="app">
@@ -143,6 +153,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609271305"></script>
+<script type="module" src="./src/ui/main.js?v=202609271413"></script>
 </body>
 </html>
