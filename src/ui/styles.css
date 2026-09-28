@@ -62,10 +62,16 @@ button{font-family:inherit;cursor:pointer;}
 .learn-btn.on{border-color:var(--gold);background:rgba(255,213,74,.2);}
 .learn-btn.on svg{fill:var(--gold);}
 .score-wrap{position:relative;}
-.mode-badge{position:absolute;left:50%;top:100%;translate:-50% 2px;font-family:"Nunito",sans-serif;font-size:10.5px;font-weight:900;
+.score-badges{position:absolute;left:50%;top:100%;translate:-50% 2px;display:flex;gap:6px;white-space:nowrap;}
+.mode-badge{font-family:"Nunito",sans-serif;font-size:10.5px;font-weight:900;
   letter-spacing:.18em;color:var(--gold);padding:1px 8px 1px 10px;border:1.5px solid rgba(255,213,74,.65);border-radius:99px;
   background:rgba(20,40,130,.35);}
 .mode-badge.hidden{display:none;}
+/* 全消しのあとの倍率（×1.5・あと何手） */
+.boost-badge{font-family:"Nunito",sans-serif;font-size:10.5px;font-weight:900;letter-spacing:.06em;color:#fff;padding:1px 9px;border-radius:99px;
+  background:linear-gradient(90deg,#ff5fa2,#ffb03a,#ffe14a,#5fe08a,#4fc3ff,#b27bff);box-shadow:0 1px 2px rgba(0,0,0,.25);text-shadow:0 1px 1px rgba(0,0,0,.35);}
+.boost-badge.boost-in{animation:boostPop 520ms cubic-bezier(.3,1.6,.5,1);}
+@keyframes boostPop{from{scale:.3;opacity:0}}
 .score-wrap{display:flex;flex-direction:column;align-items:center;margin-top:min(14px,1.6vh);flex-shrink:0;}
 /* 縦に低い画面（アプリ内ブラウザのカード表示など）では、ここを縮めて盤面によけいな高さを回す。
    通常の縦長画面では min() が常に px 側になるので見た目は変わらない */

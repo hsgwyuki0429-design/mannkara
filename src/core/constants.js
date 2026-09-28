@@ -103,15 +103,27 @@ export const TRAY_RETRIES = 40;
 // ===== スコア（調整用） =====
 export const SCORE_PER_CELL_PLACED = 1;
 export const SCORE_PER_GOAL = 100;          // ゴールへ入った1個
-/** 連鎖倍率（index = 連鎖数）。2連鎖目から伸び、長い連鎖ほど大きく跳ねる */
+/**
+ * 連鎖倍率（index = 連鎖数）。2連鎖目から伸び、長い連鎖ほど大きく跳ねる。
+ * 上限なし: 表より長い連鎖は、1連鎖ごとに CHAIN_MULTIPLIER_STEP ずつ伸び続ける
+ */
 export const CHAIN_MULTIPLIERS = [1, 1, 2, 3, 5, 8, 12, 16, 20, 25, 30, 40, 50];
-export const chainMultiplier = (chain) => CHAIN_MULTIPLIERS[Math.min(chain, CHAIN_MULTIPLIERS.length - 1)];
-/** 連続発動ターン(COMBO)倍率: 1ターン増えるごとに +0.5、COMBO 11 で最大 ×6 */
-export const STREAK_STEP = 0.5;
-export const STREAK_CAP = 10;
-export const streakMultiplier = (streak) => 1 + Math.min(Math.max(0, streak - 1), STREAK_CAP) * STREAK_STEP;
+export const CHAIN_MULTIPLIER_STEP = 10;
+export const chainMultiplier = (chain) => {
+  const last = CHAIN_MULTIPLIERS.length - 1;
+  return chain <= last ? CHAIN_MULTIPLIERS[Math.max(0, chain)] : CHAIN_MULTIPLIERS[last] + (chain - last) * CHAIN_MULTIPLIER_STEP;
+};
+/**
+ * 連続発動ターン(COMBO)倍率: 1コンボごとに ×STREAK_RATE を掛けていく（COMBO 1 = ×1, 2 = ×1.3, 3 = ×1.69 …）。
+ * 上限なし（COMBO 5 で約 ×2.9、8 で約 ×6.3、12 で約 ×18）
+ */
+export const STREAK_RATE = 1.3;
+export const streakMultiplier = (streak) => Math.pow(STREAK_RATE, Math.max(0, streak - 1));
 /** 全消し（ALL CLEAR）のボーナス。そのターンの COMBO 倍率も掛ける */
-export const ALL_CLEAR_BONUS = 5000;
+export const ALL_CLEAR_BONUS = 30000;
+/** 全消しのあと ALL_CLEAR_BOOST_TURNS 手のあいだ、手に入るスコアすべてに ×ALL_CLEAR_BOOST（もう一度全消しすると手数が戻る） */
+export const ALL_CLEAR_BOOST = 1.5;
+export const ALL_CLEAR_BOOST_TURNS = 5;
 
 // ===== アニメーション時間（ms・調整用） =====
 export const ANIM = {

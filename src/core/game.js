@@ -1,17 +1,17 @@
-import { Board, createBlock } from './board.js?v=202609281534';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609281534';
-import { ScoreManager } from './score.js?v=202609281534';
-import { nextActivation, lineMoves } from './mancala.js?v=202609281534';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609281534';
-import * as Sim from './sim.js?v=202609281534';
-import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609281534';
-import { bestMove } from './advisor.js?v=202609281534';
+import { Board, createBlock } from './board.js?v=202609281542';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202609281542';
+import { ScoreManager } from './score.js?v=202609281542';
+import { nextActivation, lineMoves } from './mancala.js?v=202609281542';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202609281542';
+import * as Sim from './sim.js?v=202609281542';
+import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202609281542';
+import { bestMove } from './advisor.js?v=202609281542';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202609281534';
+} from './constants.js?v=202609281542';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -179,7 +179,7 @@ export class Game {
     const turn = {
       slot, piece, placed, steps, refilled, scoreAfterPlace, fit, rect, fitBonus,
       allClear, allClearBonus,
-      score: this.score.score, streak: this.score.streak, gameOver: this.gameOver,
+      score: this.score.score, streak: this.score.streak, boostTurns: this.score.boostTurns, gameOver: this.gameOver,
     };
     // 手駒を別スレッドで決めているときは、届いた時に解決する（その時に gameOver を入れ直す）
     if (trayReady) turn.trayReady = trayReady.then((r) => { if (r) turn.gameOver = r.gameOver; return r; });
