@@ -1,14 +1,14 @@
-import { Game } from '../core/game.js?v=202609272337';
-import { Board, createBlock } from '../core/board.js?v=202609272337';
-import { Piece } from '../core/pieces.js?v=202609272337';
-import * as Sim from '../core/sim.js?v=202609272337';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609272337';
-import { Renderer, delay } from './renderer.js?v=202609272337';
-import { Sfx } from './sfx.js?v=202609272337';
-import { Scenes } from './scenes.js?v=202609272337';
-import { colorOf } from './palette.js?v=202609272337';
-import { TrayDealer } from './tray-dealer.js?v=202609272337';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609272337';
+import { Game } from '../core/game.js?v=202609280105';
+import { Board, createBlock } from '../core/board.js?v=202609280105';
+import { Piece } from '../core/pieces.js?v=202609280105';
+import * as Sim from '../core/sim.js?v=202609280105';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609280105';
+import { Renderer, delay } from './renderer.js?v=202609280105';
+import { Sfx } from './sfx.js?v=202609280105';
+import { Scenes } from './scenes.js?v=202609280105';
+import { colorOf } from './palette.js?v=202609280105';
+import { TrayDealer } from './tray-dealer.js?v=202609280105';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609280105';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -141,7 +141,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609272337', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609280105', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -549,6 +549,7 @@ window.addEventListener('pointercancel', (e) => { if (mine(e)) cancelDrag(); });
 window.addEventListener('blur', cancelDrag);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { cancelDrag(); saveBest(); saveGame(); }  // 途中でアプリを閉じてもベストスコアと盤面が残るように
+  else sfx.unlock();   // 画面に戻ってきたとき: iOS は他アプリ切り替え・通知などで音が止まったままのことがあるので戻す
 });
 window.addEventListener('pagehide', () => { saveBest(); saveGame(); });
 

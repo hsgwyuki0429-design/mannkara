@@ -12,6 +12,9 @@ export class Sfx {
     if (this.ctx) { if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {}); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
+    // iOS Safari 16.4+: 既定では消音（サイレント）スイッチがオンだと鳴らない。ゲームの効果音として
+    // 消音スイッチを無視して鳴らす（マナーモードでも音が出るようになる）
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
     this.ctx = new AC();
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.25;
