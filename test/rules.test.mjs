@@ -1,16 +1,17 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609280425';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609280425';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609280425';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609280425';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609280425';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609280425';
-import * as Sim from '../src/core/sim.js?v=202609280425';
-import { DealerCore } from '../src/core/dealer.js?v=202609280425';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609280425';
-import { ScoreManager } from '../src/core/score.js?v=202609280425';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609280425';
+import { Board, createBlock } from '../src/core/board.js?v=202609281158';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281158';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281158';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281158';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281158';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281158';
+import * as Sim from '../src/core/sim.js?v=202609281158';
+import { DealerCore } from '../src/core/dealer.js?v=202609281158';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281158';
+import { ScoreManager } from '../src/core/score.js?v=202609281158';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281158';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281158';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609280425';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281158';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -883,7 +884,47 @@ console.log('チュートリアル');
     const turn = g.placePiece(1, st.ox, st.oy);
     eq(!!turn && turn.steps.length, st.expectChain, `ステップ${i + 1}: ${st.expectChain} 連鎖`);
     eq([g.tray.every((p) => !p), g.gameOver], [true, false], `ステップ${i + 1}: 補充もゲームオーバーも無い`);
+    if (st.explain) {
+      eq(st.explain.length <= turn.steps.length, true, `ステップ${i + 1}: 説明する発動（${st.explain.length}回）は実際の連鎖の中にある`);
+      eq(!!st.after, true, `ステップ${i + 1}: 説明のあとの まとめ がある`);
+    }
+    if (st.push) {
+      const s0 = turn.steps[0];
+      const pushed = [...s0.before].filter(([id, p]) => {
+        const a = s0.after.get(id);
+        return a && (a.x !== p.x || a.r !== p.r) && !s0.stack.some((b) => b.id === id);
+      });
+      eq(pushed.length > 0, true, `ステップ${i + 1}: 1回目の発動で、入口がふさがったラインのブロックが奥へ押しこまれる`);
+    }
   }
+}
+
+console.log('ゲーム名と遊べる場所');
+{
+  eq(gameUrl({ protocol: 'https:', hostname: 'someone.github.io', pathname: '/blockmancala/index.html' }), 'https://someone.github.io/blockmancala/',
+    '公開しているサイトで開いたら、その場所（ファイル名は付けない）');
+  eq(gameUrl({ protocol: 'https:', hostname: 'someone.github.io', pathname: '/mannkara/' }), 'https://someone.github.io/mannkara/', 'リポジトリ名が変わっても追従');
+  eq(gameUrl({ protocol: 'http:', hostname: 'localhost', pathname: '/' }), CANONICAL_URL, '手元で開いたときは公開している場所');
+  eq(gameUrl(undefined), CANONICAL_URL, 'location が無いとき（Node など）も公開している場所');
+  eq(displayUrl('https://someone.github.io/blockmancala/'), 'someone.github.io/blockmancala', '画面に出す形は https:// と最後の / を付けない');
+}
+
+console.log('端末の記録の名前（blockmancala- にそろえる）');
+{
+  const fake = (init) => {
+    const m = new Map(Object.entries(init));
+    return { m, get length() { return m.size; }, key: (i) => [...m.keys()][i] ?? null, getItem: (k) => (m.has(k) ? m.get(k) : null),
+      setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+  };
+  const st = fake({ 'stair-mancala-best': '1200', 'stair-mancala-save': '{"state":1}', 'stair-mancala-mode': 'learn',
+    'blockmancala-mode': 'normal', 'other-app': 'x' });
+  migrateStorage(st);
+  eq(Object.fromEntries(st.m), { 'blockmancala-mode': 'normal', 'other-app': 'x', 'blockmancala-best': '1200', 'blockmancala-save': '{"state":1}' },
+    '前の名前の記録を移して消す（新しい名前がもうあれば、そちらを残す）・ほかの記録は触らない');
+  migrateStorage(st);
+  eq(st.m.size, 4, '2回目は何もしない');
+  migrateStorage(null);
+  eq(true, true, '端末の保存が使えないときも止まらない');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

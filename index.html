@@ -21,7 +21,7 @@
   // LINE・Instagram・Facebook などのアプリ内ブラウザで開かれたら、いつものブラウザ（Safari / Chrome）で開き直す
   (function () {
     var ua = navigator.userAgent, url = location.href;
-    try { if (sessionStorage.getItem('stair-mancala-ext')) return; sessionStorage.setItem('stair-mancala-ext', '1'); } catch (e) {}
+    try { if (sessionStorage.getItem('blockmancala-ext')) return; sessionStorage.setItem('blockmancala-ext', '1'); } catch (e) {}
     if (/ Line\//i.test(ua)) {                                   // LINE は専用の指定で外部ブラウザを開ける
       if (!/[?&]openExternalBrowser=1/.test(url)) location.replace(url + (url.indexOf('?') < 0 ? '?' : '&') + 'openExternalBrowser=1');
       return;
@@ -38,7 +38,7 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609280425" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609281158" />
 </head>
 <body>
 <div id="app">
@@ -107,6 +107,13 @@
 
   <div id="tray" class="tray"></div>
 
+  <!-- ゲーム名と遊べる場所（画面を録画・スクショしたときにも写る） -->
+  <div id="brand" class="brand" aria-hidden="true">
+    <svg class="brand-logo" viewBox="0 0 32 32"><rect x=".5" y=".5" width="31" height="31" rx="7" fill="#2b4bbf" stroke="#96c0ff" /><path d="M6 6h20v4H22v4h-4v4h-4v4h-4v4H6z" fill="#ffd23f" /></svg>
+    <span class="brand-name">blockmancala</span>
+    <span id="brandUrl" class="brand-url">hsgwyuki0429-design.github.io/mannkara</span>
+  </div>
+
   <button id="btnDebug" class="link debug-link hidden">debug</button>
 
   <section id="debugPanel" class="debug hidden">
@@ -124,6 +131,7 @@
 
 <div id="tutorial" class="tutorial hidden">
   <p id="tutText" class="tut-text"></p>
+  <button id="tutNext" class="tut-next hidden">次へ<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5 10 6 3 10.5z" /></svg></button>
   <button id="tutStart" class="primary tut-start hidden">はじめる</button>
 </div>
 <button id="tutSkip" class="link tut-skip hidden">スキップ</button>
@@ -142,6 +150,22 @@
       <div class="stat"><span class="stat-label">最大コンボ</span><span id="statCombo" class="stat-val">0</span><span id="recCombo" class="stat-rec"></span></div>
     </div>
     <button id="btnRetry" class="primary">もう一度</button>
+    <button id="btnShare" class="share-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 7.2 7.6l1.6 1.6 2.1-2.1V15h2.2V7.1l2.1 2.1 1.6-1.6z" /><path d="M5 11h3v2H7v6h10v-6h-1v-2h3v10H5z" /></svg>
+      結果をシェア
+    </button>
+  </div>
+</div>
+<!-- 画像のシェアができないブラウザ: カードを見せて、長押し・保存・リンクのコピーで送ってもらう -->
+<div id="shareSheet" class="overlay hidden">
+  <div class="overlay-box share-box">
+    <img id="shareImg" class="share-img" alt="結果カード" />
+    <p id="shareHint" class="share-hint">画像を長押しすると、保存やシェアができます</p>
+    <div class="share-actions">
+      <a id="shareSave" class="share-btn" download="blockmancala.png">画像を保存</a>
+      <button id="shareCopy" class="share-btn">リンクをコピー</button>
+    </div>
+    <button id="shareClose" class="link howto">閉じる</button>
   </div>
 </div>
 <div id="pauseOverlay" class="overlay hidden">
@@ -162,6 +186,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609280425"></script>
+<script type="module" src="./src/ui/main.js?v=202609281158"></script>
 </body>
 </html>
