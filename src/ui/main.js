@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=202609281444';
-import { Board, createBlock } from '../core/board.js?v=202609281444';
-import { Piece } from '../core/pieces.js?v=202609281444';
-import * as Sim from '../core/sim.js?v=202609281444';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281444';
-import { Renderer, delay } from './renderer.js?v=202609281444';
-import { Sfx } from './sfx.js?v=202609281444';
-import { Scenes } from './scenes.js?v=202609281444';
-import { colorOf } from './palette.js?v=202609281444';
-import { TrayDealer } from './tray-dealer.js?v=202609281444';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281444';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281444';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609281444';
-import { World } from './world.js?v=202609281444';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281444';
+import { Game } from '../core/game.js?v=202609281452';
+import { Board, createBlock } from '../core/board.js?v=202609281452';
+import { Piece } from '../core/pieces.js?v=202609281452';
+import * as Sim from '../core/sim.js?v=202609281452';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281452';
+import { Renderer, delay } from './renderer.js?v=202609281452';
+import { Sfx } from './sfx.js?v=202609281452';
+import { Scenes } from './scenes.js?v=202609281452';
+import { colorOf } from './palette.js?v=202609281452';
+import { TrayDealer } from './tray-dealer.js?v=202609281452';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281452';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281452';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609281452';
+import { World } from './world.js?v=202609281452';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281452';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281444', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281452', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -704,12 +704,16 @@ function renderRanking() {
   for (const b of document.querySelectorAll('.rank-scope-btn')) b.classList.toggle('on', b.dataset.scope === rankScope);
   $('rankMode').classList.toggle('hidden', mode !== 'learn');
   const isWorld = rankScope === 'world';
-  $('rankName').classList.toggle('hidden', !isWorld);
-  $('rankNameText').textContent = world.name;
-  $('rankNote').classList.toggle('hidden', !(isWorld && mode === 'learn'));
+  const needsName = isWorld && !world.named;         // 世界ランキングは、なまえを決めるまで参加できない
+  $('rankName').classList.toggle('hidden', !isWorld || needsName);
+  $('rankNameText').textContent = world.name || '';
+  $('rankNamePrompt').classList.toggle('hidden', !needsName);
+  $('rankNote').classList.toggle('hidden', !(isWorld && mode === 'learn') || needsName);
   $('rankNote').textContent = '学習モードの記録は世界ランキングに入りません';
   $('rankMe').classList.add('hidden');
+  $('rankList').classList.toggle('hidden', needsName);
   $('rankList').scrollTop = 0;
+  if (needsName) { rankToken++; $('rankNamePromptInput').value = ''; $('rankNamePromptInput').focus(); return; }
   if (isWorld) renderWorld(); else renderLocal();
 }
 function renderLocal() {
@@ -767,6 +771,14 @@ async function commitName() {
 }
 $('rankNameBtn').addEventListener('click', () => (editingName ? commitName() : editName(true)));
 $('rankNameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitName(); } });
+/** はじめて世界ランキングを開いたときの、なまえの入力（空では決められない） */
+async function commitNamePrompt() {
+  if (!world.setName($('rankNamePromptInput').value)) { $('rankNamePromptInput').focus(); return; }
+  await world.flush(true);
+  renderRanking();
+}
+$('rankNamePromptBtn').addEventListener('click', commitNamePrompt);
+$('rankNamePromptInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitNamePrompt(); } });
 for (const b of document.querySelectorAll('.rank-scope-btn')) {
   b.addEventListener('click', () => { rankScope = b.dataset.scope; renderRanking(); });
 }

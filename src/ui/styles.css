@@ -421,6 +421,13 @@ body.tutorial-on .score-wrap{visibility:hidden;}
 .rank-name-btn{flex-shrink:0;padding:4px 12px;border:1.5px solid var(--gold);border-radius:99px;background:rgba(255,213,74,.12);color:var(--gold);
   font-family:"M PLUS Rounded 1c",sans-serif;font-size:13px;font-weight:900;}
 .rank-note{margin:8px 0 0;font-size:12px;font-weight:800;color:var(--gold);}
+/* 世界ランキング: なまえを決めるまでの入力（自動では付けない） */
+.rank-name-prompt{margin:18px 0;padding:16px 14px;border:1.5px solid var(--gold);border-radius:16px;background:rgba(255,213,74,.08);}
+.rank-name-hint{margin:0 0 10px;font-size:13px;font-weight:800;line-height:1.5;}
+.rank-name-row{display:flex;gap:8px;}
+.rank-name-row .rank-name-input{padding:8px 12px;}
+.rank-name-go{flex-shrink:0;padding:8px 18px;border:1.5px solid var(--gold);border-radius:99px;background:rgba(255,213,74,.2);color:var(--gold);
+  font-family:"M PLUS Rounded 1c",sans-serif;font-size:14px;font-weight:900;}
 .rank-player{margin-left:auto;padding-left:8px;font-size:14px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .rank-main{min-width:0;}
 .rank-me{margin:-8px 0 14px;font-size:14px;font-weight:800;color:var(--dim);}
