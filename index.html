@@ -38,7 +38,7 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609281534" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609281542" />
 </head>
 <body>
 <div id="app">
@@ -90,7 +90,11 @@
   </header>
   <div class="score-wrap">
     <div id="score" class="score">0</div>
-    <div id="modeBadge" class="mode-badge hidden">LEARN</div>
+    <div class="score-badges">
+      <div id="modeBadge" class="mode-badge hidden">LEARN</div>
+      <!-- 全消しのあと、しばらくスコアの倍率が上がる -->
+      <div id="boostBadge" class="boost-badge hidden"></div>
+    </div>
   </div>
 
   <div class="stage">
@@ -218,6 +222,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609281534"></script>
+<script type="module" src="./src/ui/main.js?v=202609281542"></script>
 </body>
 </html>
