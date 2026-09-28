@@ -120,7 +120,7 @@ export const chainMultiplier = (chain) => {
 export const STREAK_RATE = 1.3;
 export const streakMultiplier = (streak) => Math.pow(STREAK_RATE, Math.max(0, streak - 1));
 /** 全消し（ALL CLEAR）のボーナス。そのターンの COMBO 倍率も掛ける */
-export const ALL_CLEAR_BONUS = 30000;
+export const ALL_CLEAR_BONUS = 5000;
 /** 全消しのあと ALL_CLEAR_BOOST_TURNS 手のあいだ、手に入るスコアすべてに ×ALL_CLEAR_BOOST（もう一度全消しすると手数が戻る） */
 export const ALL_CLEAR_BOOST = 1.5;
 export const ALL_CLEAR_BOOST_TURNS = 5;

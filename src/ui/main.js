@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=202609281542';
-import { Board, createBlock } from '../core/board.js?v=202609281542';
-import { Piece } from '../core/pieces.js?v=202609281542';
-import * as Sim from '../core/sim.js?v=202609281542';
-import { SIZE, ANIM, lineCells, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281542';
-import { Renderer, delay } from './renderer.js?v=202609281542';
-import { Sfx } from './sfx.js?v=202609281542';
-import { Scenes } from './scenes.js?v=202609281542';
-import { colorOf } from './palette.js?v=202609281542';
-import { TrayDealer } from './tray-dealer.js?v=202609281542';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281542';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281542';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609281542';
-import { World } from './world.js?v=202609281542';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281542';
+import { Game } from '../core/game.js?v=202609281547';
+import { Board, createBlock } from '../core/board.js?v=202609281547';
+import { Piece } from '../core/pieces.js?v=202609281547';
+import * as Sim from '../core/sim.js?v=202609281547';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281547';
+import { Renderer, delay } from './renderer.js?v=202609281547';
+import { Sfx } from './sfx.js?v=202609281547';
+import { Scenes } from './scenes.js?v=202609281547';
+import { colorOf } from './palette.js?v=202609281547';
+import { TrayDealer } from './tray-dealer.js?v=202609281547';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281547';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281547';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609281547';
+import { World } from './world.js?v=202609281547';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281547';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281542', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281547', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -222,16 +222,7 @@ const game = new Game({
   },
 });
 
-const allClearText = (turn) => `ALL CLEAR!<small>BONUS +${turn.allClearBonus.toLocaleString('en-US')}</small>`
-  + `<small>${ALL_CLEAR_BOOST_TURNS}手のあいだ スコア×${ALL_CLEAR_BOOST}</small>`;
-/** 全消しのあとの倍率の表示（残りの手数。0 なら消す） */
-function showBoost(turns, fresh = false) {
-  const el = $('boostBadge');
-  el.classList.toggle('hidden', !(turns > 0));
-  if (!(turns > 0)) return;
-  el.textContent = `SCORE ×${ALL_CLEAR_BOOST}・あと${turns}手`;
-  if (fresh) { el.classList.remove('boost-in'); void el.offsetWidth; el.classList.add('boost-in'); }
-}
+const allClearText = (turn) => `ALL CLEAR!<small>BONUS +${turn.allClearBonus.toLocaleString('en-US')}</small>`;
 
 async function playTurn(turn) {
   // 途中でリスタート（モードの切り替えなど）したら、古いゲームの続き（点数・ゲームオーバー）は出さない
@@ -243,7 +234,6 @@ async function playTurn(turn) {
     for (const step of turn.steps) { await renderer.playStep(step, 1); if (stale()) return; }
     if (turn.allClear) { renderer.showText(allClearText(turn), 't5'); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
     showScore(turn.score);
-    showBoost(turn.boostTurns, turn.allClear);
     return;
   }
   const speeds = planSpeeds(turn.steps);
@@ -286,7 +276,6 @@ async function playTurn(turn) {
     sfx.fanfare();
   }
   showScore(turn.score);
-  showBoost(turn.boostTurns, turn.allClear);
   // 補充の手駒を別スレッドで決めているときは、届いてから（詰みの判定・ピンチ・おすすめは手駒で決まる）
   if (turn.trayReady) { await turn.trayReady; if (stale()) return; }
   updateDanger();
@@ -376,7 +365,7 @@ function showScore(v, bump = false) {
       { duration: 520, easing: 'cubic-bezier(.3,1.4,.5,1)' });
   }
 }
-function updateHud() { cancelAnimationFrame(rollRaf); shownScore = game.score.score; showScore(game.score.score); showBoost(game.score.boostTurns); }
+function updateHud() { cancelAnimationFrame(rollRaf); shownScore = game.score.score; showScore(game.score.score); }
 
 /* ---------- トレイ ---------- */
 /**
