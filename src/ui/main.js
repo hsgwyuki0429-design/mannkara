@@ -1,14 +1,16 @@
-import { Game } from '../core/game.js?v=202609280425';
-import { Board, createBlock } from '../core/board.js?v=202609280425';
-import { Piece } from '../core/pieces.js?v=202609280425';
-import * as Sim from '../core/sim.js?v=202609280425';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609280425';
-import { Renderer, delay } from './renderer.js?v=202609280425';
-import { Sfx } from './sfx.js?v=202609280425';
-import { Scenes } from './scenes.js?v=202609280425';
-import { colorOf } from './palette.js?v=202609280425';
-import { TrayDealer } from './tray-dealer.js?v=202609280425';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609280425';
+import { Game } from '../core/game.js?v=202609281158';
+import { Board, createBlock } from '../core/board.js?v=202609281158';
+import { Piece } from '../core/pieces.js?v=202609281158';
+import * as Sim from '../core/sim.js?v=202609281158';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281158';
+import { Renderer, delay } from './renderer.js?v=202609281158';
+import { Sfx } from './sfx.js?v=202609281158';
+import { Scenes } from './scenes.js?v=202609281158';
+import { colorOf } from './palette.js?v=202609281158';
+import { TrayDealer } from './tray-dealer.js?v=202609281158';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281158';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281158';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609281158';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -18,13 +20,15 @@ const renderer = new Renderer(sfx);
 const scenes = new Scenes({ sfx, colorOf });
 
 /* ---------- モード（通常 / 学習）とベストスコア（端末ごと・モードごとに別） ---------- */
-const MODE_KEY = 'stair-mancala-mode';
+// 端末に残す記録の名前はゲーム名（blockmancala-）で始める。前の名前で残っている記録は、読む前にここで移す
+try { migrateStorage(localStorage); } catch {}
+const MODE_KEY = 'blockmancala-mode';
 let mode = 'normal';
 try { mode = localStorage.getItem(MODE_KEY) === 'learn' ? 'learn' : 'normal'; } catch {}
-const bestKey = () => (mode === 'learn' ? 'stair-mancala-best-learn' : 'stair-mancala-best');
+const bestKey = () => (mode === 'learn' ? 'blockmancala-best-learn' : 'blockmancala-best');
 let best = 0;
 /** 最大連鎖・最大コンボの記録（端末ごと・モードごとに別） */
-const recordsKey = () => (mode === 'learn' ? 'stair-mancala-records-learn' : 'stair-mancala-records');
+const recordsKey = () => (mode === 'learn' ? 'blockmancala-records-learn' : 'blockmancala-records');
 let records = { chain: 0, combo: 0 };
 function loadBest() {
   best = 0;
@@ -142,7 +146,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609280425', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281158', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -206,13 +210,17 @@ async function playTurn(turn) {
     if (turn.streak >= 5 && turn.streak % 5 === 0) scenes.comboWave();       // コンボ 5・10・15… で画面の下から桃色に染まる
   } else renderer.setFever(0);
   let shownTier = 0;                                       // このターンで画面の色を変えた褒め言葉の段階
+  const explain = tutorial ? TUTORIAL_STEPS[tutorial.i]?.explain : null;   // チュートリアルで動きを1つずつ説明する
   for (const [i, step] of turn.steps.entries()) {
     const sp = speeds[i] * backlog() * tutorialSlow();
     // 再生中に次のピースが置かれたら、残りの発動は演出なしで一気に進める
     if (renderer.rush) { await renderer.playStep(step, 1); if (stale()) return; continue; }
+    const ex = explain?.[i];
+    if (ex?.full) { await explainFull(step, ex.full); if (stale()) return; }
     if (i === 0) await renderer.charge(step.kind, step.n, step.stack, ANIM.charge / backlog());
     if (stale()) return;
-    await renderer.playStep(step, sp);
+    await renderer.playStep(step, sp, ex && (ex.out || ex.enter) ? () => explainEnter(step, ex) : null);
+    if (ex) { renderer.clearAnnotations(); renderer.litLines([]); }
     if (stale()) return;
     if (renderer.rush) continue;
     const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
@@ -252,6 +260,8 @@ async function playTurn(turn) {
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best.toLocaleString('en-US')}`;
     clearSave();
     $('gameOver').classList.remove('hidden');
+    prepareShare({ score: game.score.score, chain: game.score.bestChain, combo: game.score.bestStreak, best: isBest, learn: mode === 'learn',
+      board: [...game.board.entries()].map(({ block, x, r }) => [x, r, block.color]) });
   }
 }
 
@@ -664,7 +674,7 @@ $('btnRunChain').addEventListener('click', () => {
 /**
  * ゲームの途中の状態を端末に残し、次に開いたときはその盤面から続ける（説明などは出さない。モードごとに別）
  */
-const saveKey = () => (mode === 'learn' ? 'stair-mancala-save-learn' : 'stair-mancala-save');
+const saveKey = () => (mode === 'learn' ? 'blockmancala-save-learn' : 'blockmancala-save');
 function saveGame() {
   if (tutorial) return;
   try {
@@ -685,6 +695,7 @@ function showState(st) {
   scenes.clear();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
+  dropShare();
   gameOverShown = false;
   renderTray(true);
   updateHud();
@@ -708,6 +719,7 @@ function restart() {
   scenes.clear();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
+  dropShare();
   gameOverShown = false;
   setPaused(false);
   renderTray(true);
@@ -730,12 +742,12 @@ function startOrResume() {
  * 最初に開いたとき（ベストスコアも途中の保存も無い）に出て、一時停止の「遊び方」からもう一度見られる。
  * 遊んでいる途中に見たときは、終わったらそのゲームの続きから
  */
-const TUTORIAL_KEY = 'stair-mancala-tutorial';
+const TUTORIAL_KEY = 'blockmancala-tutorial';
 const TUTORIAL_SNAP = 2.6;                       // 決めた場所へ吸い付く距離（マス）。慣れていない人でも置けるように広め
 const TUTORIAL_SLOT = 1;                         // 手駒はまん中の枠に出す
 function isFirstRun() {
   try {
-    return ![TUTORIAL_KEY, 'stair-mancala-best', 'stair-mancala-best-learn', 'stair-mancala-save', 'stair-mancala-save-learn']
+    return ![TUTORIAL_KEY, 'blockmancala-best', 'blockmancala-best-learn', 'blockmancala-save', 'blockmancala-save-learn']
       .some((k) => localStorage.getItem(k));
   } catch { return false; }
 }
@@ -778,17 +790,94 @@ function tutorialStep(i) {
   updateDanger();
   updateHint();
 }
-/** 置いた: 連鎖の再生中は「置いた後」の説明を出し、再生が終わったら次のステップへ */
+/**
+ * 置いた: 連鎖の再生中は「置いた後」の説明を出し、再生が終わったら次のステップへ。
+ * 動きを説明するステップ（explain）は、再生が終わってから「置いた後」の説明（まとめ）を出し、タップで次へ
+ */
 function tutorialPlaced() {
   tutorial.placed = true;
   showTutorialTarget();
   const i = tutorial.i, st = TUTORIAL_STEPS[i];
+  if (st.explain) {
+    enqueue(async () => {
+      if (!tutorial || tutorial.i !== i) return;
+      showTutorialText(st.after, false);
+      await waitTap();
+      if (tutorial && tutorial.i === i) tutorialStep(i + 1);
+    });
+    return;
+  }
   if (st.after) showTutorialText(st.after, false);
   enqueue(async () => {
     await renderer.wait(st.expectChain ? 1400 : 700);
     if (tutorial && tutorial.i === i) tutorialStep(i + 1);
   });
 }
+/**
+ * ブロックの動きの説明（本物の盤面で、再生を止めながら）:
+ *  explainFull  = 満杯になったラインのマスを金色の枠で囲み、番号を光らせる（少し見せたら自動で進む）
+ *  explainEnter = 先頭が GOAL に入ったところで止める（out）。続けて、残りのブロックが止まるマスに印を出し、
+ *                 入る先のラインの番号をブロックの色で光らせる（enter。押しこまれるブロックの行き先にも印）。どちらもタップで次へ
+ */
+async function explainFull(step, text) {
+  const color = step.stack[0]?.color ?? 'yellow';
+  renderer.annotate(lineCells(step.kind, step.n).map(({ x, r }) => ({ x, r, color, kind: 'line' })));
+  renderer.litLines([{ kind: step.kind, n: step.n }], color);
+  showTutorialText(text, false);
+  await renderer.wait(1600);
+  renderer.clearAnnotations();
+}
+async function explainEnter(step, ex) {
+  if (ex.out) {
+    renderer.goal.classList.add('ready');
+    showTutorialText(ex.out, false);
+    await waitTap();
+    renderer.goal.classList.remove('ready');
+  }
+  if (!ex.enter || !tutorial) return;
+  const marks = [], lines = [];
+  for (const m of step.moves) {
+    const a = m.to !== 'goal' && step.after.get(m.block.id);
+    if (!a) continue;
+    marks.push({ x: a.x, r: a.r, color: m.block.color, kind: 'target' });
+    lines.push({ kind: step.kind, n: m.to, color: m.block.color });
+  }
+  // 押しこまれるブロック（発動したライン以外で、入る前と後で場所が変わるもの）の行き先
+  for (const [id, p] of step.before) {
+    const a = step.after.get(id);
+    if (a && (a.x !== p.x || a.r !== p.r) && !step.stack.some((b) => b.id === id)) marks.push({ x: a.x, r: a.r, color: p.color, kind: 'target' });
+  }
+  renderer.annotate(marks);
+  renderer.litLines(lines);
+  showTutorialText(ex.enter, false);
+  await waitTap();
+}
+/**
+ * 読んだらタップで次へ（「次へ」ボタンでも、画面のどこでもよい。スキップ・上のボタン・一時停止の画面は除く）。
+ * 表示した直後のタップ（前の説明を閉じた指など）は数えない
+ */
+let tapDone = null;
+function waitTap() {
+  return new Promise((resolve) => {
+    const next = $('tutNext'), t0 = performance.now();
+    const ready = () => performance.now() - t0 > 350 && !paused;
+    const onUp = (e) => { if (ready() && !e.target.closest?.('#tutSkip, .top, .overlay')) finish(); };
+    const finish = () => {
+      window.removeEventListener('pointerup', onUp, true);
+      next.onclick = null;
+      next.classList.add('hidden');
+      tapDone = null;
+      placeTutorialText();
+      resolve();
+    };
+    next.onclick = () => { if (ready()) finish(); };        // キーボードで押したとき（指のときは pointerup で先に進む）
+    next.classList.remove('hidden');
+    placeTutorialText();
+    window.addEventListener('pointerup', onUp, true);
+    tapDone = finish;
+  });
+}
+
 function showTutorialText(html, end) {
   const card = $('tutorial');
   $('tutText').innerHTML = html;
@@ -856,6 +945,7 @@ function hideHand() { const hand = $('tutHand'); hand.__anim?.cancel(); hand.cla
 function stopTutorial() {
   if (!tutorial) return;
   tutorial = null;
+  tapDone?.();                                   // 説明の途中でタップを待っていたら終わらせる
   try { localStorage.setItem(TUTORIAL_KEY, '1'); } catch {}
   $('tutorial').classList.add('hidden');
   $('tutSkip').classList.add('hidden');
@@ -868,6 +958,54 @@ function endTutorial() { sfx.unlock(); stopTutorial(); startOrResume(); }
 $('tutStart').addEventListener('click', endTutorial);
 $('tutSkip').addEventListener('click', endTutorial);
 $('btnHowto').addEventListener('click', () => { sfx.unlock(); setPaused(false); startTutorial(); });
+
+/* ---------- ゲーム名と遊べる場所・結果のシェア ---------- */
+$('brandUrl').textContent = displayUrl();
+/**
+ * ゲームオーバーになったら結果カード（share-card.js）をすぐ作り始めておく。スマホの共有メニュー（navigator.share）は
+ * タップの直後にしか開けないので、タップしてから画像を作ると間に合わないことがある
+ */
+let share = null;           // { data, file: Promise<File | null>, url: 画像の blob URL }
+function prepareShare(data) {
+  dropShare();
+  const s = { data };
+  // 画面が出てくる動き（360ms）が終わってから描く（描いている間に動きが引っかからないように）
+  s.file = delay(450).then(() => drawResultCard(data)).then(cardBlob).then((blob) => {
+    if (!blob || s !== share) return null;             // 待っている間に次のゲームになった
+    s.url = URL.createObjectURL(blob);
+    return new File([blob], `${GAME_NAME}.png`, { type: 'image/png' });
+  }).catch((e) => { console.error(e); return null; });
+  share = s;
+}
+function dropShare() {
+  if (share?.url) URL.revokeObjectURL(share.url);
+  share = null;
+  $('shareSheet').classList.add('hidden');
+}
+const shareText = (d) => `${GAME_NAME} で ${d.score.toLocaleString('en-US')}点！ 最大${d.chain}連鎖 #${GAME_NAME}\n${gameUrl()}`;
+/** 「結果をシェア」: 画像つきで共有メニューを開く。画像を共有できないブラウザでは、カードを見せて保存・長押し・リンクのコピーで */
+$('btnShare').addEventListener('click', async () => {
+  const s = share;
+  if (!s) return;
+  $('btnShare').classList.add('wait');
+  const file = await s.file;
+  $('btnShare').classList.remove('wait');
+  if (s !== share) return;
+  if (file && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], text: shareText(s.data) }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+  }
+  if (!s.url) return;
+  $('shareImg').src = s.url;
+  $('shareSave').href = s.url;
+  $('shareHint').textContent = '画像を長押しすると、保存やシェアができます';
+  $('shareSheet').classList.remove('hidden');
+});
+$('shareClose').addEventListener('click', () => $('shareSheet').classList.add('hidden'));
+$('shareCopy').addEventListener('click', () => {
+  const url = gameUrl(), hint = $('shareHint');
+  const failed = () => { hint.textContent = url; };
+  try { navigator.clipboard.writeText(url).then(() => { hint.textContent = 'リンクを コピーしました'; }, failed); } catch { failed(); }
+});
 
 applyMode();
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); saveBest(); restart(); });

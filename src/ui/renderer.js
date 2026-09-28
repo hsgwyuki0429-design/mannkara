@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609280425';
-import { Shards } from './shards.js?v=202609280425';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609281158';
+import { Shards } from './shards.js?v=202609281158';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -53,6 +53,11 @@ export class Renderer {
     this.tintLayer = document.createElement('div');
     this.tintLayer.className = 'layer';
     this.wellLayer.after(this.tintLayer);
+    // チュートリアルで動きを説明するときの印（ブロックより上）
+    this.annoLayer = document.createElement('div');
+    this.annoLayer.className = 'layer';
+    this.hintLayer.after(this.annoLayer);
+    this.marks = [];
     this.lane = document.getElementById('lane');
     this.laneRow = document.getElementById('laneRow');
     this.goal = document.getElementById('goal');
@@ -134,6 +139,7 @@ export class Renderer {
       width: gs + 'px', height: gs + 'px',
     });
     this.drawStatic();
+    if (this.marks.length) this.annotate(this.marks);          // マスの大きさが変わったので置き直す
     // ブロックは今見えている位置のまま大きさだけ合わせる（盤面に合わせると、再生中のブロックが最後の位置へ飛んでしまう）。
     // 位置はどれもマスの大きさに比例するので、比で掛ければよい
     if (k !== 1) for (const el of this.els.values()) if (el.__pos) this.setPos(el, { x: el.__pos.x * k, y: el.__pos.y * k }, 0);
@@ -320,15 +326,31 @@ export class Renderer {
     this.litLines(lines, piece.color);
     this.goal.classList.toggle('ready', willClear);
   }
-  /** 発動するラインの番号を光らせる */
+  /** 発動するラインの番号を光らせる（ラインごとに色を変えるときは lines の要素に color を持たせる） */
   litLines(lines, color) {
     for (const el of this.numEls?.values() ?? []) el.classList.remove('lit');
-    for (const { kind, n } of lines) {
-      const el = this.numEls?.get(kind + n);
+    for (const l of lines) {
+      const el = this.numEls?.get(l.kind + l.n);
       if (!el) continue;
-      el.className = `lane-num lit c-${color}`;
+      el.className = `lane-num lit c-${l.color ?? color}`;
     }
   }
+  /**
+   * チュートリアルで動きを説明する印。marks = [{ x, r, color, kind }]
+   * kind 'line' = 発動するラインのマス（金色の枠）/ 'target' = 流れこんだブロックが止まるマス（学習モードのおすすめと同じ、白い枠 + ブロックの色）
+   */
+  annotate(marks) {
+    const c = this.cell;
+    this.marks = marks;
+    this.annoLayer.innerHTML = '';
+    for (const { x, r, color, kind } of marks) {
+      const d = document.createElement('div');
+      d.className = `cell hint c-${color}` + (kind === 'line' ? ' plan anno-line' : '');
+      d.style.transform = `translate(${x * c}px,${r * c}px)`;
+      this.annoLayer.appendChild(d);
+    }
+  }
+  clearAnnotations() { this.marks = []; this.annoLayer.innerHTML = ''; }
   /** 学習モードのおすすめ: 置く場所のマスを、持つピースの色で光る枠にして脈打たせる（手順どおりの手は金色） */
   showHint(piece, ox, oy, plan = false) {
     const c = this.cell;
@@ -462,7 +484,11 @@ export class Renderer {
     return 9 + longest;
   }
 
-  async playStep(step, speed = 1) {
+  /**
+   * pause: チュートリアルで動きを説明するための一時停止（先頭がゴールに入り、残りがラインへ入る直前に await する）。
+   * 普段の再生では渡さない
+   */
+  async playStep(step, speed = 1, pause = null) {
     const { kind, n: N, stack, chain, before, after } = step;
     const gen = this.gen;                                    // 途中でリスタートしたら、古い盤面の続きは描かない
     const cellT = ANIM.step / speed;                         // 1マスあたりの時間
@@ -494,6 +520,10 @@ export class Renderer {
 
     // 先頭がゴールへ
     this.goalIn(stack[0], chain);
+    if (pause && !this.rush) {
+      await pause();
+      if (gen !== this.gen) return;
+    }
 
     // 2) 各ラインへ入る
     const lanePos = (k) => ({ fx: SIZE - k, fr: SIZE });     // ライン k の真下の通路
@@ -781,6 +811,7 @@ export class Renderer {
     this.fx2.innerHTML = '';
     for (const d of this.tints?.values() ?? []) { d.__anim?.cancel(); clearTimeout(d.__t); }
     this.hintLayer.innerHTML = '';
+    this.clearAnnotations();
     this.setFever(0);
     this.setDanger(0);
     this.els.clear();
