@@ -1,17 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609281218';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281218';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281218';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281218';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281218';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281218';
-import * as Sim from '../src/core/sim.js?v=202609281218';
-import { DealerCore } from '../src/core/dealer.js?v=202609281218';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281218';
-import { ScoreManager } from '../src/core/score.js?v=202609281218';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281218';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281218';
+import { Board, createBlock } from '../src/core/board.js?v=202609281435';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281435';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281435';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281435';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281435';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281435';
+import * as Sim from '../src/core/sim.js?v=202609281435';
+import { DealerCore } from '../src/core/dealer.js?v=202609281435';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281435';
+import { ScoreManager } from '../src/core/score.js?v=202609281435';
+import { RANK_SIZE, topBy, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609281435';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281435';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281435';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281218';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281435';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -923,6 +924,32 @@ console.log('端末の記録の名前（blockmancala- にそろえる）');
   eq(st.m.size, 4, '2回目は何もしない');
   migrateStorage(null);
   eq(true, true, '端末の保存が使えないときも止まらない');
+}
+
+console.log('ランキング（スコア・コンボ・連鎖）');
+{
+  let list = [];
+  const runs = [];
+  for (let i = 0; i < 25; i++) {
+    const run = { score: 100 * (i + 1), chain: i % 7, combo: 24 - i, at: i + 1 };
+    runs.push(run);
+    list = addRun(list, run).list;
+  }
+  eq(topBy(list, 'score').map((r) => r.score), [2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600], 'スコアの上位10件（高い順）');
+  eq(topBy(list, 'combo').map((r) => r.combo), [24, 23, 22, 21, 20, 19, 18, 17, 16, 15], 'コンボの上位10件');
+  eq(topBy(list, 'chain').every((r) => r.chain > 0), true, '連鎖 0 のゲームは連鎖のランキングに出ない');
+  eq(topBy(list, 'chain')[0].chain, 6, '連鎖の1位');
+  eq(list.length <= RANK_SIZE * 3, true, 'どのランキングにも入らないゲームは残さない');
+  eq(list.includes(runs[14]), false, '真ん中のゲーム（どれも上位でない）は消える');
+  const tie = addRun(list, { score: 2500, chain: 0, combo: 0, at: 99 });
+  eq(tie.ranks.score, 2, '同じスコアなら先に出した方が上');
+  eq(addRun(list, { score: 1, chain: 0, combo: 0, at: 100 }).ranks, { score: 0, combo: 0, chain: 0 }, 'どれにも入らなければ 0');
+  eq(addRun([], { score: 5, chain: 2, combo: 3, at: 1 }).ranks, { score: 1, combo: 1, chain: 1 }, '最初のゲームはすべて1位');
+  eq(parseRanking('{壊れた'), [], '壊れた保存は空');
+  eq(parseRanking('[{"score":"x","chain":2.7,"combo":-1,"at":5},null]'), [{ score: 0, chain: 2, combo: 0, at: 5 }], '数でない値は 0');
+  const legacy = legacyRuns(1200, { chain: 5, combo: 0 });
+  eq(legacy.length, 2, 'ランキング前の記録は値ごとに1件（0 の記録は入れない）');
+  eq([topBy(legacy, 'score').length, topBy(legacy, 'chain').length, topBy(legacy, 'combo').length], [1, 1, 0], '前の記録はその値のランキングにだけ出る');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

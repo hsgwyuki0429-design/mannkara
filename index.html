@@ -38,7 +38,7 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609281218" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609281435" />
 </head>
 <body>
 <div id="app">
@@ -77,6 +77,9 @@
       </button>
     </div>
     <div class="top-btns">
+      <button id="btnRank" class="round-btn" aria-label="ランキング">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 2.8h10.8v2h3.4v2.6c0 2.7-2 4.9-4.6 5.3a5.5 5.5 0 0 1-3.1 2.6v2.9h3.1v3H7.8v-3h3.1v-2.9a5.5 5.5 0 0 1-3.1-2.6C5.2 12.3 3.2 10.1 3.2 7.4V4.8h3.4zm0 4H5.4v.6c0 1.4.9 2.6 2.1 3.1a7 7 0 0 1-.9-3.3zm10.8 0v.4a7 7 0 0 1-.9 3.3c1.2-.5 2.1-1.7 2.1-3.1v-.6z" /></svg>
+      </button>
       <button id="btnSound" class="round-btn" aria-label="サウンド">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.2 3.4v10.3a4 4 0 1 0 2.3 3.6V8.1h4.6V3.4z" /></svg>
       </button>
@@ -154,6 +157,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 7.2 7.6l1.6 1.6 2.1-2.1V15h2.2V7.1l2.1 2.1 1.6-1.6z" /><path d="M5 11h3v2H7v6h10v-6h-1v-2h3v10H5z" /></svg>
       結果をシェア
     </button>
+    <button id="btnOverRank" class="link howto over-rank">ランキングを見る</button>
   </div>
 </div>
 <!-- 画像のシェアができないブラウザ: カードを見せて、長押し・保存・リンクのコピーで送ってもらう -->
@@ -166,6 +170,19 @@
       <button id="shareCopy" class="share-btn">リンクをコピー</button>
     </div>
     <button id="shareClose" class="link howto">閉じる</button>
+  </div>
+</div>
+<!-- ランキング: 上のボタンでスコア・コンボ・連鎖を切り替える（端末ごと・モードごとに別） -->
+<div id="rankOverlay" class="overlay hidden">
+  <div class="overlay-box rank-box">
+    <p class="over-title rank-title">ランキング<span id="rankMode" class="rank-mode hidden">LEARN</span></p>
+    <div class="rank-tabs" role="tablist">
+      <button class="rank-tab" role="tab" data-kind="score">スコア</button>
+      <button class="rank-tab" role="tab" data-kind="combo">コンボ</button>
+      <button class="rank-tab" role="tab" data-kind="chain">連鎖</button>
+    </div>
+    <ol id="rankList" class="rank-list"></ol>
+    <button id="rankClose" class="primary">とじる</button>
   </div>
 </div>
 <div id="pauseOverlay" class="overlay hidden">
@@ -186,6 +203,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609281218"></script>
+<script type="module" src="./src/ui/main.js?v=202609281435"></script>
 </body>
 </html>

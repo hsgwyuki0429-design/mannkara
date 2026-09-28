@@ -1,16 +1,17 @@
-import { Game } from '../core/game.js?v=202609281218';
-import { Board, createBlock } from '../core/board.js?v=202609281218';
-import { Piece } from '../core/pieces.js?v=202609281218';
-import * as Sim from '../core/sim.js?v=202609281218';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281218';
-import { Renderer, delay } from './renderer.js?v=202609281218';
-import { Sfx } from './sfx.js?v=202609281218';
-import { Scenes } from './scenes.js?v=202609281218';
-import { colorOf } from './palette.js?v=202609281218';
-import { TrayDealer } from './tray-dealer.js?v=202609281218';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281218';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281218';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609281218';
+import { Game } from '../core/game.js?v=202609281435';
+import { Board, createBlock } from '../core/board.js?v=202609281435';
+import { Piece } from '../core/pieces.js?v=202609281435';
+import * as Sim from '../core/sim.js?v=202609281435';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281435';
+import { Renderer, delay } from './renderer.js?v=202609281435';
+import { Sfx } from './sfx.js?v=202609281435';
+import { Scenes } from './scenes.js?v=202609281435';
+import { colorOf } from './palette.js?v=202609281435';
+import { TrayDealer } from './tray-dealer.js?v=202609281435';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281435';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281435';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609281435';
+import { RANK_KINDS, topBy, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281435';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -35,6 +36,21 @@ function loadBest() {
   records = { chain: 0, combo: 0 };
   try { best = Number(localStorage.getItem(bestKey())) || 0; } catch {}
   try { records = { ...records, ...JSON.parse(localStorage.getItem(recordsKey()) || '{}') }; } catch {}
+  loadRanking();
+}
+/** ランキング（スコア・コンボ・連鎖。端末ごと・モードごとに別）。1ゲームずつ、終わったときに入れる */
+const rankingKey = () => (mode === 'learn' ? 'blockmancala-ranking-learn' : 'blockmancala-ranking');
+let ranking = [];
+let lastRun = null;          // いちばん最近入れたゲーム（ランキングの中で色を付ける）
+function loadRanking() {
+  ranking = [];
+  lastRun = null;
+  let text = null;
+  try { text = localStorage.getItem(rankingKey()); } catch {}
+  if (text != null) { ranking = parseRanking(text); return; }
+  // ランキングができる前の記録は、それぞれ別の1件として入れておく（ベストスコアとランキングの1位が食い違わないように）
+  for (const run of legacyRuns(best, records)) ranking = addRun(ranking, run).list;
+  if (ranking.length) try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
 }
 loadBest();
 /** チュートリアル中なら { i: ステップ, placed: 置いた（次のステップを待っている） }。チュートリアルの点数・盤面は残さない */
@@ -45,6 +61,19 @@ function saveBest() {
   best = game.score.score;
   try { localStorage.setItem(bestKey(), String(best)); } catch {}
   return true;
+}
+
+/** このゲームをランキングに入れる（1ゲームにつき1回。チュートリアルと 0 点は入れない）。何位に入ったかを返す */
+let runRecorded = false;
+function recordRun() {
+  if (runRecorded || tutorial || game.score.score <= 0) return null;
+  runRecorded = true;
+  const run = { score: game.score.score, chain: game.score.bestChain, combo: game.score.bestStreak, at: Date.now() };
+  const res = addRun(ranking, run);
+  ranking = res.list;
+  if (Object.values(res.ranks).some(Boolean)) lastRun = run;
+  try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
+  return res.ranks;
 }
 
 /** このゲームの最大連鎖・最大コンボを記録に残す。更新した方を返す（チュートリアルでは残さない） */
@@ -146,7 +175,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281218', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281435', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -255,6 +284,9 @@ async function playTurn(turn) {
     gameOverShown = true;
     const prev = { ...records };
     const isBest = saveBest();
+    const ranks = recordRun();
+    $('btnOverRank').textContent = ranks && RANK_KINDS.some((k) => ranks[k]) ? `ランクイン！ ランキングを見る` : 'ランキングを見る';
+    $('btnOverRank').classList.toggle('ranked', !!ranks && RANK_KINDS.some((k) => ranks[k]));
     $('finalScore').textContent = game.score.score.toLocaleString('en-US');
     showOverStats(prev);
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best.toLocaleString('en-US')}`;
@@ -594,7 +626,7 @@ function dropHint() {
   renderer.clearHint();
 }
 /** 左上のリセットボタン: 今のゲームを打ち切って最初からにする（ゲームオーバーの「もう一度」と同じ） */
-$('btnReset').addEventListener('click', () => { sfx.unlock(); saveBest(); restart(); });
+$('btnReset').addEventListener('click', () => { sfx.unlock(); saveBest(); recordRun(); restart(); });
 function applyMode() {
   const learn = mode === 'learn';
   document.body.classList.toggle('learn', learn);
@@ -636,6 +668,71 @@ function setPaused(v) {
 }
 $('btnPause').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) setPaused(true); });
 $('btnResume').addEventListener('click', () => setPaused(false));
+
+/* ---------- ランキング（上のボタンで スコア / コンボ / 連鎖 を切り替える） ---------- */
+const RANK_UNIT = { score: '', combo: 'コンボ', chain: '連鎖' };
+let rankKind = 'score';
+let pausedBeforeRank = false;
+const fmtNum = (v) => v.toLocaleString('en-US');
+function fmtDate(at) {
+  if (!at) return '以前の記録';
+  const d = new Date(at);
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+function renderRanking() {
+  for (const tab of document.querySelectorAll('.rank-tab')) {
+    const on = tab.dataset.kind === rankKind;
+    tab.classList.toggle('on', on);
+    tab.setAttribute('aria-selected', String(on));
+  }
+  $('rankMode').classList.toggle('hidden', mode !== 'learn');
+  const top = topBy(ranking, rankKind);
+  const list = $('rankList');
+  list.innerHTML = '';
+  if (!top.length) {
+    const li = document.createElement('li');
+    li.className = 'rank-empty';
+    li.textContent = 'まだ記録がありません';
+    list.append(li);
+    return;
+  }
+  top.forEach((r, i) => {
+    const li = document.createElement('li');
+    li.className = 'rank-row' + (i < 3 ? ` top${i + 1}` : '') + (r === lastRun ? ' latest' : '');
+    const sub = [];
+    if (!r.legacy) {
+      if (rankKind !== 'score') sub.push(`${fmtNum(r.score)}点`);
+      if (rankKind !== 'combo') sub.push(`コンボ ${r.combo}`);
+      if (rankKind !== 'chain') sub.push(`連鎖 ${r.chain}`);
+    }
+    sub.push(fmtDate(r.at));
+    li.innerHTML = `<span class="rank-no">${i + 1}</span>`
+      + `<span class="rank-main"><b>${fmtNum(r[rankKind])}</b>${RANK_UNIT[rankKind] ? `<small>${RANK_UNIT[rankKind]}</small>` : ''}</span>`
+      + `<span class="rank-sub">${sub.join('・')}</span>`;
+    list.append(li);
+  });
+}
+/** ゲーム中に開いたら、一時停止と同じように連鎖の再生を止める（とじたら戻す） */
+function openRanking(kind = rankKind) {
+  rankKind = kind;
+  pausedBeforeRank = paused;
+  paused = true;
+  cancelDrag();
+  renderer.timeScale = 0;
+  renderRanking();
+  $('rankOverlay').classList.remove('hidden');
+}
+function closeRanking() {
+  paused = pausedBeforeRank;
+  renderer.timeScale = paused ? 0 : 1;
+  $('rankOverlay').classList.add('hidden');
+}
+for (const tab of document.querySelectorAll('.rank-tab')) {
+  tab.addEventListener('click', () => { rankKind = tab.dataset.kind; renderRanking(); });
+}
+$('btnRank').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) openRanking(); });
+$('btnOverRank').addEventListener('click', () => openRanking());
+$('rankClose').addEventListener('click', closeRanking);
 
 /* ---------- デバッグ（URL に ?debug を付けた時だけボタンを出す） ---------- */
 if (new URLSearchParams(location.search).has('debug')) $('btnDebug').classList.remove('hidden');
@@ -711,6 +808,7 @@ function restart() {
   stopTutorial();
   generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   bestCelebrated = false;
+  runRecorded = false;
   clearSave();
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
