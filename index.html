@@ -28,11 +28,17 @@
     }
     var inApp = /FBAN|FBAV|FB_IAB|Instagram|Twitter|MicroMessenger|KAKAOTALK|GSA\/|YJApp|TikTok|musical_ly|BytedanceWebview/i.test(ua);
     if (!inApp) return;
-    if (/iPhone|iPad|iPod/i.test(ua)) location.href = 'x-safari-' + url;                                   // Safari で開く
-    else if (/Android/i.test(ua)) location.href = 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=' + location.protocol.replace(':', '') + ';package=com.android.chrome;end';
+    // カスタムURLスキームでの切り替え（別アプリを開く指示）は、ページの途中で行うと
+    // 他のリソース（CSS・JSなど）の取得が巻き込まれて止まることがある（Xなど一部のアプリ内ブラウザで確認）。
+    // それだと切り替わらなかったときに真っ白のまま残ってしまうので、読み込みが終わってから切り替える
+    var open = function () {
+      if (/iPhone|iPad|iPod/i.test(ua)) location.href = 'x-safari-' + url;                                 // Safari で開く
+      else if (/Android/i.test(ua)) location.href = 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=' + location.protocol.replace(':', '') + ';package=com.android.chrome;end';
+    };
+    if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609280105" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609280211" />
 </head>
 <body>
 <div id="app">
@@ -156,6 +162,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609280105"></script>
+<script type="module" src="./src/ui/main.js?v=202609280211"></script>
 </body>
 </html>
