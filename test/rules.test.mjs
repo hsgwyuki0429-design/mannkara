@@ -1,17 +1,17 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609281158';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281158';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281158';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281158';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281158';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281158';
-import * as Sim from '../src/core/sim.js?v=202609281158';
-import { DealerCore } from '../src/core/dealer.js?v=202609281158';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281158';
-import { ScoreManager } from '../src/core/score.js?v=202609281158';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281158';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281158';
+import { Board, createBlock } from '../src/core/board.js?v=202609281218';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281218';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281218';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281218';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281218';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281218';
+import * as Sim from '../src/core/sim.js?v=202609281218';
+import { DealerCore } from '../src/core/dealer.js?v=202609281218';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281218';
+import { ScoreManager } from '../src/core/score.js?v=202609281218';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281218';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281218';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281158';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281218';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -901,12 +901,10 @@ console.log('チュートリアル');
 
 console.log('ゲーム名と遊べる場所');
 {
-  eq(gameUrl({ protocol: 'https:', hostname: 'someone.github.io', pathname: '/blockmancala/index.html' }), 'https://someone.github.io/blockmancala/',
-    '公開しているサイトで開いたら、その場所（ファイル名は付けない）');
-  eq(gameUrl({ protocol: 'https:', hostname: 'someone.github.io', pathname: '/mannkara/' }), 'https://someone.github.io/mannkara/', 'リポジトリ名が変わっても追従');
-  eq(gameUrl({ protocol: 'http:', hostname: 'localhost', pathname: '/' }), CANONICAL_URL, '手元で開いたときは公開している場所');
-  eq(gameUrl(undefined), CANONICAL_URL, 'location が無いとき（Node など）も公開している場所');
+  eq(gameUrl(), CANONICAL_URL, 'URL は常に公開しているシェア用の場所');
+  eq(CANONICAL_URL, 'https://blockmancala.pages.dev/', 'ゲーム名と同じ短い URL');
   eq(displayUrl('https://someone.github.io/blockmancala/'), 'someone.github.io/blockmancala', '画面に出す形は https:// と最後の / を付けない');
+  eq(displayUrl(), 'blockmancala.pages.dev', '省略すると今の CANONICAL_URL の短い形');
 }
 
 console.log('端末の記録の名前（blockmancala- にそろえる）');
