@@ -56,8 +56,10 @@ button{font-family:inherit;cursor:pointer;}
   letter-spacing:.18em;color:var(--gold);padding:1px 8px 1px 10px;border:1.5px solid rgba(255,213,74,.65);border-radius:99px;
   background:rgba(20,40,130,.35);}
 .mode-badge.hidden{display:none;}
-.score-wrap{display:flex;flex-direction:column;align-items:center;margin-top:14px;flex-shrink:0;}
-.score{font-size:64px;font-weight:900;letter-spacing:0;line-height:1;height:66px;
+.score-wrap{display:flex;flex-direction:column;align-items:center;margin-top:min(14px,1.6vh);flex-shrink:0;}
+/* 縦に低い画面（アプリ内ブラウザのカード表示など）では、ここを縮めて盤面によけいな高さを回す。
+   通常の縦長画面では min() が常に px 側になるので見た目は変わらない */
+.score{font-size:min(64px,7.6vh);font-weight:900;letter-spacing:0;line-height:1;height:min(66px,7.85vh);
   text-shadow:var(--ts);font-variant-numeric:tabular-nums;}
 
 /* ---- 盤面 ---- */

@@ -9,7 +9,7 @@ export class Sfx {
   unlock() {
     // iOS Safari は 'suspended' だけでなく、コントロールセンターを開く・画面収録・着信などで
     // 独自の 'interrupted' にもなる。running 以外なら戻す
-    if (this.ctx) { if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {}); return; }
+    if (this.ctx) { this.resumeUntilRunning(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     // iOS Safari 16.4+: 既定では消音（サイレント）スイッチがオンだと鳴らない。ゲームの効果音として
@@ -24,9 +24,26 @@ export class Sfx {
     const comp = this.ctx.createDynamicsCompressor();
     comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
     this.master.connect(this.soft); this.soft.connect(comp); comp.connect(this.ctx.destination);
+    // 中断（コントロールセンター・画面収録・着信など）から自力で戻す。1回のタップで直らないことがあるので、
+    // ここで何度もリトライして、指で何度もボタンを押し直さなくて済むようにする
+    this.ctx.onstatechange = () => this.resumeUntilRunning();
+    this.resumeUntilRunning();
+  }
+  /** running になるまで resume() を繰り返す（中断が解けるまで少し間が要ることがあるため） */
+  resumeUntilRunning(triesLeft = 10) {
+    if (!this.ctx || this.ctx.state === 'running' || triesLeft <= 0) return;
+    this.ctx.resume().catch(() => {});
+    setTimeout(() => this.resumeUntilRunning(triesLeft - 1), 400);
   }
   tone(freq, { dur = 0.1, type = 'sine', gain = 0.6, at = 0, slide = 0 } = {}) {
     if (!this.enabled || !this.ctx) return;
+    if (this.ctx.state !== 'running') {
+      // 止まっている・止まりかけの時計に予約すると、鳴らないまま消えることがある
+      // （currentTime が進んでいないので、後で running に戻っても再生に間に合わないことがある）。
+      // このタップの音は諦めて、resume を追いかけておけば次の音から鳴る（設定は音あり・enabled のまま）
+      this.resumeUntilRunning();
+      return;
+    }
     const t = this.ctx.currentTime + at;
     freq = Math.min(freq * LOWER, MAX_HZ);
     const o = this.ctx.createOscillator();
@@ -88,6 +105,7 @@ export class Sfx {
   /** 短いざらざらした音（波・しぶき）。ノイズを帯域フィルタに通す */
   noise({ dur = 0.6, gain = 0.3, from = 400, to = 1400, q = 0.8, at = 0 } = {}) {
     if (!this.enabled || !this.ctx) return;
+    if (this.ctx.state !== 'running') { this.resumeUntilRunning(); return; }   // tone() と同じ理由
     const ctx = this.ctx, t = ctx.currentTime + at;
     if (!this.noiseBuf) {
       this.noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
