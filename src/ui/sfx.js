@@ -37,6 +37,13 @@ export class Sfx {
   }
   tone(freq, { dur = 0.1, type = 'sine', gain = 0.6, at = 0, slide = 0 } = {}) {
     if (!this.enabled || !this.ctx) return;
+    if (this.ctx.state !== 'running') {
+      // 止まっている・止まりかけの時計に予約すると、鳴らないまま消えることがある
+      // （currentTime が進んでいないので、後で running に戻っても再生に間に合わないことがある）。
+      // このタップの音は諦めて、resume を追いかけておけば次の音から鳴る（設定は音あり・enabled のまま）
+      this.resumeUntilRunning();
+      return;
+    }
     const t = this.ctx.currentTime + at;
     freq = Math.min(freq * LOWER, MAX_HZ);
     const o = this.ctx.createOscillator();
@@ -98,6 +105,7 @@ export class Sfx {
   /** 短いざらざらした音（波・しぶき）。ノイズを帯域フィルタに通す */
   noise({ dur = 0.6, gain = 0.3, from = 400, to = 1400, q = 0.8, at = 0 } = {}) {
     if (!this.enabled || !this.ctx) return;
+    if (this.ctx.state !== 'running') { this.resumeUntilRunning(); return; }   // tone() と同じ理由
     const ctx = this.ctx, t = ctx.currentTime + at;
     if (!this.noiseBuf) {
       this.noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
