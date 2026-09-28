@@ -183,7 +183,14 @@
   起動したときに新しい名前へ移してから消す（新しい名前がもうあればそちらを残す。`brand.js` の `migrateStorage`。テストで確認）
 - ゲームオーバー画面に、このゲームの最大連鎖・最大コンボと、これまでの記録（超えたら `NEW RECORD!`）
 - 一時停止画面にも記録を出す
-- **ランキング**: 右上のトロフィーのボタン（ゲームオーバー画面の「ランキングを見る」からも）。上のボタンで **スコア・コンボ・連鎖** の3つを切り替え、それぞれ上位10ゲームを出す
+- **ランキング**: 右上のトロフィーのボタン（ゲームオーバー画面の「ランキングを見る」からも）。上のボタンで **スコア・コンボ・連鎖** の3つを切り替える。**世界** と **この端末** を選べる
+- **世界ランキング**（`functions/api/ranking.js`。Cloudflare Pages Functions + D1）: 1人1行の自己ベストで、それぞれ上位50人と自分の順位を出す
+  - 通常モードの記録だけを送る（学習モードは入らない）。送れなかった記録は端末に残し、次に送る。ランキングができる前の通常モードの記録も、はじめに送る
+  - 端末ごとに id（32桁の16進。他の人には返さない）と名前（12文字まで。はじめは「ななし＋数字」、ランキング画面の「変更」で変えられる）
+  - ゲームは端末の中で動くので、送られた値が本物かまでは確かめられない（ありえない値だけはねる）
+  - **準備**（Cloudflare のダッシュボードで1回だけ）: D1 のデータベースを作り（名前は自由）、Pages のプロジェクトの Settings → Bindings で **変数名 `DB`** としてつなぎ、もう一度デプロイする。表は初めて使うときに API が作る
+  - `blockmancala.pages.dev` 以外（github.io など）で開いたときは、`blockmancala.pages.dev` の API を使う
+- **この端末のランキング**: それぞれ上位10ゲーム
   - 1ゲームを1件として、ゲームオーバーとリセットのときに入れる（チュートリアルと 0 点は入れない）。いちばん最近入ったゲームは金色の枠
   - 端末ごと・モードごとに別（`blockmancala-ranking` / `-learn`）。どのランキングにも入らないゲームは残さない（`src/core/ranking.js`）
   - ランキングができる前のベストスコア・最大連鎖・最大コンボは、それぞれ「以前の記録」として入れる
@@ -236,6 +243,7 @@ src/ui/     renderer.js scenes.js shards.js palette.js main.js sfx.js styles.css
             brand.js share-card.js                                       … ゲーム名・URL・端末の記録の名前 / 結果カード
             tray-dealer.js                                               … Web Worker（dealer-worker.js）との窓口
             tutorial-steps.js                                            … チュートリアルの盤面・手駒・説明
+functions/  api/ranking.js                                                … 世界ランキングの API（Cloudflare Pages Functions + D1）
 test/       rules.test.mjs
 scripts/    stamp.mjs build-allclear.mjs subset-fonts.py
 ```

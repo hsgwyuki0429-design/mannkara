@@ -412,3 +412,22 @@ body.tutorial-on .score-wrap{visibility:hidden;}
 .rank-box .primary{align-self:center;flex-shrink:0;}
 .over-rank{margin-top:14px;}
 .over-rank.ranked{color:var(--gold);}
+/* 世界 / この端末 */
+.rank-scope{display:flex;justify-content:center;gap:8px;margin:-4px 0 10px;}
+.rank-scope-btn{display:flex;align-items:center;gap:6px;padding:5px 14px;border:1.5px solid var(--line);border-radius:99px;background:none;
+  color:var(--dim);font-family:"M PLUS Rounded 1c",sans-serif;font-size:13px;font-weight:900;}
+.rank-scope-btn.on{color:#fff;background:rgba(120,160,255,.28);border-color:#fff;}
+.rank-scope-btn .rank-mode{font-size:9px;padding:0 6px 0 7px;}
+/* 名前（世界ランキングに出る） */
+.rank-name{display:flex;align-items:center;gap:8px;margin:10px 2px 0;font-size:13px;font-weight:800;}
+.rank-name-label{color:var(--dim);flex-shrink:0;}
+.rank-name-text{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rank-name-input{flex:1;min-width:0;padding:5px 10px;border:1.5px solid var(--gold);border-radius:10px;background:rgba(10,30,120,.4);color:#fff;
+  font:inherit;font-size:16px;user-select:text;-webkit-user-select:text;touch-action:auto;}
+.rank-name-btn{flex-shrink:0;padding:4px 12px;border:1.5px solid var(--gold);border-radius:99px;background:rgba(255,213,74,.12);color:var(--gold);
+  font-family:"M PLUS Rounded 1c",sans-serif;font-size:13px;font-weight:900;}
+.rank-note{margin:8px 0 0;font-size:12px;font-weight:800;color:var(--gold);}
+.rank-player{margin-left:auto;padding-left:8px;font-size:13px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.rank-main{min-width:0;}
+.rank-me{margin:-8px 0 14px;font-size:14px;font-weight:800;color:var(--dim);}
+.rank-me b{color:var(--gold);font-size:18px;}

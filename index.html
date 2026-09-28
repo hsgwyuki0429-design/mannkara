@@ -38,7 +38,7 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609281435" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609281441" />
 </head>
 <body>
 <div id="app">
@@ -175,13 +175,25 @@
 <!-- ランキング: 上のボタンでスコア・コンボ・連鎖を切り替える（端末ごと・モードごとに別） -->
 <div id="rankOverlay" class="overlay hidden">
   <div class="overlay-box rank-box">
-    <p class="over-title rank-title">ランキング<span id="rankMode" class="rank-mode hidden">LEARN</span></p>
+    <p class="over-title rank-title">ランキング</p>
+    <div class="rank-scope">
+      <button class="rank-scope-btn" data-scope="world">🌏 世界</button>
+      <button class="rank-scope-btn" data-scope="local">この端末<span id="rankMode" class="rank-mode hidden">LEARN</span></button>
+    </div>
     <div class="rank-tabs" role="tablist">
       <button class="rank-tab" role="tab" data-kind="score">スコア</button>
       <button class="rank-tab" role="tab" data-kind="combo">コンボ</button>
       <button class="rank-tab" role="tab" data-kind="chain">連鎖</button>
     </div>
+    <div id="rankName" class="rank-name">
+      <span class="rank-name-label">なまえ</span>
+      <span id="rankNameText" class="rank-name-text"></span>
+      <input id="rankNameInput" class="rank-name-input hidden" maxlength="12" autocomplete="off" enterkeyhint="done" />
+      <button id="rankNameBtn" class="rank-name-btn">変更</button>
+    </div>
+    <p id="rankNote" class="rank-note hidden"></p>
     <ol id="rankList" class="rank-list"></ol>
+    <p id="rankMe" class="rank-me hidden"></p>
     <button id="rankClose" class="primary">とじる</button>
   </div>
 </div>
@@ -203,6 +215,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609281435"></script>
+<script type="module" src="./src/ui/main.js?v=202609281441"></script>
 </body>
 </html>

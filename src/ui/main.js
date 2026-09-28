@@ -1,17 +1,18 @@
-import { Game } from '../core/game.js?v=202609281435';
-import { Board, createBlock } from '../core/board.js?v=202609281435';
-import { Piece } from '../core/pieces.js?v=202609281435';
-import * as Sim from '../core/sim.js?v=202609281435';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281435';
-import { Renderer, delay } from './renderer.js?v=202609281435';
-import { Sfx } from './sfx.js?v=202609281435';
-import { Scenes } from './scenes.js?v=202609281435';
-import { colorOf } from './palette.js?v=202609281435';
-import { TrayDealer } from './tray-dealer.js?v=202609281435';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281435';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281435';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609281435';
-import { RANK_KINDS, topBy, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281435';
+import { Game } from '../core/game.js?v=202609281441';
+import { Board, createBlock } from '../core/board.js?v=202609281441';
+import { Piece } from '../core/pieces.js?v=202609281441';
+import * as Sim from '../core/sim.js?v=202609281441';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281441';
+import { Renderer, delay } from './renderer.js?v=202609281441';
+import { Sfx } from './sfx.js?v=202609281441';
+import { Scenes } from './scenes.js?v=202609281441';
+import { colorOf } from './palette.js?v=202609281441';
+import { TrayDealer } from './tray-dealer.js?v=202609281441';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281441';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281441';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609281441';
+import { World } from './world.js?v=202609281441';
+import { RANK_KINDS, topBy, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281441';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -65,6 +66,8 @@ function saveBest() {
 
 /** このゲームをランキングに入れる（1ゲームにつき1回。チュートリアルと 0 点は入れない）。何位に入ったかを返す */
 let runRecorded = false;
+const world = new World();
+world.flush();                                     // 前に送れなかった記録があれば送る
 function recordRun() {
   if (runRecorded || tutorial || game.score.score <= 0) return null;
   runRecorded = true;
@@ -73,6 +76,7 @@ function recordRun() {
   ranking = res.list;
   if (Object.values(res.ranks).some(Boolean)) lastRun = run;
   try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
+  if (mode === 'normal') { world.addPending(run); world.flush(); }     // 世界ランキングは通常モードだけ
   return res.ranks;
 }
 
@@ -175,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281435', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281441', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -669,9 +673,11 @@ function setPaused(v) {
 $('btnPause').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) setPaused(true); });
 $('btnResume').addEventListener('click', () => setPaused(false));
 
-/* ---------- ランキング（上のボタンで スコア / コンボ / 連鎖 を切り替える） ---------- */
+/* ---------- ランキング（上のボタンで スコア / コンボ / 連鎖 を切り替える。世界 / この端末） ---------- */
 const RANK_UNIT = { score: '', combo: 'コンボ', chain: '連鎖' };
 let rankKind = 'score';
+let rankScope = 'world';
+let rankToken = 0;                                 // 読み込み中に切り替えたら、前の結果は捨てる
 let pausedBeforeRank = false;
 const fmtNum = (v) => v.toLocaleString('en-US');
 function fmtDate(at) {
@@ -679,38 +685,66 @@ function fmtDate(at) {
   const d = new Date(at);
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+/** 1行: 順位・値・名前（世界のみ）・ほかの記録 */
+function rankRow(rank, value, sub, { name = null, cls = '' } = {}) {
+  const li = document.createElement('li');
+  li.className = 'rank-row' + (rank <= 3 ? ` top${rank}` : '') + cls;
+  li.innerHTML = `<span class="rank-no">${rank}</span>`
+    + `<span class="rank-main"><b>${fmtNum(value)}</b>${RANK_UNIT[rankKind] ? `<small>${RANK_UNIT[rankKind]}</small>` : ''}`
+    + (name != null ? `<span class="rank-player">${esc(name)}</span>` : '') + `</span>`
+    + `<span class="rank-sub">${sub.join('・')}</span>`;
+  return li;
+}
+function otherStats(r) {
+  const sub = [];
+  if (rankKind !== 'score') sub.push(`${fmtNum(r.score)}点`);
+  if (rankKind !== 'combo') sub.push(`コンボ ${r.combo}`);
+  if (rankKind !== 'chain') sub.push(`連鎖 ${r.chain}`);
+  return sub;
+}
+function rankMessage(text) {
+  const li = document.createElement('li');
+  li.className = 'rank-empty';
+  li.textContent = text;
+  $('rankList').replaceChildren(li);
+}
 function renderRanking() {
   for (const tab of document.querySelectorAll('.rank-tab')) {
     const on = tab.dataset.kind === rankKind;
     tab.classList.toggle('on', on);
     tab.setAttribute('aria-selected', String(on));
   }
+  for (const b of document.querySelectorAll('.rank-scope-btn')) b.classList.toggle('on', b.dataset.scope === rankScope);
   $('rankMode').classList.toggle('hidden', mode !== 'learn');
+  const isWorld = rankScope === 'world';
+  $('rankName').classList.toggle('hidden', !isWorld);
+  $('rankNameText').textContent = world.name;
+  $('rankNote').classList.toggle('hidden', !(isWorld && mode === 'learn'));
+  $('rankNote').textContent = '学習モードの記録は世界ランキングに入りません';
+  $('rankMe').classList.add('hidden');
+  $('rankList').scrollTop = 0;
+  if (isWorld) renderWorld(); else renderLocal();
+}
+function renderLocal() {
   const top = topBy(ranking, rankKind);
-  const list = $('rankList');
-  list.innerHTML = '';
-  if (!top.length) {
-    const li = document.createElement('li');
-    li.className = 'rank-empty';
-    li.textContent = 'まだ記録がありません';
-    list.append(li);
-    return;
+  if (!top.length) return rankMessage('まだ記録がありません');
+  $('rankList').replaceChildren(...top.map((r, i) =>
+    rankRow(i + 1, r[rankKind], [...(r.legacy ? [] : otherStats(r)), fmtDate(r.at)], { cls: r === lastRun ? ' latest' : '' })));
+}
+async function renderWorld() {
+  const token = ++rankToken, kind = rankKind;
+  rankMessage('読み込み中…');
+  let data;
+  try { data = await world.fetchTop(kind); } catch { data = null; }
+  if (token !== rankToken || rankScope !== 'world') return;
+  if (!data) return rankMessage('世界ランキングにつながりませんでした');
+  if (!data.top.length) rankMessage('まだ記録がありません');
+  else $('rankList').replaceChildren(...data.top.map((r) => rankRow(r.rank, r.value, otherStats(r), { name: r.name, cls: r.me ? ' latest' : '' })));
+  if (data.me) {
+    $('rankMe').innerHTML = `あなた　<b>${fmtNum(data.me.rank)}位</b>　${fmtNum(data.me.value)}${RANK_UNIT[kind] ? ' ' + RANK_UNIT[kind] : '点'}`;
+    $('rankMe').classList.remove('hidden');
   }
-  top.forEach((r, i) => {
-    const li = document.createElement('li');
-    li.className = 'rank-row' + (i < 3 ? ` top${i + 1}` : '') + (r === lastRun ? ' latest' : '');
-    const sub = [];
-    if (!r.legacy) {
-      if (rankKind !== 'score') sub.push(`${fmtNum(r.score)}点`);
-      if (rankKind !== 'combo') sub.push(`コンボ ${r.combo}`);
-      if (rankKind !== 'chain') sub.push(`連鎖 ${r.chain}`);
-    }
-    sub.push(fmtDate(r.at));
-    li.innerHTML = `<span class="rank-no">${i + 1}</span>`
-      + `<span class="rank-main"><b>${fmtNum(r[rankKind])}</b>${RANK_UNIT[rankKind] ? `<small>${RANK_UNIT[rankKind]}</small>` : ''}</span>`
-      + `<span class="rank-sub">${sub.join('・')}</span>`;
-    list.append(li);
-  });
 }
 /** ゲーム中に開いたら、一時停止と同じように連鎖の再生を止める（とじたら戻す） */
 function openRanking(kind = rankKind) {
@@ -719,16 +753,40 @@ function openRanking(kind = rankKind) {
   paused = true;
   cancelDrag();
   renderer.timeScale = 0;
+  editName(false);
   renderRanking();
   $('rankOverlay').classList.remove('hidden');
 }
 function closeRanking() {
+  rankToken++;
+  editName(false);
   paused = pausedBeforeRank;
   renderer.timeScale = paused ? 0 : 1;
   $('rankOverlay').classList.add('hidden');
 }
+/** 名前の変更: 「変更」で入力欄、「決定」（または Enter）でサーバーへ */
+let editingName = false;
+function editName(on) {
+  editingName = on;
+  $('rankNameText').classList.toggle('hidden', on);
+  $('rankNameInput').classList.toggle('hidden', !on);
+  $('rankNameBtn').textContent = on ? '決定' : '変更';
+  if (on) { $('rankNameInput').value = world.name; $('rankNameInput').focus(); $('rankNameInput').select(); }
+  else $('rankNameInput').blur();
+}
+async function commitName() {
+  const changed = $('rankNameInput').value.trim() !== world.name && world.setName($('rankNameInput').value);
+  editName(false);
+  $('rankNameText').textContent = world.name;
+  if (changed) { await world.flush(true); if (rankScope === 'world') renderWorld(); }
+}
+$('rankNameBtn').addEventListener('click', () => (editingName ? commitName() : editName(true)));
+$('rankNameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitName(); } });
 for (const tab of document.querySelectorAll('.rank-tab')) {
   tab.addEventListener('click', () => { rankKind = tab.dataset.kind; renderRanking(); });
+}
+for (const b of document.querySelectorAll('.rank-scope-btn')) {
+  b.addEventListener('click', () => { rankScope = b.dataset.scope; renderRanking(); });
 }
 $('btnRank').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) openRanking(); });
 $('btnOverRank').addEventListener('click', () => openRanking());
