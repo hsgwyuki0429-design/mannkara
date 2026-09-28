@@ -1,16 +1,18 @@
-import { Game } from '../core/game.js?v=202609281218';
-import { Board, createBlock } from '../core/board.js?v=202609281218';
-import { Piece } from '../core/pieces.js?v=202609281218';
-import * as Sim from '../core/sim.js?v=202609281218';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281218';
-import { Renderer, delay } from './renderer.js?v=202609281218';
-import { Sfx } from './sfx.js?v=202609281218';
-import { Scenes } from './scenes.js?v=202609281218';
-import { colorOf } from './palette.js?v=202609281218';
-import { TrayDealer } from './tray-dealer.js?v=202609281218';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281218';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281218';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609281218';
+import { Game } from '../core/game.js?v=202609281444';
+import { Board, createBlock } from '../core/board.js?v=202609281444';
+import { Piece } from '../core/pieces.js?v=202609281444';
+import * as Sim from '../core/sim.js?v=202609281444';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281444';
+import { Renderer, delay } from './renderer.js?v=202609281444';
+import { Sfx } from './sfx.js?v=202609281444';
+import { Scenes } from './scenes.js?v=202609281444';
+import { colorOf } from './palette.js?v=202609281444';
+import { TrayDealer } from './tray-dealer.js?v=202609281444';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281444';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281444';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609281444';
+import { World } from './world.js?v=202609281444';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281444';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -35,6 +37,21 @@ function loadBest() {
   records = { chain: 0, combo: 0 };
   try { best = Number(localStorage.getItem(bestKey())) || 0; } catch {}
   try { records = { ...records, ...JSON.parse(localStorage.getItem(recordsKey()) || '{}') }; } catch {}
+  loadRanking();
+}
+/** この端末のランキング（スコア。端末ごと・モードごとに別）。1ゲームずつ、終わったときに入れる */
+const rankingKey = () => (mode === 'learn' ? 'blockmancala-ranking-learn' : 'blockmancala-ranking');
+let ranking = [];
+let lastRun = null;          // いちばん最近入れたゲーム（ランキングの中で色を付ける）
+function loadRanking() {
+  ranking = [];
+  lastRun = null;
+  let text = null;
+  try { text = localStorage.getItem(rankingKey()); } catch {}
+  if (text != null) { ranking = parseRanking(text); return; }
+  // ランキングができる前のベストスコアは1件として入れておく（ベストスコアとランキングの1位が食い違わないように）
+  for (const run of legacyRuns(best)) ranking = addRun(ranking, run).list;
+  if (ranking.length) try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
 }
 loadBest();
 /** チュートリアル中なら { i: ステップ, placed: 置いた（次のステップを待っている） }。チュートリアルの点数・盤面は残さない */
@@ -45,6 +62,22 @@ function saveBest() {
   best = game.score.score;
   try { localStorage.setItem(bestKey(), String(best)); } catch {}
   return true;
+}
+
+/** このゲームをランキングに入れる（1ゲームにつき1回。チュートリアルと 0 点は入れない）。この端末で何位に入ったかを返す（入らなければ 0） */
+let runRecorded = false;
+const world = new World();
+world.flush();                                     // 前に送れなかった記録があれば送る
+function recordRun() {
+  if (runRecorded || tutorial || game.score.score <= 0) return null;
+  runRecorded = true;
+  const run = { score: game.score.score, at: Date.now() };
+  const res = addRun(ranking, run);
+  ranking = res.list;
+  if (res.rank) lastRun = run;
+  try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
+  if (mode === 'normal') { world.addPending(run.score); world.flush(); }     // 世界ランキングは通常モードだけ
+  return res.rank;
 }
 
 /** このゲームの最大連鎖・最大コンボを記録に残す。更新した方を返す（チュートリアルでは残さない） */
@@ -146,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281218', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281444', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -255,6 +288,9 @@ async function playTurn(turn) {
     gameOverShown = true;
     const prev = { ...records };
     const isBest = saveBest();
+    const rank = recordRun();
+    $('btnOverRank').textContent = rank ? 'ランクイン！ ランキングを見る' : 'ランキングを見る';
+    $('btnOverRank').classList.toggle('ranked', !!rank);
     $('finalScore').textContent = game.score.score.toLocaleString('en-US');
     showOverStats(prev);
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best.toLocaleString('en-US')}`;
@@ -594,7 +630,7 @@ function dropHint() {
   renderer.clearHint();
 }
 /** 左上のリセットボタン: 今のゲームを打ち切って最初からにする（ゲームオーバーの「もう一度」と同じ） */
-$('btnReset').addEventListener('click', () => { sfx.unlock(); saveBest(); restart(); });
+$('btnReset').addEventListener('click', () => { sfx.unlock(); saveBest(); recordRun(); restart(); });
 function applyMode() {
   const learn = mode === 'learn';
   document.body.classList.toggle('learn', learn);
@@ -636,6 +672,107 @@ function setPaused(v) {
 }
 $('btnPause').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) setPaused(true); });
 $('btnResume').addEventListener('click', () => setPaused(false));
+
+/* ---------- ランキング（スコア。世界 / この端末） ---------- */
+let rankScope = 'world';
+let rankToken = 0;                                 // 読み込み中に切り替えたら、前の結果は捨てる
+let pausedBeforeRank = false;
+const fmtNum = (v) => v.toLocaleString('en-US');
+function fmtDate(at) {
+  if (!at) return '以前の記録';
+  const d = new Date(at);
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+/** 1行: 順位・スコア・名前（世界）か日付（この端末） */
+function rankRow(rank, value, { name = null, date = null, cls = '' } = {}) {
+  const li = document.createElement('li');
+  li.className = 'rank-row' + (rank <= 3 ? ` top${rank}` : '') + cls;
+  li.innerHTML = `<span class="rank-no">${rank}</span>`
+    + `<span class="rank-main"><b>${fmtNum(value)}</b>`
+    + (name != null ? `<span class="rank-player">${esc(name)}</span>` : '')
+    + (date != null ? `<span class="rank-date">${date}</span>` : '') + `</span>`;
+  return li;
+}
+function rankMessage(text) {
+  const li = document.createElement('li');
+  li.className = 'rank-empty';
+  li.textContent = text;
+  $('rankList').replaceChildren(li);
+}
+function renderRanking() {
+  for (const b of document.querySelectorAll('.rank-scope-btn')) b.classList.toggle('on', b.dataset.scope === rankScope);
+  $('rankMode').classList.toggle('hidden', mode !== 'learn');
+  const isWorld = rankScope === 'world';
+  $('rankName').classList.toggle('hidden', !isWorld);
+  $('rankNameText').textContent = world.name;
+  $('rankNote').classList.toggle('hidden', !(isWorld && mode === 'learn'));
+  $('rankNote').textContent = '学習モードの記録は世界ランキングに入りません';
+  $('rankMe').classList.add('hidden');
+  $('rankList').scrollTop = 0;
+  if (isWorld) renderWorld(); else renderLocal();
+}
+function renderLocal() {
+  const top = topRuns(ranking);
+  if (!top.length) return rankMessage('まだ記録がありません');
+  $('rankList').replaceChildren(...top.map((r, i) =>
+    rankRow(i + 1, r.score, { date: fmtDate(r.at), cls: r === lastRun ? ' latest' : '' })));
+}
+async function renderWorld() {
+  const token = ++rankToken;
+  rankMessage('読み込み中…');
+  let data;
+  try { data = await world.fetchTop(); } catch { data = null; }
+  if (token !== rankToken || rankScope !== 'world') return;
+  if (!data) return rankMessage('世界ランキングにつながりませんでした');
+  if (!data.top.length) rankMessage('まだ記録がありません');
+  else $('rankList').replaceChildren(...data.top.map((r) => rankRow(r.rank, r.score, { name: r.name, cls: r.me ? ' latest' : '' })));
+  if (data.me) {
+    $('rankMe').innerHTML = `あなた　<b>${fmtNum(data.me.rank)}位</b>　${fmtNum(data.me.score)}点`;
+    $('rankMe').classList.remove('hidden');
+  }
+}
+/** ゲーム中に開いたら、一時停止と同じように連鎖の再生を止める（とじたら戻す） */
+function openRanking() {
+  pausedBeforeRank = paused;
+  paused = true;
+  cancelDrag();
+  renderer.timeScale = 0;
+  editName(false);
+  renderRanking();
+  $('rankOverlay').classList.remove('hidden');
+}
+function closeRanking() {
+  rankToken++;
+  editName(false);
+  paused = pausedBeforeRank;
+  renderer.timeScale = paused ? 0 : 1;
+  $('rankOverlay').classList.add('hidden');
+}
+/** 名前の変更: 「変更」で入力欄、「決定」（または Enter）でサーバーへ */
+let editingName = false;
+function editName(on) {
+  editingName = on;
+  $('rankNameText').classList.toggle('hidden', on);
+  $('rankNameInput').classList.toggle('hidden', !on);
+  $('rankNameBtn').textContent = on ? '決定' : '変更';
+  if (on) { $('rankNameInput').value = world.name; $('rankNameInput').focus(); $('rankNameInput').select(); }
+  else $('rankNameInput').blur();
+}
+async function commitName() {
+  const changed = $('rankNameInput').value.trim() !== world.name && world.setName($('rankNameInput').value);
+  editName(false);
+  $('rankNameText').textContent = world.name;
+  if (changed) { await world.flush(true); if (rankScope === 'world') renderWorld(); }
+}
+$('rankNameBtn').addEventListener('click', () => (editingName ? commitName() : editName(true)));
+$('rankNameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitName(); } });
+for (const b of document.querySelectorAll('.rank-scope-btn')) {
+  b.addEventListener('click', () => { rankScope = b.dataset.scope; renderRanking(); });
+}
+$('btnRank').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) openRanking(); });
+$('btnOverRank').addEventListener('click', () => openRanking());
+$('rankClose').addEventListener('click', closeRanking);
 
 /* ---------- デバッグ（URL に ?debug を付けた時だけボタンを出す） ---------- */
 if (new URLSearchParams(location.search).has('debug')) $('btnDebug').classList.remove('hidden');
@@ -711,6 +848,7 @@ function restart() {
   stopTutorial();
   generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   bestCelebrated = false;
+  runRecorded = false;
   clearSave();
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();

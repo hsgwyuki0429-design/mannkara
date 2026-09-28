@@ -183,6 +183,16 @@
   起動したときに新しい名前へ移してから消す（新しい名前がもうあればそちらを残す。`brand.js` の `migrateStorage`。テストで確認）
 - ゲームオーバー画面に、このゲームの最大連鎖・最大コンボと、これまでの記録（超えたら `NEW RECORD!`）
 - 一時停止画面にも記録を出す
+- **ランキング**（スコアだけ）: 右上のトロフィーのボタン（ゲームオーバー画面の「ランキングを見る」からも）。**世界** と **この端末** を選べる
+- **世界ランキング**（`functions/api/ranking.js`。Cloudflare Pages Functions + D1）: 1人1行の自己ベストで、上位50人と自分の順位を出す
+  - 通常モードのスコアだけを送る（学習モードは入らない）。送れなかったスコアは端末に残し、次に送る。ランキングができる前の通常モードのベストスコアも、はじめに送る
+  - 端末ごとに id（32桁の16進。他の人には返さない）と名前（12文字まで。はじめは「ななし＋数字」、ランキング画面の「変更」で変えられる）
+  - ゲームは端末の中で動くので、送られた値が本物かまでは確かめられない（ありえない値だけはねる）
+  - **準備**（Cloudflare のダッシュボードで1回だけ）: D1 のデータベースを作り（名前は自由）、Pages のプロジェクトの Settings → Bindings で **変数名 `DB`** としてつなぎ、もう一度デプロイする。表は初めて使うときに API が作る
+  - `blockmancala.pages.dev` 以外（github.io など）で開いたときは、`blockmancala.pages.dev` の API を使う
+- **この端末のランキング**: 上位10ゲーム（端末ごと・モードごとに別。`blockmancala-ranking` / `-learn`。`src/core/ranking.js`）
+  - 1ゲームを1件として、ゲームオーバーとリセットのときに入れる（チュートリアルと 0 点は入れない）。いちばん最近入ったゲームは金色の枠
+  - ランキングができる前のベストスコアは「以前の記録」として入れる
 - **全消しボーナス** +5,000（そのターンの COMBO 倍率も掛ける）。`ALL CLEAR!` の下に `BONUS +n` を出し、GOAL の上に得点が浮かぶ
 - すべて `src/core/constants.js`
 
@@ -207,7 +217,7 @@
   サイズ別に書き出したもの。作り直すときはそのSVGを編集してから、大きさごとにラスタライズし直す
 
 ## 画面
-- 上: 左上にリセット・学習モード、中央にベストスコア（王冠のピル）、右上にサウンド・一時停止の各ボタン。中央に現在のスコア（ベストスコアも3桁区切り）
+- 上: 左上にリセット・学習モード、中央にベストスコア（王冠のピル）、右上にランキング・サウンド・一時停止の各ボタン。中央に現在のスコア（ベストスコアも3桁区切り）
 - 一番下: ロゴ・ゲーム名・遊べる URL（上の「ゲーム名と遊べる場所」）
   - リセットは今のゲームを打ち切って最初から（ゲームオーバー画面の「もう一度」と同じ動き。確認は挟まない）
 - 盤面は直角が下に来るよう回転した三角形。上に GOAL、左右の通路にライン番号 1〜8
@@ -223,7 +233,7 @@
 - **デプロイ前に `node scripts/stamp.mjs`**：CSS/JS の参照に `?v=` を付け直し、スマホが古いファイルと新しいファイルを混ぜて読むのを防ぐ
 
 ```
-src/core/   constants.js board.js pieces.js mancala.js score.js game.js   … ルール（DOM非依存）
+src/core/   constants.js board.js pieces.js mancala.js score.js game.js ranking.js   … ルール・ランキング（DOM非依存）
             advisor.js                                                   … 学習モードのおすすめの手
             allclear-library.js                                          … 空の盤面からの全消しの手順集（自動生成）
             sim.js planner.js                                            … 手駒を決めるための探索（軽い盤面・全消しの計画）
@@ -232,6 +242,7 @@ src/ui/     renderer.js scenes.js shards.js palette.js main.js sfx.js styles.css
             brand.js share-card.js                                       … ゲーム名・URL・端末の記録の名前 / 結果カード
             tray-dealer.js                                               … Web Worker（dealer-worker.js）との窓口
             tutorial-steps.js                                            … チュートリアルの盤面・手駒・説明
+functions/  api/ranking.js                                                … 世界ランキングの API（Cloudflare Pages Functions + D1）
 test/       rules.test.mjs
 scripts/    stamp.mjs build-allclear.mjs subset-fonts.py
 ```

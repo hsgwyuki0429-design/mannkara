@@ -32,20 +32,30 @@ button{font-family:inherit;cursor:pointer;}
   padding:max(15px,env(safe-area-inset-top)) 8px max(14px,env(safe-area-inset-bottom));}
 
 /* ---- HUD ---- */
-.top{position:relative;width:100%;height:36px;flex-shrink:0;display:flex;justify-content:center;align-items:flex-start;}
-.best-pill{position:relative;left:min(0px,calc(50% - 168px));   /* 狭い画面では右のボタンに重ならないよう左へ */
-  height:33px;min-width:132px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px 0 14px;border-radius:17px;
+.top{position:relative;width:100%;height:36px;flex-shrink:0;padding:0 4px;
+  display:grid;grid-template-columns:1fr auto 1fr;column-gap:6px;align-items:start;}   /* 狭い画面では、ピルが左右のボタンの間に収まるようずれる */
+.best-pill{grid-row:1;grid-column:2;
+  height:33px;min-width:120px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px 0 14px;border-radius:17px;
   border:1.5px solid var(--line);background:none;}
 .crown{width:23px;height:20px;flex-shrink:0;margin-top:-1px;filter:drop-shadow(0 1.5px 1px rgba(0,0,0,.25));}
 .best-text{display:flex;flex-direction:column;align-items:flex-start;line-height:1;padding-left:2px;}
 .best-label{font-family:"M PLUS Rounded 1c",sans-serif;font-size:8px;font-weight:800;letter-spacing:.02em;margin-bottom:2px;}
 #best{font-size:17px;font-weight:800;letter-spacing:0;font-variant-numeric:tabular-nums;transform:scaleX(.87);transform-origin:0 50%;}
-.top-btns{position:absolute;right:10px;top:0;display:flex;gap:10px;}
-.top-left{position:absolute;left:10px;top:0;display:flex;gap:10px;}
+.top-btns{grid-row:1;grid-column:3;justify-self:end;display:flex;gap:8px;}
+.top-left{grid-row:1;grid-column:1;justify-self:start;display:flex;gap:8px;}
 .round-btn{width:36px;height:36px;border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;
   border:1.5px solid var(--line);background:rgba(120,160,255,.13);color:#fff;}
 .round-btn svg{width:21px;height:21px;fill:#fff;}
 #btnSound svg{width:25px;height:25px;margin-left:1.5px;}
+#btnRank svg{fill:var(--gold);}
+/* 幅の狭い端末（幅 340px 以下）: 上のボタンを少し小さく */
+@media (max-width:340px){
+  .top-btns,.top-left{gap:5px;}
+  .round-btn{width:31px;height:31px;}
+  .round-btn svg{width:18px;height:18px;}
+  #btnSound svg{width:21px;height:21px;}
+  .best-pill{min-width:0;padding:0 9px 0 10px;gap:6px;}
+}
 .round-btn.off{opacity:.45;}
 /* 学習モードのボタン（電球）: オンのときは金色に灯る */
 .learn-btn svg{fill:rgba(255,255,255,.9);}
@@ -374,3 +384,44 @@ body.tutorial-on .score-wrap{visibility:hidden;}
 .share-hint{margin:12px 0 0;font-size:13px;font-weight:800;color:var(--dim);}
 .share-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;}
 .share-actions .share-btn{margin:14px 0 0;}
+
+/* ---- ランキング（スコア。世界 / この端末） ---- */
+.rank-box{width:min(calc(100% - 32px),380px);max-height:calc(100% - 24px);display:flex;flex-direction:column;}
+.rank-title{margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px;}
+.rank-mode{font-family:"Nunito",sans-serif;font-size:10.5px;font-weight:900;letter-spacing:.18em;color:var(--gold);
+  padding:1px 8px 1px 10px;border:1.5px solid rgba(255,213,74,.65);border-radius:99px;}
+.rank-list{list-style:none;margin:12px 0 18px;padding:0;overflow-y:auto;min-height:0;touch-action:pan-y;}
+.rank-row{display:grid;grid-template-columns:34px 1fr;column-gap:10px;align-items:center;
+  padding:8px 12px;margin-bottom:5px;border-radius:14px;background:rgba(120,160,255,.13);text-align:left;}
+.rank-no{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:15px;font-weight:900;color:#fff;background:rgba(10,30,120,.35);}
+.rank-row.top1 .rank-no{background:linear-gradient(#fff0a0,#ffcc2e 45%,#d98800);color:#6b3a00;}
+.rank-row.top2 .rank-no{background:linear-gradient(#ffffff,#cfd8e6 50%,#8e9bb3);color:#34405a;}
+.rank-row.top3 .rank-no{background:linear-gradient(#ffd3a8,#e08a45 50%,#a2521c);color:#4a1f00;}
+.rank-main{display:flex;align-items:baseline;gap:4px;line-height:1.15;}
+.rank-main b{font-size:22px;font-weight:900;font-variant-numeric:tabular-nums;text-shadow:var(--ts-s);}
+.rank-date{margin-left:auto;padding-left:8px;font-size:12px;font-weight:800;color:var(--dim);white-space:nowrap;}
+.rank-row.latest{background:rgba(255,213,74,.16);box-shadow:inset 0 0 0 1.5px rgba(255,213,74,.7);}
+.rank-empty{padding:28px 0;font-size:14px;font-weight:800;color:var(--dim);}
+.rank-box .primary{align-self:center;flex-shrink:0;}
+.over-rank{margin-top:14px;}
+.over-rank.ranked{color:var(--gold);}
+/* 世界 / この端末 */
+.rank-scope{display:flex;justify-content:center;gap:8px;margin:-4px 0 4px;}
+.rank-scope-btn{display:flex;align-items:center;gap:6px;padding:5px 14px;border:1.5px solid var(--line);border-radius:99px;background:none;
+  color:var(--dim);font-family:"M PLUS Rounded 1c",sans-serif;font-size:13px;font-weight:900;}
+.rank-scope-btn.on{color:#fff;background:rgba(120,160,255,.28);border-color:#fff;}
+.rank-scope-btn .rank-mode{font-size:9px;padding:0 6px 0 7px;}
+/* 名前（世界ランキングに出る） */
+.rank-name{display:flex;align-items:center;gap:8px;margin:10px 2px 0;font-size:13px;font-weight:800;}
+.rank-name-label{color:var(--dim);flex-shrink:0;}
+.rank-name-text{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rank-name-input{flex:1;min-width:0;padding:5px 10px;border:1.5px solid var(--gold);border-radius:10px;background:rgba(10,30,120,.4);color:#fff;
+  font:inherit;font-size:16px;user-select:text;-webkit-user-select:text;touch-action:auto;}
+.rank-name-btn{flex-shrink:0;padding:4px 12px;border:1.5px solid var(--gold);border-radius:99px;background:rgba(255,213,74,.12);color:var(--gold);
+  font-family:"M PLUS Rounded 1c",sans-serif;font-size:13px;font-weight:900;}
+.rank-note{margin:8px 0 0;font-size:12px;font-weight:800;color:var(--gold);}
+.rank-player{margin-left:auto;padding-left:8px;font-size:14px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.rank-main{min-width:0;}
+.rank-me{margin:-8px 0 14px;font-size:14px;font-weight:800;color:var(--dim);}
+.rank-me b{color:var(--gold);font-size:18px;}
