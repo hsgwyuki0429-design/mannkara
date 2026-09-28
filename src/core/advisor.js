@@ -1,7 +1,7 @@
-import { SIZE, SCORE_PER_GOAL, chainMultiplier } from './constants.js?v=202609281452';
-import { SHAPE_BY_NAME } from './pieces.js?v=202609281452';
-import { solvable } from './planner.js?v=202609281452';
-import * as Sim from './sim.js?v=202609281452';
+import { SIZE, SCORE_PER_GOAL, chainMultiplier } from './constants.js?v=202609281534';
+import { SHAPE_BY_NAME } from './pieces.js?v=202609281534';
+import { solvable } from './planner.js?v=202609281534';
+import * as Sim from './sim.js?v=202609281534';
 
 /**
  * 学習モードの「おすすめの置き場所」（AI ではなく、今の盤面での総当たり）。
@@ -56,7 +56,7 @@ export function bestMove(board, tray, { budgetMs = 60 } = {}) {
     for (const [ox, oy] of Sim.placements(start, r.cells)) {
       const b = Sim.cloneSim(start);
       Sim.place(b, r.cells, ox, oy);
-      const chains = Sim.resolveAll(b);
+      const chains = Sim.resolveAll(b, Sim.restOf(others.map((o) => o.cells)));
       const survive = solvable(b, others.map((o) => o.name));
       let value = gainOf(before, b, r.cells.length, chains) + evaluate(b);
       if (others.length && now() < deadline) value += 0.5 * lookahead(b, others);
@@ -79,7 +79,7 @@ function lookahead(s, others) {
     for (const [ox, oy] of Sim.placements(s, o.cells)) {
       const b = Sim.cloneSim(s);
       Sim.place(b, o.cells, ox, oy);
-      const chains = Sim.resolveAll(b);
+      const chains = Sim.resolveAll(b, Sim.restOf(others.filter((x) => x !== o).map((x) => x.cells)));
       best = Math.max(best, gainOf(before, b, o.cells.length, chains) + evaluate(b));
     }
   }
