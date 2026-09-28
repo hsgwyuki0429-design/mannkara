@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=202609281452';
-import { Board, createBlock } from '../core/board.js?v=202609281452';
-import { Piece } from '../core/pieces.js?v=202609281452';
-import * as Sim from '../core/sim.js?v=202609281452';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281452';
-import { Renderer, delay } from './renderer.js?v=202609281452';
-import { Sfx } from './sfx.js?v=202609281452';
-import { Scenes } from './scenes.js?v=202609281452';
-import { colorOf } from './palette.js?v=202609281452';
-import { TrayDealer } from './tray-dealer.js?v=202609281452';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281452';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281452';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609281452';
-import { World } from './world.js?v=202609281452';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281452';
+import { Game } from '../core/game.js?v=202609281534';
+import { Board, createBlock } from '../core/board.js?v=202609281534';
+import { Piece } from '../core/pieces.js?v=202609281534';
+import * as Sim from '../core/sim.js?v=202609281534';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281534';
+import { Renderer, delay } from './renderer.js?v=202609281534';
+import { Sfx } from './sfx.js?v=202609281534';
+import { Scenes } from './scenes.js?v=202609281534';
+import { colorOf } from './palette.js?v=202609281534';
+import { TrayDealer } from './tray-dealer.js?v=202609281534';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281534';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281534';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609281534';
+import { World } from './world.js?v=202609281534';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281534';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281452', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281534', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -445,7 +445,9 @@ function previewInfo(piece, ox, oy) {
   Sim.place(s, piece.cells, ox, oy);
   const lines = Sim.fullLines(s);
   const cells = lines.flatMap(({ kind, n }) => lineCells(kind, n));
-  const chain = Sim.resolveAll(s);
+  // 本番と同じく、縦横の両方が満杯のときは残りの手駒で詰まない向きを選ぶ
+  const rest = game.tray.filter((p, i) => p && i !== drag?.slot).map((p) => p.cells);
+  const chain = Sim.resolveAll(s, Sim.restOf(rest));
   return { cells, chain, lines, fit };
 }
 

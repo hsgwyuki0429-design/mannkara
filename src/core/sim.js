@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells } from './constants.js?v=202609281452';
+import { SIZE, isInside, lineCells } from './constants.js?v=202609281534';
 
 /**
  * 探索用の軽い盤面（手駒の組み合わせ探索・全消しの計画で何万回も試すため）。
@@ -172,14 +172,84 @@ function minFull(s, kind) {
   for (let n = 1; n <= SIZE; n++) if (s[cntAt(kind, n)] === n) return n;
   return 0;
 }
-/** 次に発動するライン [kind, n]（なければ null）。mancala.js の decide と同じ優先順位 */
-function nextActivation(s) {
-  const c = minFull(s, K.col), r = minFull(s, K.row);
-  if (!c || !r) return c ? [K.col, c] : r ? [K.row, r] : null;
-  const lenCol = chainFrom(s, K.col, c), lenRow = chainFrom(s, K.row, r);
-  return lenRow > lenCol ? [K.row, r] : [K.col, c];     // 同じなら縦
+/**
+ * 残りの手駒（縦と横の両方が満杯のときの向きの決め方に使う）。形のセル配列 [{x, y}] の配列から作る。
+ * 空なら null（その時は手駒を見ずに、連鎖が長い向き）
+ */
+export function restOf(cellsList) {
+  const list = (cellsList || []).filter((c) => c && c.length);
+  if (!list.length) return null;
+  const keys = list.map((cells) => cells.map((c) => c.x + ',' + c.y).join(';'));
+  return { list, keys, key: [...keys].sort().join('|') };
 }
-/** ライン(kind 'col' | 'row', n) を発動してから連鎖が終わるまでの発動回数（そのライン自身を含む。mancala.decide 用） */
+const restWithout = (rest, i) => restOf(rest.list.filter((_, j) => j !== i));
+
+/**
+ * 次に発動するライン [kind, n, tie]（なければ null）。mancala.js の decide もこれを使う。
+ *  - 同じ向きの中では番号が最小のライン
+ *  - 縦と横の両方に満杯のラインがある時は、それぞれの最小ラインから始めた場合を最後までシミュレーションして
+ *     1. 残りの手駒（rest）で詰まない向き（全部置ける > どれか1つは置ける > 1つも置けない）
+ *     2. 連鎖が長くなる向き
+ *     3. それでも同じなら縦（tie = true）
+ */
+function nextActivation(s, rest = null) {
+  const c = minFull(s, K.col), r = minFull(s, K.row);
+  if (!c || !r) return c ? [K.col, c, false] : r ? [K.row, r, false] : null;
+  const memoKey = rest ? keyOf(s) + '#' + rest.key : null;
+  if (rest) { const hit = decideMemo.get(memoKey); if (hit) return hit; }
+  let out;
+  if (!rest) {
+    const lenCol = chainFrom(s, K.col, c), lenRow = chainFrom(s, K.row, r);
+    out = lenRow > lenCol ? [K.row, r, false] : [K.col, c, lenRow === lenCol];
+  } else {
+    const col = afterActivation(s, K.col, c, rest), row = afterActivation(s, K.row, r, rest);
+    const stuckCol = stuckLevel(col.s, rest), stuckRow = stuckLevel(row.s, rest);
+    if (stuckRow !== stuckCol) out = stuckRow < stuckCol ? [K.row, r, false] : [K.col, c, false];
+    else out = row.len > col.len ? [K.row, r, false] : [K.col, c, row.len === col.len];
+  }
+  if (rest) { if (decideMemo.size > 50000) decideMemo.clear(); decideMemo.set(memoKey, out); }
+  return out;
+}
+const decideMemo = new Map();
+/** ライン(kind, n) を発動して連鎖が終わるまで進めた盤面と、発動回数（そのライン自身を含む） */
+function afterActivation(s, kind, n, rest) {
+  const b = s.slice();
+  resolveLine(b, kind, n);
+  return { s: b, len: 1 + resolveAll(b, rest) };
+}
+/** 詰み具合: 0 = 残りの手駒を全部置ける（順番は自由・置くたびに連鎖も解決） / 1 = どれか1つは置ける / 2 = 1つも置けない */
+const stuckMemo = new Map();
+function stuckLevel(s, rest) {
+  const key = keyOf(s) + '#' + rest.key;
+  const hit = stuckMemo.get(key);
+  if (hit !== undefined) return hit;
+  const level = canPlaceAll(s, rest) ? 0 : rest.list.some((cells) => fits(s, cells)) ? 1 : 2;
+  if (stuckMemo.size > 50000) stuckMemo.clear();
+  stuckMemo.set(key, level);
+  return level;
+}
+function canPlaceAll(s, rest) {
+  if (rest.list.length === 1) return fits(s, rest.list[0]);
+  const tried = new Set();
+  for (let i = 0; i < rest.list.length; i++) {
+    if (tried.has(rest.keys[i])) continue;           // 同じ形は1回試せば十分
+    tried.add(rest.keys[i]);
+    const cells = rest.list[i], others = restWithout(rest, i);
+    for (const [ox, oy] of placements(s, cells)) {
+      const b = s.slice();
+      place(b, cells, ox, oy);
+      resolveAll(b, others);
+      if (canPlaceAll(b, others)) return true;
+    }
+  }
+  return false;
+}
+/** 縦横の両方が満杯のときにどちらを発動するか { kind: 'col' | 'row', n, tie }（無ければ null。mancala.decide 用） */
+export function decide(s, rest = null) {
+  const act = nextActivation(s, rest);
+  return act && { kind: act[0] === K.col ? 'col' : 'row', n: act[1], tie: act[2] };
+}
+/** ライン(kind 'col' | 'row', n) を発動してから連鎖が終わるまでの発動回数（そのライン自身を含む。手駒は見ない） */
 export const chainIfActivated = (s, kind, n) => chainFrom(s, K[kind], n);
 const memo = new Map();
 function chainFrom(s, kind, n) {
@@ -201,10 +271,13 @@ function chainLength(s) {
   memo.set(key, n);
   return n;
 }
-/** 連鎖が終わるまで解決。発動したライン数を返す */
-export function resolveAll(s) {
+/**
+ * 連鎖が終わるまで解決。発動したライン数を返す。
+ * rest（restOf で作った残りの手駒）を渡すと、縦横の両方が満杯のときに詰まない向きを優先する（ゲーム本体と同じ）
+ */
+export function resolveAll(s, rest = null) {
   let n = 0;
-  for (let act; (act = nextActivation(s)); ) {
+  for (let act; (act = nextActivation(s, rest)); ) {
     resolveLine(s, act[0], act[1]);
     if (++n > 2000) break;
   }

@@ -1,8 +1,10 @@
-import { Piece, SHAPES } from './pieces.js?v=202609281452';
-import * as Sim from './sim.js?v=202609281452';
+import { Piece, SHAPES } from './pieces.js?v=202609281534';
+import * as Sim from './sim.js?v=202609281534';
 
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 const CELLS = Object.fromEntries(SHAPES.map((s) => [s.name, new Piece(s.name).cells]));
+/** 残りの手駒（名前の配列）を Sim.resolveAll に渡す形に（縦横の両方が満杯のとき、詰まない向きを選ぶため） */
+const restOf = (names) => Sim.restOf(names.map((n) => CELLS[n]));
 const ALL = SHAPES.map((s) => s.name);
 
 /**
@@ -21,7 +23,7 @@ export function solvable(s, names) {
     for (const [ox, oy] of Sim.placements(s, cells)) {
       const b = Sim.cloneSim(s);
       Sim.place(b, cells, ox, oy);
-      Sim.resolveAll(b);
+      Sim.resolveAll(b, restOf(others));
       if (solvable(b, others)) return true;
     }
   }
@@ -45,11 +47,11 @@ export function countWays(s, names, cap = Infinity) {
     for (let i = 0; i < rest.length; i++) {
       if (i > 0 && rest[i] === rest[i - 1]) continue;     // 同じ形は1回試せば十分（rest は並べ替え済み）
       const others = rest.filter((_, j) => j !== i);
-      const cells = CELLS[rest[i]];
+      const cells = CELLS[rest[i]], left = restOf(others);
       for (const [ox, oy] of Sim.placements(st, cells)) {
         const b = Sim.cloneSim(st);
         Sim.place(b, cells, ox, oy);
-        Sim.resolveAll(b);
+        Sim.resolveAll(b, left);
         rec(b, others);
         if (ends.size >= cap) return;
       }
@@ -141,12 +143,12 @@ function sampleShapes(random, k) {
   return out;
 }
 
-/** 手順どおりに置いたあとの盤面のキー（プレイヤーが計画どおりに進めたかの確認用） */
+/** 手順どおりに置いたあとの盤面のキー（プレイヤーが計画どおりに進めたかの確認用。seq は1回に配る手駒の分） */
 export function keyAfter(board, seq) {
   const s = Sim.fromBoard(board);
-  for (const { name, ox, oy } of seq) {
+  seq.forEach(({ name, ox, oy }, i) => {
     Sim.place(s, CELLS[name], ox, oy);
-    Sim.resolveAll(s);
-  }
+    Sim.resolveAll(s, restOf(seq.slice(i + 1).map((m) => m.name)));
+  });
   return Sim.keyOf(s);
 }

@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609281452';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281452';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281452';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281452';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281452';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281452';
-import * as Sim from '../src/core/sim.js?v=202609281452';
-import { DealerCore } from '../src/core/dealer.js?v=202609281452';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281452';
-import { ScoreManager } from '../src/core/score.js?v=202609281452';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609281452';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281452';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281452';
+import { Board, createBlock } from '../src/core/board.js?v=202609281534';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281534';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281534';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281534';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281534';
+import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202609281534';
+import * as Sim from '../src/core/sim.js?v=202609281534';
+import { DealerCore } from '../src/core/dealer.js?v=202609281534';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281534';
+import { ScoreManager } from '../src/core/score.js?v=202609281534';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609281534';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281534';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281534';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281452';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281534';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -204,6 +204,40 @@ console.log('優先順位: 同じ向きは小さい番号から / 縦横両方�
   eq(nextActivation(b), refNext(b), '縦8 と角の横1: 参照実装と一致');
 }
 
+console.log('優先順位: 縦横両方なら、まず残りの手駒で詰まない向き、次に連鎖が大きい向き');
+{
+  const boardOf = (code) => {
+    const b = new Board();
+    for (const xr of code.split(' ')) b.set(Number(xr[0]), Number(xr[1]), createBlock('debug'));
+    return b;
+  };
+  const cellsOf = (names) => names.map((n) => new Piece(n).cells);
+  const code = '00 20 50 60 01 11 21 31 41 51 61 32 42 52 23 43 04 34 15';
+  const rest = ['W1', 'I51'];
+  const b = boardOf(code);
+  const s = Sim.fromBoard(b);
+  eq([Sim.chainIfActivated(s, 'col', 2), Sim.chainIfActivated(s, 'row', 7)], [4, 2], '（この盤面は 縦2 からだと4連鎖・横7 からだと2連鎖）');
+  eq(decide(b).act, { kind: 'col', n: 2 }, '手駒が残っていなければ、今までどおり連鎖が大きい縦2');
+  const after = (kind, n) => {
+    const bb = b.clone();
+    resolveLine(bb, kind, n);
+    const st = Sim.fromBoard(bb);
+    Sim.resolveAll(st, Sim.restOf(cellsOf(rest)));
+    return [solvableNames(st, rest), rest.some((n) => Sim.fits(st, new Piece(n).cells))];
+  };
+  eq([after('col', 2), after('row', 7)], [[false, false], [false, true]],
+    '（縦2 からだと残りの W1・I51 がどちらも置けない＝詰み。横7 からならどちらかは置ける）');
+  eq(decide(b, cellsOf(rest)).act, { kind: 'row', n: 7 }, '残りの手駒で詰む向きは、連鎖が大きくても選ばない（横7）');
+  eq(Sim.decide(s, Sim.restOf(cellsOf(rest))), { kind: 'row', n: 7, tie: false }, '軽い盤面でも同じ');
+  eq(decide(b, cellsOf(['Dot0'])).act, { kind: 'col', n: 2 }, 'どちらも詰まないなら、連鎖が大きい向き');
+  // ゲーム本体: トレイに残っている手駒で判定する
+  const g = new Game({ random: () => 0.5 });
+  g.scripted = true;
+  g.board = b.clone();
+  g.tray = [null, new Piece('W1'), new Piece('I51')];
+  eq(seq(g.resolve()).split(' ')[0], 'r7', 'ゲーム本体も、トレイに残っている手駒で詰まない向きから発動する');
+}
+
 console.log('長い連鎖（穴あきラインを押し込みで埋めていく）');
 {
   const b = new Board();
@@ -388,8 +422,9 @@ function boardWithBlocks(rnd, lo, hi) {
       rest.forEach((n, i) => {
         const cells = new Piece(n).cells;
         for (const [ox, oy] of Sim.placements(st, cells)) {
-          const b = Sim.cloneSim(st); Sim.place(b, cells, ox, oy); Sim.resolveAll(b);
-          rec(b, rest.filter((_, j) => j !== i));
+          const others = rest.filter((_, j) => j !== i);
+          const b = Sim.cloneSim(st); Sim.place(b, cells, ox, oy); Sim.resolveAll(b, Sim.restOf(others.map((o) => new Piece(o).cells)));
+          rec(b, others);
         }
       });
     };
@@ -946,7 +981,7 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202609281452');
+  const api = await import('../functions/api/ranking.js?v=202609281534');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');

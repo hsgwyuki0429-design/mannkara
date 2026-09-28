@@ -1,6 +1,5 @@
-import { Board } from './board.js?v=202609281452';
-import * as Sim from './sim.js?v=202609281452';
-import { KIND_PRIORITY } from './constants.js?v=202609281452';
+import { Board } from './board.js?v=202609281534';
+import * as Sim from './sim.js?v=202609281534';
 
 /**
  * ライン(kind, n) の発動を1move ずつ進めるジェネレータ。縦列・横列で完全に同じ処理。
@@ -39,30 +38,24 @@ export function resolveLine(board, kind, n) {
 export const resolveColumn = (board, n) => resolveLine(board, 'col', n);
 
 /**
- * 次に発動するラインを1つ決める（優先順位はここだけで決まる）。
+ * 次に発動するラインを1つ決める（優先順位は sim.js の nextActivation だけで決まる）。
  *  - 同じ向きの中では番号が最小のライン
- *  - 縦と横の両方に満杯のラインがある時は、それぞれの最小ラインから始めた場合の連鎖数を
- *    シミュレーションし、連鎖が大きくなる向きを選ぶ（同じなら縦）
+ *  - 縦と横の両方に満杯のラインがある時は、それぞれの最小ラインから始めた場合を最後までシミュレーションして
+ *     1. 残りの手駒（rest: 形のセル配列の配列。まだトレイにあるピース）で詰まない向き
+ *        （全部置ける > どれか1つは置ける > 1つも置けない）
+ *     2. 連鎖が長くなる向き
+ *     3. それでも同じなら縦
  */
-export function nextActivation(board) {
-  return decide(board).act;
+export function nextActivation(board, rest = []) {
+  return decide(board, rest).act;
 }
 
-/** nextActivation の詳細版。{ act, tie } tie = 縦横で連鎖数が同じだったか */
-export function decide(board) {
+/** nextActivation の詳細版。{ act, tie } tie = 縦横で詰み具合も連鎖数も同じだったか */
+export function decide(board, rest = []) {
   const lines = board.fullLines();
   if (!lines.length) return { act: null, tie: false };
-  const minOf = (kind) => {
-    const ns = lines.filter((l) => l.kind === kind).map((l) => l.n);
-    return ns.length ? { kind, n: Math.min(...ns) } : null;
-  };
-  const col = minOf('col'), row = minOf('row');
-  if (!col || !row) return { act: col ?? row, tie: false };
-  // 連鎖数の読みは探索用の軽い盤面で（盤面の複製を何度も作ると、長い連鎖で重くなる。結果は同じ: テストで確認）
-  const s = Sim.fromBoard(board);
-  const lenCol = Sim.chainIfActivated(s, 'col', col.n), lenRow = Sim.chainIfActivated(s, 'row', row.n);
-  if (lenRow > lenCol) return { act: row, tie: false };
-  return { act: col, tie: lenRow === lenCol };
+  const d = Sim.decide(Sim.fromBoard(board), Sim.restOf(rest));
+  return { act: { kind: d.kind, n: d.n }, tie: d.tie };
 }
 
 /* 連鎖数シミュレーション（盤面ごとにメモ化）。decide は sim.js の同じ計算を使う（こちらは互換のために残す） */
