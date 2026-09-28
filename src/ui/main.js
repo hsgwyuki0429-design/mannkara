@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=202609281441';
-import { Board, createBlock } from '../core/board.js?v=202609281441';
-import { Piece } from '../core/pieces.js?v=202609281441';
-import * as Sim from '../core/sim.js?v=202609281441';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281441';
-import { Renderer, delay } from './renderer.js?v=202609281441';
-import { Sfx } from './sfx.js?v=202609281441';
-import { Scenes } from './scenes.js?v=202609281441';
-import { colorOf } from './palette.js?v=202609281441';
-import { TrayDealer } from './tray-dealer.js?v=202609281441';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281441';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281441';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609281441';
-import { World } from './world.js?v=202609281441';
-import { RANK_KINDS, topBy, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281441';
+import { Game } from '../core/game.js?v=202609281444';
+import { Board, createBlock } from '../core/board.js?v=202609281444';
+import { Piece } from '../core/pieces.js?v=202609281444';
+import * as Sim from '../core/sim.js?v=202609281444';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281444';
+import { Renderer, delay } from './renderer.js?v=202609281444';
+import { Sfx } from './sfx.js?v=202609281444';
+import { Scenes } from './scenes.js?v=202609281444';
+import { colorOf } from './palette.js?v=202609281444';
+import { TrayDealer } from './tray-dealer.js?v=202609281444';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281444';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281444';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609281444';
+import { World } from './world.js?v=202609281444';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281444';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -39,7 +39,7 @@ function loadBest() {
   try { records = { ...records, ...JSON.parse(localStorage.getItem(recordsKey()) || '{}') }; } catch {}
   loadRanking();
 }
-/** ランキング（スコア・コンボ・連鎖。端末ごと・モードごとに別）。1ゲームずつ、終わったときに入れる */
+/** この端末のランキング（スコア。端末ごと・モードごとに別）。1ゲームずつ、終わったときに入れる */
 const rankingKey = () => (mode === 'learn' ? 'blockmancala-ranking-learn' : 'blockmancala-ranking');
 let ranking = [];
 let lastRun = null;          // いちばん最近入れたゲーム（ランキングの中で色を付ける）
@@ -49,8 +49,8 @@ function loadRanking() {
   let text = null;
   try { text = localStorage.getItem(rankingKey()); } catch {}
   if (text != null) { ranking = parseRanking(text); return; }
-  // ランキングができる前の記録は、それぞれ別の1件として入れておく（ベストスコアとランキングの1位が食い違わないように）
-  for (const run of legacyRuns(best, records)) ranking = addRun(ranking, run).list;
+  // ランキングができる前のベストスコアは1件として入れておく（ベストスコアとランキングの1位が食い違わないように）
+  for (const run of legacyRuns(best)) ranking = addRun(ranking, run).list;
   if (ranking.length) try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
 }
 loadBest();
@@ -64,20 +64,20 @@ function saveBest() {
   return true;
 }
 
-/** このゲームをランキングに入れる（1ゲームにつき1回。チュートリアルと 0 点は入れない）。何位に入ったかを返す */
+/** このゲームをランキングに入れる（1ゲームにつき1回。チュートリアルと 0 点は入れない）。この端末で何位に入ったかを返す（入らなければ 0） */
 let runRecorded = false;
 const world = new World();
 world.flush();                                     // 前に送れなかった記録があれば送る
 function recordRun() {
   if (runRecorded || tutorial || game.score.score <= 0) return null;
   runRecorded = true;
-  const run = { score: game.score.score, chain: game.score.bestChain, combo: game.score.bestStreak, at: Date.now() };
+  const run = { score: game.score.score, at: Date.now() };
   const res = addRun(ranking, run);
   ranking = res.list;
-  if (Object.values(res.ranks).some(Boolean)) lastRun = run;
+  if (res.rank) lastRun = run;
   try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
-  if (mode === 'normal') { world.addPending(run); world.flush(); }     // 世界ランキングは通常モードだけ
-  return res.ranks;
+  if (mode === 'normal') { world.addPending(run.score); world.flush(); }     // 世界ランキングは通常モードだけ
+  return res.rank;
 }
 
 /** このゲームの最大連鎖・最大コンボを記録に残す。更新した方を返す（チュートリアルでは残さない） */
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281441', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281444', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -288,9 +288,9 @@ async function playTurn(turn) {
     gameOverShown = true;
     const prev = { ...records };
     const isBest = saveBest();
-    const ranks = recordRun();
-    $('btnOverRank').textContent = ranks && RANK_KINDS.some((k) => ranks[k]) ? `ランクイン！ ランキングを見る` : 'ランキングを見る';
-    $('btnOverRank').classList.toggle('ranked', !!ranks && RANK_KINDS.some((k) => ranks[k]));
+    const rank = recordRun();
+    $('btnOverRank').textContent = rank ? 'ランクイン！ ランキングを見る' : 'ランキングを見る';
+    $('btnOverRank').classList.toggle('ranked', !!rank);
     $('finalScore').textContent = game.score.score.toLocaleString('en-US');
     showOverStats(prev);
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best.toLocaleString('en-US')}`;
@@ -673,9 +673,7 @@ function setPaused(v) {
 $('btnPause').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) setPaused(true); });
 $('btnResume').addEventListener('click', () => setPaused(false));
 
-/* ---------- ランキング（上のボタンで スコア / コンボ / 連鎖 を切り替える。世界 / この端末） ---------- */
-const RANK_UNIT = { score: '', combo: 'コンボ', chain: '連鎖' };
-let rankKind = 'score';
+/* ---------- ランキング（スコア。世界 / この端末） ---------- */
 let rankScope = 'world';
 let rankToken = 0;                                 // 読み込み中に切り替えたら、前の結果は捨てる
 let pausedBeforeRank = false;
@@ -686,22 +684,15 @@ function fmtDate(at) {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-/** 1行: 順位・値・名前（世界のみ）・ほかの記録 */
-function rankRow(rank, value, sub, { name = null, cls = '' } = {}) {
+/** 1行: 順位・スコア・名前（世界）か日付（この端末） */
+function rankRow(rank, value, { name = null, date = null, cls = '' } = {}) {
   const li = document.createElement('li');
   li.className = 'rank-row' + (rank <= 3 ? ` top${rank}` : '') + cls;
   li.innerHTML = `<span class="rank-no">${rank}</span>`
-    + `<span class="rank-main"><b>${fmtNum(value)}</b>${RANK_UNIT[rankKind] ? `<small>${RANK_UNIT[rankKind]}</small>` : ''}`
-    + (name != null ? `<span class="rank-player">${esc(name)}</span>` : '') + `</span>`
-    + `<span class="rank-sub">${sub.join('・')}</span>`;
+    + `<span class="rank-main"><b>${fmtNum(value)}</b>`
+    + (name != null ? `<span class="rank-player">${esc(name)}</span>` : '')
+    + (date != null ? `<span class="rank-date">${date}</span>` : '') + `</span>`;
   return li;
-}
-function otherStats(r) {
-  const sub = [];
-  if (rankKind !== 'score') sub.push(`${fmtNum(r.score)}点`);
-  if (rankKind !== 'combo') sub.push(`コンボ ${r.combo}`);
-  if (rankKind !== 'chain') sub.push(`連鎖 ${r.chain}`);
-  return sub;
 }
 function rankMessage(text) {
   const li = document.createElement('li');
@@ -710,11 +701,6 @@ function rankMessage(text) {
   $('rankList').replaceChildren(li);
 }
 function renderRanking() {
-  for (const tab of document.querySelectorAll('.rank-tab')) {
-    const on = tab.dataset.kind === rankKind;
-    tab.classList.toggle('on', on);
-    tab.setAttribute('aria-selected', String(on));
-  }
   for (const b of document.querySelectorAll('.rank-scope-btn')) b.classList.toggle('on', b.dataset.scope === rankScope);
   $('rankMode').classList.toggle('hidden', mode !== 'learn');
   const isWorld = rankScope === 'world';
@@ -727,28 +713,27 @@ function renderRanking() {
   if (isWorld) renderWorld(); else renderLocal();
 }
 function renderLocal() {
-  const top = topBy(ranking, rankKind);
+  const top = topRuns(ranking);
   if (!top.length) return rankMessage('まだ記録がありません');
   $('rankList').replaceChildren(...top.map((r, i) =>
-    rankRow(i + 1, r[rankKind], [...(r.legacy ? [] : otherStats(r)), fmtDate(r.at)], { cls: r === lastRun ? ' latest' : '' })));
+    rankRow(i + 1, r.score, { date: fmtDate(r.at), cls: r === lastRun ? ' latest' : '' })));
 }
 async function renderWorld() {
-  const token = ++rankToken, kind = rankKind;
+  const token = ++rankToken;
   rankMessage('読み込み中…');
   let data;
-  try { data = await world.fetchTop(kind); } catch { data = null; }
+  try { data = await world.fetchTop(); } catch { data = null; }
   if (token !== rankToken || rankScope !== 'world') return;
   if (!data) return rankMessage('世界ランキングにつながりませんでした');
   if (!data.top.length) rankMessage('まだ記録がありません');
-  else $('rankList').replaceChildren(...data.top.map((r) => rankRow(r.rank, r.value, otherStats(r), { name: r.name, cls: r.me ? ' latest' : '' })));
+  else $('rankList').replaceChildren(...data.top.map((r) => rankRow(r.rank, r.score, { name: r.name, cls: r.me ? ' latest' : '' })));
   if (data.me) {
-    $('rankMe').innerHTML = `あなた　<b>${fmtNum(data.me.rank)}位</b>　${fmtNum(data.me.value)}${RANK_UNIT[kind] ? ' ' + RANK_UNIT[kind] : '点'}`;
+    $('rankMe').innerHTML = `あなた　<b>${fmtNum(data.me.rank)}位</b>　${fmtNum(data.me.score)}点`;
     $('rankMe').classList.remove('hidden');
   }
 }
 /** ゲーム中に開いたら、一時停止と同じように連鎖の再生を止める（とじたら戻す） */
-function openRanking(kind = rankKind) {
-  rankKind = kind;
+function openRanking() {
   pausedBeforeRank = paused;
   paused = true;
   cancelDrag();
@@ -782,9 +767,6 @@ async function commitName() {
 }
 $('rankNameBtn').addEventListener('click', () => (editingName ? commitName() : editName(true)));
 $('rankNameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitName(); } });
-for (const tab of document.querySelectorAll('.rank-tab')) {
-  tab.addEventListener('click', () => { rankKind = tab.dataset.kind; renderRanking(); });
-}
 for (const b of document.querySelectorAll('.rank-scope-btn')) {
   b.addEventListener('click', () => { rankScope = b.dataset.scope; renderRanking(); });
 }

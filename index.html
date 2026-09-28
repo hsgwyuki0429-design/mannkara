@@ -38,7 +38,7 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609281441" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609281444" />
 </head>
 <body>
 <div id="app">
@@ -172,18 +172,13 @@
     <button id="shareClose" class="link howto">閉じる</button>
   </div>
 </div>
-<!-- ランキング: 上のボタンでスコア・コンボ・連鎖を切り替える（端末ごと・モードごとに別） -->
+<!-- ランキング（スコア）: 世界 / この端末（この端末のはモードごとに別） -->
 <div id="rankOverlay" class="overlay hidden">
   <div class="overlay-box rank-box">
     <p class="over-title rank-title">ランキング</p>
     <div class="rank-scope">
       <button class="rank-scope-btn" data-scope="world">🌏 世界</button>
       <button class="rank-scope-btn" data-scope="local">この端末<span id="rankMode" class="rank-mode hidden">LEARN</span></button>
-    </div>
-    <div class="rank-tabs" role="tablist">
-      <button class="rank-tab" role="tab" data-kind="score">スコア</button>
-      <button class="rank-tab" role="tab" data-kind="combo">コンボ</button>
-      <button class="rank-tab" role="tab" data-kind="chain">連鎖</button>
     </div>
     <div id="rankName" class="rank-name">
       <span class="rank-name-label">なまえ</span>
@@ -215,6 +210,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609281441"></script>
+<script type="module" src="./src/ui/main.js?v=202609281444"></script>
 </body>
 </html>

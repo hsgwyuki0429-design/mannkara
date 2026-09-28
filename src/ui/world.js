@@ -1,8 +1,8 @@
 /**
- * 世界ランキング（サーバーは functions/api/ranking.js）。通常モードの記録だけを送る。
- * 端末ごとに id（32 桁の 16 進）と名前を持つ。送れなかった記録は端末に残し、次に送る（自己ベストだけで足りる）
+ * 世界ランキング（スコア。サーバーは functions/api/ranking.js）。通常モードの記録だけを送る。
+ * 端末ごとに id（32 桁の 16 進）と名前を持つ。送れなかったスコアは端末に残し、次に送る（自己ベストだけで足りる）
  */
-import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202609281441';
+import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202609281444';
 
 const ID_KEY = STORE_PREFIX + 'world-id';
 const NAME_KEY = STORE_PREFIX + 'world-name';
@@ -26,23 +26,20 @@ export class World {
       crypto.getRandomValues(b);
       this.id = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
       set(ID_KEY, this.id);
-      // 世界ランキングができる前の通常モードの記録も、はじめに送る
-      let rec = {};
-      try { rec = JSON.parse(get(STORE_PREFIX + 'records') || '{}') || {}; } catch {}
-      this.addPending({ score: Number(get(STORE_PREFIX + 'best')) || 0, chain: rec.chain || 0, combo: rec.combo || 0 });
+      // 世界ランキングができる前の通常モードのベストスコアも、はじめに送る
+      this.addPending(Number(get(STORE_PREFIX + 'best')) || 0);
     }
     this.name = get(NAME_KEY) || `ななし${parseInt(this.id.slice(0, 4), 16) % 10000}`.slice(0, NAME_MAX);
     this.sending = null;
   }
+  /** まだ送れていないスコア（無ければ 0） */
   get pending() {
-    try { return JSON.parse(get(PENDING_KEY) || 'null'); } catch { return null; }
+    const v = Number(get(PENDING_KEY));
+    return Number.isInteger(v) && v > 0 ? v : 0;
   }
-  /** 送る記録に足す（それぞれ大きい方を残す） */
-  addPending(run) {
-    const p = this.pending || { score: 0, chain: 0, combo: 0 };
-    const n = (v) => (Number.isInteger(v) && v > 0 ? v : 0);
-    const next = { score: Math.max(p.score, n(run.score)), chain: Math.max(p.chain, n(run.chain)), combo: Math.max(p.combo, n(run.combo)) };
-    if (next.score || next.chain || next.combo) set(PENDING_KEY, JSON.stringify(next));
+  /** 送るスコアに足す（大きい方を残す） */
+  addPending(score) {
+    if (Number.isInteger(score) && score > this.pending) set(PENDING_KEY, String(score));
   }
   /** 名前を変える（サーバーにもすぐ送る）。空なら変えない */
   setName(name) {
@@ -57,23 +54,22 @@ export class World {
     if (this.sending) await this.sending.catch(() => {});
     const p = this.pending;
     if (!p && !force) return true;
-    const body = { id: this.id, name: this.name, score: 0, chain: 0, combo: 0, ...(p || {}) };
+    const body = { id: this.id, name: this.name, score: p };
     this.sending = fetch(apiUrl(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         // 送っている間に増えた分は残す
-        const now = this.pending;
-        if (now && now.score <= body.score && now.chain <= body.chain && now.combo <= body.combo) {
+        if (this.pending <= body.score) {
           try { localStorage.removeItem(PENDING_KEY); } catch {}
         }
         return true;
       });
     try { return await this.sending; } catch { return false; } finally { this.sending = null; }
   }
-  /** { top: [{ rank, name, value, score, chain, combo, me }], me: { rank, value } | null } */
-  async fetchTop(kind) {
+  /** { top: [{ rank, name, score, me }], me: { rank, score } | null } */
+  async fetchTop() {
     await this.flush();
-    const res = await fetch(`${apiUrl()}?kind=${encodeURIComponent(kind)}&id=${this.id}`, { cache: 'no-store' });
+    const res = await fetch(`${apiUrl()}?id=${this.id}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }

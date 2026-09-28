@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609281441';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281441';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281441';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281441';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281441';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281441';
-import * as Sim from '../src/core/sim.js?v=202609281441';
-import { DealerCore } from '../src/core/dealer.js?v=202609281441';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281441';
-import { ScoreManager } from '../src/core/score.js?v=202609281441';
-import { RANK_SIZE, topBy, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609281441';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281441';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281441';
+import { Board, createBlock } from '../src/core/board.js?v=202609281444';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281444';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281444';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281444';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281444';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281444';
+import * as Sim from '../src/core/sim.js?v=202609281444';
+import { DealerCore } from '../src/core/dealer.js?v=202609281444';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281444';
+import { ScoreManager } from '../src/core/score.js?v=202609281444';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609281444';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281444';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281444';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281441';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281444';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -926,70 +926,59 @@ console.log('端末の記録の名前（blockmancala- にそろえる）');
   eq(true, true, '端末の保存が使えないときも止まらない');
 }
 
-console.log('ランキング（スコア・コンボ・連鎖）');
+console.log('この端末のランキング（スコア）');
 {
   let list = [];
   const runs = [];
   for (let i = 0; i < 25; i++) {
-    const run = { score: 100 * (i + 1), chain: i % 7, combo: 24 - i, at: i + 1 };
+    const run = { score: 100 * ((i * 7) % 25 + 1), at: i + 1 };
     runs.push(run);
     list = addRun(list, run).list;
   }
-  eq(topBy(list, 'score').map((r) => r.score), [2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600], 'スコアの上位10件（高い順）');
-  eq(topBy(list, 'combo').map((r) => r.combo), [24, 23, 22, 21, 20, 19, 18, 17, 16, 15], 'コンボの上位10件');
-  eq(topBy(list, 'chain').every((r) => r.chain > 0), true, '連鎖 0 のゲームは連鎖のランキングに出ない');
-  eq(topBy(list, 'chain')[0].chain, 6, '連鎖の1位');
-  eq(list.length <= RANK_SIZE * 3, true, 'どのランキングにも入らないゲームは残さない');
-  eq(list.includes(runs[14]), false, '真ん中のゲーム（どれも上位でない）は消える');
-  const tie = addRun(list, { score: 2500, chain: 0, combo: 0, at: 99 });
-  eq(tie.ranks.score, 2, '同じスコアなら先に出した方が上');
-  eq(addRun(list, { score: 1, chain: 0, combo: 0, at: 100 }).ranks, { score: 0, combo: 0, chain: 0 }, 'どれにも入らなければ 0');
-  eq(addRun([], { score: 5, chain: 2, combo: 3, at: 1 }).ranks, { score: 1, combo: 1, chain: 1 }, '最初のゲームはすべて1位');
+  eq(list.map((r) => r.score), [2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600], '上位10件だけを高い順に残す');
+  eq(addRun(list, { score: 2500, at: 99 }).rank, 2, '同じスコアなら先に出した方が上');
+  eq(addRun(list, { score: 1, at: 100 }).rank, 0, '入らなければ 0');
+  eq(addRun([], { score: 0, at: 1 }), { list: [], rank: 0 }, '0 点は入れない');
   eq(parseRanking('{壊れた'), [], '壊れた保存は空');
-  eq(parseRanking('[{"score":"x","chain":2.7,"combo":-1,"at":5},null]'), [{ score: 0, chain: 2, combo: 0, at: 5 }], '数でない値は 0');
-  const legacy = legacyRuns(1200, { chain: 5, combo: 0 });
-  eq(legacy.length, 2, 'ランキング前の記録は値ごとに1件（0 の記録は入れない）');
-  eq([topBy(legacy, 'score').length, topBy(legacy, 'chain').length, topBy(legacy, 'combo').length], [1, 1, 0], '前の記録はその値のランキングにだけ出る');
+  eq(parseRanking('[{"score":"x","at":5},{"score":12.7,"chain":3,"at":2},null]'), [{ score: 12, at: 2 }], '数でない値は捨て、スコアと日付だけ読む');
+  eq([legacyRuns(1200), legacyRuns(0)], [[{ score: 1200, at: 0 }], []], 'ランキング前のベストスコアを1件として入れる');
 }
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202609281441');
-  eq(api.cleanName('  あい\u0000う  え\u202e '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
+  const api = await import('../functions/api/ranking.js?v=202609281444');
+  eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');
   const id = 'a'.repeat(32);
-  eq(api.cleanRun({ id, name: 'x', score: 10, chain: 2, combo: 3 }), { id, name: "x", score: 10, combo: 3, chain: 2 }, '記録: ふつうの値');
-  eq([api.cleanRun({ id: 'zz', name: 'x', score: 1, chain: 0, combo: 0 }), api.cleanRun({ id, name: 'x', score: 1.5, chain: 0, combo: 0 }),
-    api.cleanRun({ id, name: 'x', score: 1, chain: 100, combo: 0 }), api.cleanRun({ id, name: '', score: 1, chain: 0, combo: 0 })],
-    [null, null, null, null], '記録: おかしな id・小数・ありえない連鎖・名前なしははねる');
+  eq(api.cleanRun({ id, name: 'x', score: 10, chain: 2 }), { id, name: 'x', score: 10 }, '記録: スコアと名前だけ受け取る');
+  eq([api.cleanRun({ id: 'zz', name: 'x', score: 1 }), api.cleanRun({ id, name: 'x', score: 1.5 }),
+    api.cleanRun({ id, name: 'x', score: -1 }), api.cleanRun({ id, name: 'x', score: 1e9 }), api.cleanRun({ id, name: '', score: 1 })],
+    [null, null, null, null, null], '記録: おかしな id・小数・負・ありえない点・名前なしははねる');
   // D1 の代わりに node:sqlite（使えない Node では飛ばす）
   let sqlite = null;
   try { sqlite = await import('node:sqlite'); } catch {}
   if (sqlite) {
     const raw = new sqlite.DatabaseSync(':memory:');
     const d1 = { prepare(sql) {
-      const conv = sql.replace(/\?(\d+)/g, (_, n) => `?${n}`);
       let args = [];
       const st = { bind: (...a) => { args = a; return st; },
-        run: async () => raw.prepare(conv).run(...args), all: async () => ({ results: raw.prepare(conv).all(...args) }),
-        first: async () => raw.prepare(conv).get(...args) ?? null };
+        run: async () => raw.prepare(sql).run(...args), all: async () => ({ results: raw.prepare(sql).all(...args) }),
+        first: async () => raw.prepare(sql).get(...args) ?? null };
       return st;
     } };
-    const A = '1'.repeat(32), B = '2'.repeat(32), C = '3'.repeat(32);
-    await api.submit(d1, { id: A, name: 'A', score: 500, chain: 3, combo: 2 }, 1);
-    await api.submit(d1, { id: B, name: 'B', score: 900, chain: 3, combo: 0 }, 2);
-    await api.submit(d1, { id: C, name: 'C', score: 100, chain: 5, combo: 1 }, 3);
-    await api.submit(d1, { id: A, name: 'A2', score: 300, chain: 1, combo: 4 }, 4);
-    const sc = await api.ranking(d1, 'score', A);
-    eq(sc.top.map((r) => [r.rank, r.name, r.value, r.me]), [[1, 'B', 900, false], [2, 'A2', 500, true], [3, 'C', 100, false]],
-      'スコア: 1人1行の自己ベスト（下がった値では下げない）・名前は新しいもの');
-    eq(sc.me, { rank: 2, value: 500 }, '自分の順位');
-    const ch = await api.ranking(d1, 'chain', B);
-    eq(ch.top.map((r) => r.name), ['C', 'A2', 'B'], '連鎖: 同じ値なら先に出した人が上');
-    eq(ch.me.rank, 3, '同じ値のときの自分の順位も上の並びと同じ');
-    eq((await api.ranking(d1, 'combo', null)).top.map((r) => [r.name, r.value]), [['A2', 4], ['C', 1]], 'コンボ: 0 の人は出ない・上がった値は更新');
-    eq(JSON.stringify(sc).includes(A), false, 'id は返さない');
+    const A = '1'.repeat(32), B = '2'.repeat(32), C = '3'.repeat(32), D = '4'.repeat(32);
+    await api.submit(d1, { id: A, name: 'A', score: 500 }, 1);
+    await api.submit(d1, { id: B, name: 'B', score: 900 }, 2);
+    await api.submit(d1, { id: C, name: 'C', score: 500 }, 3);
+    await api.submit(d1, { id: A, name: 'A2', score: 300 }, 4);
+    await api.submit(d1, { id: D, name: 'D', score: 0 }, 5);
+    const r = await api.ranking(d1, C);
+    eq(r.top.map((x) => [x.rank, x.name, x.score, x.me]), [[1, 'B', 900, false], [2, 'A2', 500, false], [3, 'C', 500, true]],
+      '1人1行の自己ベスト（下がった点では下げない）・名前は新しいもの・同じ点なら先に出した人が上・0 点の人は出ない');
+    eq(r.me, { rank: 3, score: 500 }, '自分の順位（同じ点のときも上の並びと同じ）');
+    eq((await api.ranking(d1, D)).me, null, '0 点なら自分の順位は無し');
+    eq(JSON.stringify(r).includes(A), false, 'id は返さない');
   } else eq(true, true, 'node:sqlite が無いので D1 の確認は飛ばす');
 }
 
