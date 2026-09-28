@@ -38,7 +38,7 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609281444" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609281452" />
 </head>
 <body>
 <div id="app">
@@ -187,6 +187,14 @@
       <button id="rankNameBtn" class="rank-name-btn">変更</button>
     </div>
     <p id="rankNote" class="rank-note hidden"></p>
+    <!-- 世界ランキングは、なまえを決めるまで参加できない（自動では付けない） -->
+    <div id="rankNamePrompt" class="rank-name-prompt hidden">
+      <p class="rank-name-hint">世界ランキングに参加するには、なまえを決めてください</p>
+      <div class="rank-name-row">
+        <input id="rankNamePromptInput" class="rank-name-input" maxlength="12" autocomplete="off" enterkeyhint="done" placeholder="なまえ" />
+        <button id="rankNamePromptBtn" class="rank-name-go">きめる</button>
+      </div>
+    </div>
     <ol id="rankList" class="rank-list"></ol>
     <p id="rankMe" class="rank-me hidden"></p>
     <button id="rankClose" class="primary">とじる</button>
@@ -210,6 +218,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609281444"></script>
+<script type="module" src="./src/ui/main.js?v=202609281452"></script>
 </body>
 </html>

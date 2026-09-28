@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609281444';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281444';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281444';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281444';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281444';
-import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281444';
-import * as Sim from '../src/core/sim.js?v=202609281444';
-import { DealerCore } from '../src/core/dealer.js?v=202609281444';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281444';
-import { ScoreManager } from '../src/core/score.js?v=202609281444';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609281444';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281444';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281444';
+import { Board, createBlock } from '../src/core/board.js?v=202609281452';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281452';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281452';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281452';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281452';
+import { planAllClear, countWays, spots } from '../src/core/planner.js?v=202609281452';
+import * as Sim from '../src/core/sim.js?v=202609281452';
+import { DealerCore } from '../src/core/dealer.js?v=202609281452';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281452';
+import { ScoreManager } from '../src/core/score.js?v=202609281452';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609281452';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281452';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281452';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281444';
+  ALL_CLEAR_BONUS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281452';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -946,7 +946,7 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202609281444');
+  const api = await import('../functions/api/ranking.js?v=202609281452');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');

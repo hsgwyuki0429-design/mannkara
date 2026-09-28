@@ -1,8 +1,9 @@
 /**
  * 世界ランキング（スコア。サーバーは functions/api/ranking.js）。通常モードの記録だけを送る。
  * 端末ごとに id（32 桁の 16 進）と名前を持つ。送れなかったスコアは端末に残し、次に送る（自己ベストだけで足りる）
+ * 名前はかならず本人に決めてもらう（自動では付けない）。決めるまでは named が false で、送信もしない
  */
-import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202609281444';
+import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202609281452';
 
 const ID_KEY = STORE_PREFIX + 'world-id';
 const NAME_KEY = STORE_PREFIX + 'world-name';
@@ -26,12 +27,14 @@ export class World {
       crypto.getRandomValues(b);
       this.id = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
       set(ID_KEY, this.id);
-      // 世界ランキングができる前の通常モードのベストスコアも、はじめに送る
+      // 世界ランキングができる前の通常モードのベストスコアも、名前を決めたときにはじめて送る
       this.addPending(Number(get(STORE_PREFIX + 'best')) || 0);
     }
-    this.name = get(NAME_KEY) || `ななし${parseInt(this.id.slice(0, 4), 16) % 10000}`.slice(0, NAME_MAX);
+    this.name = get(NAME_KEY);   // 決めるまでは null（自動では付けない）
     this.sending = null;
   }
+  /** 名前を決めたか（決めるまでは世界ランキングに参加しない＝送信しない） */
+  get named() { return this.name != null; }
   /** まだ送れていないスコア（無ければ 0） */
   get pending() {
     const v = Number(get(PENDING_KEY));
@@ -49,8 +52,9 @@ export class World {
     set(NAME_KEY, s);
     return true;
   }
-  /** 残っている記録を送る（名前を変えただけのときは force で 0 を送る）。送れたら true */
+  /** 残っている記録を送る（名前を変えただけのときは force で 0 を送る）。送れたら true。名前を決めるまでは送らない */
   async flush(force = false) {
+    if (!this.named) return false;
     if (this.sending) await this.sending.catch(() => {});
     const p = this.pending;
     if (!p && !force) return true;
