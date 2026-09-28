@@ -1,17 +1,18 @@
-import { Game } from '../core/game.js?v=202609280345';
-import { Board, createBlock } from '../core/board.js?v=202609280345';
-import { Piece } from '../core/pieces.js?v=202609280345';
-import * as Sim from '../core/sim.js?v=202609280345';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609280345';
-import { Renderer, delay } from './renderer.js?v=202609280345';
-import { Sfx } from './sfx.js?v=202609280345';
-import { Scenes } from './scenes.js?v=202609280345';
-import { colorOf } from './palette.js?v=202609280345';
-import { TrayDealer } from './tray-dealer.js?v=202609280345';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609280345';
+import { Game } from '../core/game.js?v=202609280425';
+import { Board, createBlock } from '../core/board.js?v=202609280425';
+import { Piece } from '../core/pieces.js?v=202609280425';
+import * as Sim from '../core/sim.js?v=202609280425';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609280425';
+import { Renderer, delay } from './renderer.js?v=202609280425';
+import { Sfx } from './sfx.js?v=202609280425';
+import { Scenes } from './scenes.js?v=202609280425';
+import { colorOf } from './palette.js?v=202609280425';
+import { TrayDealer } from './tray-dealer.js?v=202609280425';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609280425';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
+sfx.bindGestures();
 const renderer = new Renderer(sfx);
 /** 画面全体の演出（新記録の風船・大連鎖やコンボの色の変化など。画面を覆う演出は使わない） */
 const scenes = new Scenes({ sfx, colorOf });
@@ -141,7 +142,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609280345', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609280425', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -519,7 +520,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   const slotEl = document.querySelector(`.slot[data-slot="${slot}"]`);
   const piece = game.tray[slot];
   if (!piece) return;
-  sfx.unlock();
+  sfx.unlock(true);
   sfx.pick();
   const lift = e.pointerType === 'mouse' ? 0 : renderer.cell * (1.2 + Math.max(piece.width, piece.height) * 0.5);
   drag = { slot, piece, lift, ox: null, oy: null, valid: false, chain: 0, pointerId: e.pointerId, x: e.clientX, y: e.clientY, t0: performance.now(),
@@ -548,8 +549,8 @@ window.addEventListener('pointercancel', (e) => { if (mine(e)) cancelDrag(); });
 // アプリの切り替え・通知などで指が離れたのが届かないことがある。そのときは持っているピースを戻す
 window.addEventListener('blur', cancelDrag);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { cancelDrag(); saveBest(); saveGame(); }  // 途中でアプリを閉じてもベストスコアと盤面が残るように
-  else sfx.unlock();   // 画面に戻ってきたとき: iOS は他アプリ切り替え・通知などで音が止まったままのことがあるので戻す
+  if (document.hidden) { cancelDrag(); saveBest(); saveGame(); sfx.markStale(); }  // 途中でアプリを閉じてもベストスコアと盤面が残るように
+  else sfx.unlock();   // 画面に戻ってきたとき: まず再開を試す（iOS はこの後の最初の操作で音を作り直す）
 });
 window.addEventListener('pagehide', () => { saveBest(); saveGame(); });
 

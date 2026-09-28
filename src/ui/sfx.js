@@ -5,17 +5,44 @@ const LOWER = Math.pow(2, -3 / 12), MAX_HZ = 1400;
 const note = (i, base = 523.25) => base * Math.pow(2, PENTA[Math.min(i, 8)] / 12);
 
 export class Sfx {
-  constructor() { this.ctx = null; this.enabled = true; }
-  unlock() {
-    // iOS Safari は 'suspended' だけでなく、コントロールセンターを開く・画面収録・着信などで
-    // 独自の 'interrupted' にもなる。running 以外なら戻す
-    if (this.ctx) { this.resumeUntilRunning(); return; }
+  constructor() { this.ctx = null; this.enabled = true; this.gestureAt = 0; this.stuckSince = 0; this.stale = false; }
+  /**
+   * 音を使えるようにする。指の操作のたびに呼ぶ（bindGestures）。
+   * iOS Safari は、指を「離した」時（touchend / click）の中でしか音の開始・再開を許さない。
+   * 指を「置いた」時（pointerdown = touchstart）や setTimeout からの resume() は無視されるので、
+   * ピースを動かしているだけでは止まった音が戻らず、ボタンを押したときだけ戻っていた
+   */
+  unlock(gesture = false) {
+    if (gesture) this.gestureAt = performance.now();
+    if (this.ctx && this.ctx.state === 'closed') this.ctx = null;
+    // 裏に回って戻ってきた後は、iOS で「running なのに無音」のままになることがあるので、最初の操作で作り直す
+    if (this.ctx && gesture && this.stale) { this.closeCtx(); this.ctx = null; }
+    if (gesture) this.stale = false;
+    if (!this.ctx) { this.build(); if (!this.ctx) return; }
+    else if (this.ctx.state !== 'running') {
+      // 指の操作で何度 resume しても戻らない（iOS の「中断」から抜けられなくなった）ときは作り直す
+      if (gesture && this.stuckSince && performance.now() - this.stuckSince > 1500) {
+        this.closeCtx();
+        this.build();
+      } else this.resumeUntilRunning();
+    }
+    if (this.ctx.state === 'running') this.stuckSince = 0;
+    else if (!this.stuckSince) this.stuckSince = performance.now();
+    // iOS: 操作の中で無音を1つ鳴らすと、そのあとの音が確実に出るようになる
+    if (gesture) this.kick();
+  }
+  closeCtx() { const c = this.ctx; if (!c) return; c.onstatechange = null; try { c.close().catch(() => {}); } catch {} }
+  /** 画面が裏に回った（アプリの切り替え・通知・画面収録の開始など）。次の操作で作り直す */
+  markStale() { if (this.ctx) this.stale = true; }
+  /** AudioContext と出力までの経路を作る */
+  build() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     // iOS Safari 16.4+: 既定では消音（サイレント）スイッチがオンだと鳴らない。ゲームの効果音として
     // 消音スイッチを無視して鳴らす（マナーモードでも音が出るようになる）
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
     this.ctx = new AC();
+    this.noiseBuf = null; this._tickAt = 0;                  // 前の AudioContext のバッファ・時刻は使えない
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.25;
     // 耳心地のため、高い倍音を少し丸め、音が重なって大きくなったときも割れないよう軽く抑える
@@ -24,26 +51,45 @@ export class Sfx {
     const comp = this.ctx.createDynamicsCompressor();
     comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
     this.master.connect(this.soft); this.soft.connect(comp); comp.connect(this.ctx.destination);
-    // 中断（コントロールセンター・画面収録・着信など）から自力で戻す。1回のタップで直らないことがあるので、
-    // ここで何度もリトライして、指で何度もボタンを押し直さなくて済むようにする
-    this.ctx.onstatechange = () => this.resumeUntilRunning();
+    // 中断（コントロールセンター・画面収録・着信など）から戻ったら、すぐ再開を試みる
+    this.ctx.onstatechange = () => {
+      if (this.ctx?.state === 'running') this.stuckSince = 0;
+      else this.resumeUntilRunning();
+    };
     this.resumeUntilRunning();
+  }
+  /** 無音を一瞬だけ鳴らす（iOS の音の許可を確実にするため。操作の中で呼ぶ） */
+  kick() {
+    try {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+      src.connect(this.ctx.destination);
+      src.start(0);
+    } catch {}
   }
   /** running になるまで resume() を繰り返す（中断が解けるまで少し間が要ることがあるため） */
   resumeUntilRunning(triesLeft = 10) {
-    if (!this.ctx || this.ctx.state === 'running' || triesLeft <= 0) return;
+    if (!this.ctx || this.ctx.state === 'running' || this.ctx.state === 'closed' || triesLeft <= 0) return;
     this.ctx.resume().catch(() => {});
     setTimeout(() => this.resumeUntilRunning(triesLeft - 1), 400);
   }
+  /**
+   * 今この音を予約してよいか。止まった時計に予約した音は、ずっと後で戻ったときにまとめて鳴ってしまうので出さない。
+   * ただし操作の直後（再開を頼んだばかりで、まだ running に変わっていないだけ）は予約する（すぐ再開して鳴る）
+   */
+  ready() {
+    if (!this.enabled || !this.ctx) return false;
+    if (this.ctx.state === 'running') return true;
+    this.resumeUntilRunning();
+    return this.ctx.state === 'suspended' && performance.now() - this.gestureAt < 500;
+  }
+  /** 画面のどこを触っても、指を離したときに音を使えるようにする（iOS はここでしか音を再開できない） */
+  bindGestures(target = document) {
+    const on = () => this.unlock(true);
+    for (const type of ['touchend', 'pointerup', 'click', 'keydown']) target.addEventListener(type, on, { capture: true, passive: true });
+  }
   tone(freq, { dur = 0.1, type = 'sine', gain = 0.6, at = 0, slide = 0 } = {}) {
-    if (!this.enabled || !this.ctx) return;
-    if (this.ctx.state !== 'running') {
-      // 止まっている・止まりかけの時計に予約すると、鳴らないまま消えることがある
-      // （currentTime が進んでいないので、後で running に戻っても再生に間に合わないことがある）。
-      // このタップの音は諦めて、resume を追いかけておけば次の音から鳴る（設定は音あり・enabled のまま）
-      this.resumeUntilRunning();
-      return;
-    }
+    if (!this.ready()) return;
     const t = this.ctx.currentTime + at;
     freq = Math.min(freq * LOWER, MAX_HZ);
     const o = this.ctx.createOscillator();
@@ -104,8 +150,7 @@ export class Sfx {
   refill()      { [0, 1, 2].forEach((k) => this.tone(note(k, 784), { dur: 0.07, gain: 0.18, at: k * 0.05 })); }
   /** 短いざらざらした音（波・しぶき）。ノイズを帯域フィルタに通す */
   noise({ dur = 0.6, gain = 0.3, from = 400, to = 1400, q = 0.8, at = 0 } = {}) {
-    if (!this.enabled || !this.ctx) return;
-    if (this.ctx.state !== 'running') { this.resumeUntilRunning(); return; }   // tone() と同じ理由
+    if (!this.ready()) return;                                  // tone() と同じ
     const ctx = this.ctx, t = ctx.currentTime + at;
     if (!this.noiseBuf) {
       this.noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
