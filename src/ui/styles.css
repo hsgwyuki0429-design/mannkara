@@ -344,6 +344,14 @@ body.tutorial-on .brand{visibility:hidden;}
 .hidden{display:none !important;}
 .overlay{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
   background:rgba(20,45,140,.66);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
+/* はじめのなまえ入力: ほかのどの画面より前（決めるまで、後ろの盤面には触れない） */
+.name-gate{z-index:60;background:rgba(20,45,140,.9);}
+.gate-box{width:min(calc(100% - 40px),360px);}
+.gate-note{margin:-6px 0 16px;font-size:13px;font-weight:800;line-height:1.6;color:var(--dim);}
+.gate-input{width:100%;display:block;margin:0 0 14px;padding:11px 14px;text-align:center;font-size:18px;}
+.gate-input:focus{outline:none;border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.25);}
+.name-gate .primary{padding:12px 20px;font-size:16px;}
+.name-gate .primary:disabled{opacity:.45;}
 .overlay-box{text-align:center;animation:trayIn 360ms cubic-bezier(.3,1.4,.5,1) both;}
 .over-title{margin:0 0 20px;font-family:"M PLUS Rounded 1c",sans-serif;font-size:26px;font-weight:900;text-shadow:var(--ts);}
 .over-label{margin:0;font-size:14px;color:var(--dim);letter-spacing:.2em;}
