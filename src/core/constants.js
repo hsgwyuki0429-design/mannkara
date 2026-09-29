@@ -102,7 +102,7 @@ export const TRAY_RETRIES = 40;
 
 // ===== スコア（調整用） =====
 export const SCORE_PER_CELL_PLACED = 1;
-export const SCORE_PER_GOAL = 100;          // ゴールへ入った1個
+export const SCORE_PER_GOAL = 90;           // ゴールへ入った1個（連鎖・コンボの倍率を掛ける前の基本点。コンボ倍率 ×1.3 に合わせて 100 の 0.9 倍）
 /**
  * 連鎖倍率（index = 連鎖数）。2連鎖目から伸び、長い連鎖ほど大きく跳ねる。
  * 上限なし: 表より長い連鎖は、1連鎖ごとに CHAIN_MULTIPLIER_STEP ずつ伸び続ける

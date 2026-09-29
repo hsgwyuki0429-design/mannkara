@@ -1,8 +1,8 @@
-import { Game } from './game.js?v=202609290403';
-import { Piece } from './pieces.js?v=202609290403';
-import { bestMove } from './advisor.js?v=202609290403';
-import { Board } from './board.js?v=202609290403';
-import { SIZE } from './constants.js?v=202609290403';
+import { Game } from './game.js?v=202609290413';
+import { Piece } from './pieces.js?v=202609290413';
+import { bestMove } from './advisor.js?v=202609290413';
+import { Board } from './board.js?v=202609290413';
+import { SIZE } from './constants.js?v=202609290413';
 
 /**
  * 手駒の決め方（Game.spawnTray）だけを受け持つ。画面では Web Worker の中で動かす（dealer-worker.js）。
