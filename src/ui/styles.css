@@ -449,6 +449,7 @@ body.tutorial-on .score-wrap{visibility:hidden;}
   font-family:"M PLUS Rounded 1c",sans-serif;font-size:14px;font-weight:900;}
 .rank-player{margin-left:auto;padding-left:8px;font-size:14px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .rank-main{min-width:0;}
+.rank-hidden{color:var(--dim);}   /* 作成者が隠した名前（＊＊＊） */
 .rank-me{margin:-8px 0 14px;font-size:14px;font-weight:800;color:var(--dim);}
 .rank-me b{color:var(--gold);font-size:18px;}
 .rank-total{font-size:12px;margin-left:2px;}

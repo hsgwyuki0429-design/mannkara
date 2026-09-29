@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=202609290413';
-import { Board, createBlock } from '../core/board.js?v=202609290413';
-import { Piece } from '../core/pieces.js?v=202609290413';
-import * as Sim from '../core/sim.js?v=202609290413';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609290413';
-import { Renderer, delay } from './renderer.js?v=202609290413';
-import { Sfx } from './sfx.js?v=202609290413';
-import { Scenes } from './scenes.js?v=202609290413';
-import { colorOf } from './palette.js?v=202609290413';
-import { TrayDealer } from './tray-dealer.js?v=202609290413';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609290413';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609290413';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609290413';
-import { World } from './world.js?v=202609290413';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609290413';
+import { Game } from '../core/game.js?v=202609290424';
+import { Board, createBlock } from '../core/board.js?v=202609290424';
+import { Piece } from '../core/pieces.js?v=202609290424';
+import * as Sim from '../core/sim.js?v=202609290424';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609290424';
+import { Renderer, delay } from './renderer.js?v=202609290424';
+import { Sfx } from './sfx.js?v=202609290424';
+import { Scenes } from './scenes.js?v=202609290424';
+import { colorOf } from './palette.js?v=202609290424';
+import { TrayDealer } from './tray-dealer.js?v=202609290424';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609290424';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609290424';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609290424';
+import { World } from './world.js?v=202609290424';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609290424';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609290413', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609290424', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -687,12 +687,12 @@ function fmtDate(at) {
 }
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 /** 1行: 順位・スコア・名前（世界）か日付（この端末） */
-function rankRow(rank, value, { name = null, date = null, cls = '' } = {}) {
+function rankRow(rank, value, { name = null, date = null, cls = '', dim = false } = {}) {
   const li = document.createElement('li');
   li.className = 'rank-row' + (rank <= 3 ? ` top${rank}` : '') + cls;
   li.innerHTML = `<span class="rank-no">${rank}</span>`
     + `<span class="rank-main"><b>${fmtNum(value)}</b>`
-    + (name != null ? `<span class="rank-player">${esc(name)}</span>` : '')
+    + (name != null ? `<span class="rank-player${dim ? ' rank-hidden' : ''}">${esc(name)}</span>` : '')
     + (date != null ? `<span class="rank-date">${date}</span>` : '') + `</span>`;
   return li;
 }
@@ -744,7 +744,7 @@ async function renderWorld() {
   }
   moreWorld();                                     // 画面に余白があれば、スクロールしなくても続きを読む
 }
-const worldRows = (top) => top.map((r) => rankRow(r.rank, r.score, { name: r.name, cls: r.me ? ' latest' : '' }));
+const worldRows = (top) => top.map((r) => rankRow(r.rank, r.score, { name: r.name, cls: r.me ? ' latest' : '', dim: !!r.hidden }));
 /** 一覧の下の端が近づいたら続きを読む（最下位まで） */
 async function moreWorld() {
   const p = worldPage, list = $('rankList');
