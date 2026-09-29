@@ -245,16 +245,16 @@ button{font-family:inherit;cursor:pointer;}
 .float-score.warm{color:var(--gold);font-size:calc(var(--cell) * .75);}
 .float-score.hot{color:#ff9ad6;font-size:calc(var(--cell) * .9);}
 @keyframes floatUp{0%{opacity:0;scale:.5}15%{opacity:1;scale:1.25}30%{scale:1}75%{opacity:1}100%{opacity:0;translate:-50% calc(-50% - var(--cell) * 1.2)}}
-/* コンボが続くほど背景が明るくなって脈打ち、色が 緑青 → 水色 → 青紫 → 桃紫 → 薄紅 と行き来する（盤面の枠も同じ色に光る）。
+/* コンボが続くほど背景が明るくなって脈打ち、色が 緑青 → 水色 → 青紫 → 桃紫 → 薄紅 と行き来する。
    色は5枚の層で、隣り合う2色が入れ替わるように重ねて、動かすのは opacity（と全体の scale）だけ（filter や box-shadow は動かさない）。
    5色は 0 → 4 → 0 と往復するので、緑青と薄紅（反対の色）が直接まざって灰色に濁ることはない */
 #fever{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 500ms;
   animation:feverPulse 900ms ease-in-out infinite alternate;}
-#fever .fv,.fr{position:absolute;inset:0;opacity:0;animation-timing-function:linear;animation-iteration-count:infinite;animation-duration:16s;}
+#fever .fv{position:absolute;inset:0;opacity:0;animation-timing-function:linear;animation-iteration-count:infinite;animation-duration:16s;}
 #fever .fv{width:100%;height:100%;}
-.fv0,.fr0{animation-name:hue0;} .fv1,.fr1{animation-name:hue1;} .fv2,.fr2{animation-name:hue2;}
-.fv3,.fr3{animation-name:hue3;} .fv4,.fr4{animation-name:hue4;}
-#fever.max .fv,#frameLayer.max .fr{animation-duration:10s;}
+.fv0{animation-name:hue0;} .fv1{animation-name:hue1;} .fv2{animation-name:hue2;}
+.fv3{animation-name:hue3;} .fv4{animation-name:hue4;}
+#fever.max .fv{animation-duration:10s;}
 .fv0{background:radial-gradient(75% 50% at 50% 55%,rgba(60,230,190,.5),rgba(50,190,210,.24) 58%,transparent 82%),
              radial-gradient(120% 55% at 50% 112%,rgba(60,235,200,.3),transparent 62%);}
 .fv1{background:radial-gradient(75% 50% at 50% 42%,rgba(90,205,255,.5),rgba(70,150,255,.24) 58%,transparent 82%),
@@ -272,16 +272,13 @@ button{font-family:inherit;cursor:pointer;}
 @keyframes hue3{0%,25%,50%,75%,100%{opacity:0}37.5%,62.5%{opacity:1}}
 @keyframes hue4{0%,37.5%,62.5%,100%{opacity:0}50%{opacity:1}}
 @keyframes feverPulse{from{scale:1}to{scale:1.05}}
-/* 盤面の枠: コンボのあいだ、外枠と升目の線が背景と同じ色に光る（盤面と同じ向きの SVG を色ごとに1枚ずつ重ねる） */
-#frameLayer{opacity:0;transition:opacity 500ms;}
-#frameLayer .fr{width:100%;height:100%;}
 /* ピンチ: 画面の縁が暖色でゆっくり脈打つ（発動で空くと消える）。影は固定で、濃さ(opacity)だけを動かす */
 #danger{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 600ms;}
 #danger::before{content:"";position:absolute;inset:0;box-shadow:inset 0 0 90px 16px rgba(255,90,60,.55);
   animation:danger 1.4s ease-in-out infinite alternate;}
 @keyframes danger{from{opacity:.65}to{opacity:1}}
 /* 見えていない間は動かさない */
-#fever.off .fv,#frameLayer.off .fr,#danger.off::before{animation-play-state:paused;}
+#fever.off .fv,#danger.off::before{animation-play-state:paused;}
 #app{z-index:1;}
 /* ---- 画面全体の演出（scenes.js） ----
    奥（盤面の後ろ）: 色の変化 #sceneTint / 手前（盤面の前）: 新記録の風船 #sceneFront
@@ -297,9 +294,9 @@ button{font-family:inherit;cursor:pointer;}
 #sceneTint.t-rainbow{background:center/100% 100% no-repeat;}   /* 絵は scenes.rainbowImage */
 .best-pill.beat{border-color:var(--gold);background:rgba(255,213,74,.14);animation:beat 1.2s ease-in-out infinite;}
 @keyframes beat{50%{scale:1.04}}
-@media (prefers-reduced-motion: reduce){#fever,#fever .fv,#frameLayer .fr,#danger::before,.hi,.goal.ready,.hint,.pop .ch,.pop small,.slot.hinted .piece,.tut-next{animation:none}}
+@media (prefers-reduced-motion: reduce){#fever,#fever .fv,#danger::before,.hi,.goal.ready,.hint,.pop .ch,.pop small,.slot.hinted .piece,.tut-next{animation:none}}
 
-@media (prefers-reduced-motion: reduce){.fv1,.fr1{opacity:1}}   /* 動かさないときは水色1色 */
+@media (prefers-reduced-motion: reduce){.fv1{opacity:1}}   /* 動かさないときは水色1色 */
 
 /* ---- トレイ ----
    リスタートボタンを無くして浮いた分の高さをここへ回し、枠を無くした代わりに手駒がなるべく
