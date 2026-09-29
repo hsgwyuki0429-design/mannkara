@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609281547';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609281547';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609281547';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609281547';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609281547';
-import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202609281547';
-import * as Sim from '../src/core/sim.js?v=202609281547';
-import { DealerCore } from '../src/core/dealer.js?v=202609281547';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609281547';
-import { ScoreManager } from '../src/core/score.js?v=202609281547';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609281547';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609281547';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609281547';
+import { Board, createBlock } from '../src/core/board.js?v=202609290126';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609290126';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609290126';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609290126';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609290126';
+import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202609290126';
+import * as Sim from '../src/core/sim.js?v=202609290126';
+import { DealerCore } from '../src/core/dealer.js?v=202609290126';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609290126';
+import { ScoreManager } from '../src/core/score.js?v=202609290126';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609290126';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609290126';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609290126';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609281547';
+  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609290126';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -1006,7 +1006,7 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202609281547');
+  const api = await import('../functions/api/ranking.js?v=202609290126');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');
@@ -1039,6 +1039,13 @@ console.log('世界ランキングの API（functions/api/ranking.js）');
     eq(r.me, { rank: 3, score: 500 }, '自分の順位（同じ点のときも上の並びと同じ）');
     eq((await api.ranking(d1, D)).me, null, '0 点なら自分の順位は無し');
     eq(JSON.stringify(r).includes(A), false, 'id は返さない');
+    eq(r.total, 3, '参加している人数（0 点の人は数えない）');
+    for (let i = 0; i < 120; i++) await api.submit(d1, { id: (1000 + i).toString(16).padStart(32, 'f'), name: 'p' + i, score: 10 + i }, 10 + i);
+    const p1 = await api.ranking(d1, C), p2 = await api.ranking(d1, C, 50), last = await api.ranking(d1, C, 100, 100);
+    eq([p1.top.length, p1.total, p2.top[0].rank, last.top.length, last.top.at(-1).rank, last.top.at(-1).score], [50, 123, 51, 23, 123, 10],
+      '最下位まで、offset をずらして続きを読める（1回に50人。最後のページは残りだけ）');
+    eq((await api.ranking(d1, C, 0, 9999)).top.length, api.PAGE_MAX, '1回に読めるのは PAGE_MAX 人まで');
+    eq([...p1.top, ...p2.top].map((x) => x.rank), Array.from({ length: 100 }, (_, i) => i + 1), 'ページをつなげても順位が飛ばない');
   } else eq(true, true, 'node:sqlite が無いので D1 の確認は飛ばす');
 }
 

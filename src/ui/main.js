@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=202609281547';
-import { Board, createBlock } from '../core/board.js?v=202609281547';
-import { Piece } from '../core/pieces.js?v=202609281547';
-import * as Sim from '../core/sim.js?v=202609281547';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609281547';
-import { Renderer, delay } from './renderer.js?v=202609281547';
-import { Sfx } from './sfx.js?v=202609281547';
-import { Scenes } from './scenes.js?v=202609281547';
-import { colorOf } from './palette.js?v=202609281547';
-import { TrayDealer } from './tray-dealer.js?v=202609281547';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609281547';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609281547';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609281547';
-import { World } from './world.js?v=202609281547';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609281547';
+import { Game } from '../core/game.js?v=202609290126';
+import { Board, createBlock } from '../core/board.js?v=202609290126';
+import { Piece } from '../core/pieces.js?v=202609290126';
+import * as Sim from '../core/sim.js?v=202609290126';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609290126';
+import { Renderer, delay } from './renderer.js?v=202609290126';
+import { Sfx } from './sfx.js?v=202609290126';
+import { Scenes } from './scenes.js?v=202609290126';
+import { colorOf } from './palette.js?v=202609290126';
+import { TrayDealer } from './tray-dealer.js?v=202609290126';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609290126';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609290126';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609290126';
+import { World } from './world.js?v=202609290126';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609290126';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609281547', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609290126', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -724,20 +724,49 @@ function renderLocal() {
   $('rankList').replaceChildren(...top.map((r, i) =>
     rankRow(i + 1, r.score, { date: fmtDate(r.at), cls: r === lastRun ? ' latest' : '' })));
 }
+/** 世界ランキング: 最下位まで、スクロールで続きを読み足していく（1回に数十人ずつ） */
+let worldPage = null;                              // { token, next: 次に読む順位 - 1, total, loading, failed }
 async function renderWorld() {
   const token = ++rankToken;
+  worldPage = null;
   rankMessage('読み込み中…');
   let data;
-  try { data = await world.fetchTop(); } catch { data = null; }
+  try { data = await world.fetchTop(0); } catch { data = null; }
   if (token !== rankToken || rankScope !== 'world') return;
   if (!data) return rankMessage('世界ランキングにつながりませんでした');
   if (!data.top.length) rankMessage('まだ記録がありません');
-  else $('rankList').replaceChildren(...data.top.map((r) => rankRow(r.rank, r.score, { name: r.name, cls: r.me ? ' latest' : '' })));
+  else $('rankList').replaceChildren(...worldRows(data.top));
+  worldPage = { token, next: data.top.length, total: data.total ?? data.top.length, loading: false, failed: false };
   if (data.me) {
-    $('rankMe').innerHTML = `あなた　<b>${fmtNum(data.me.rank)}位</b>　${fmtNum(data.me.score)}点`;
+    $('rankMe').innerHTML = `あなた　<b>${fmtNum(data.me.rank)}位</b>　${fmtNum(data.me.score)}点`
+      + (worldPage.total ? `<span class="rank-total">／${fmtNum(worldPage.total)}人中</span>` : '');
     $('rankMe').classList.remove('hidden');
   }
+  moreWorld();                                     // 画面に余白があれば、スクロールしなくても続きを読む
 }
+const worldRows = (top) => top.map((r) => rankRow(r.rank, r.score, { name: r.name, cls: r.me ? ' latest' : '' }));
+/** 一覧の下の端が近づいたら続きを読む（最下位まで） */
+async function moreWorld() {
+  const p = worldPage, list = $('rankList');
+  if (!p || p.loading || p.failed || p.token !== rankToken || p.next >= p.total) return;
+  if (list.scrollTop + list.clientHeight < list.scrollHeight - 300) return;
+  p.loading = true;
+  const tail = document.createElement('li');
+  tail.className = 'rank-empty rank-more';
+  tail.textContent = '読み込み中…';
+  list.append(tail);
+  let data;
+  try { data = await world.fetchTop(p.next); } catch { data = null; }
+  tail.remove();
+  if (p !== worldPage || p.token !== rankToken || rankScope !== 'world') return;
+  p.loading = false;
+  if (!data || !data.top.length) { p.failed = !data; if (data) p.total = p.next; return; }
+  list.append(...worldRows(data.top));
+  p.next += data.top.length;
+  p.total = data.total ?? p.total;
+  moreWorld();
+}
+$('rankList').addEventListener('scroll', () => { if (rankScope === 'world') moreWorld(); }, { passive: true });
 /** ゲーム中に開いたら、一時停止と同じように連鎖の再生を止める（とじたら戻す） */
 function openRanking() {
   pausedBeforeRank = paused;

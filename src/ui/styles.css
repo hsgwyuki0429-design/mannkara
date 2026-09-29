@@ -386,14 +386,18 @@ body.tutorial-on .score-wrap{visibility:hidden;}
 .share-actions .share-btn{margin:14px 0 0;}
 
 /* ---- ランキング（スコア。世界 / この端末） ---- */
-.rank-box{width:min(calc(100% - 32px),380px);max-height:calc(100% - 24px);display:flex;flex-direction:column;}
+.rank-box{width:min(calc(100% - 32px),380px);max-height:calc(100% - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));display:flex;flex-direction:column;}
 .rank-title{margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px;}
 .rank-mode{font-family:"Nunito",sans-serif;font-size:10.5px;font-weight:900;letter-spacing:.18em;color:var(--gold);
   padding:1px 8px 1px 10px;border:1.5px solid rgba(255,213,74,.65);border-radius:99px;}
-.rank-list{list-style:none;margin:12px 0 18px;padding:0;overflow-y:auto;min-height:0;touch-action:pan-y;}
-.rank-row{display:grid;grid-template-columns:34px 1fr;column-gap:10px;align-items:center;
+/* 一覧だけを指でスクロールする（ページ全体は動かさない。body の touch-action:none をここでは解く） */
+.rank-list{list-style:none;margin:12px 0 18px;padding:0;overflow-y:auto;min-height:0;touch-action:pan-y;
+  overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+.rank-list *{touch-action:pan-y;}
+.rank-more{padding:12px 0;}
+.rank-row{display:grid;grid-template-columns:minmax(34px,auto) 1fr;column-gap:10px;align-items:center;
   padding:8px 12px;margin-bottom:5px;border-radius:14px;background:rgba(120,160,255,.13);text-align:left;}
-.rank-no{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+.rank-no{min-width:30px;height:30px;padding:0 5px;border-radius:15px;justify-self:start;display:flex;align-items:center;justify-content:center;
   font-size:15px;font-weight:900;color:#fff;background:rgba(10,30,120,.35);}
 .rank-row.top1 .rank-no{background:linear-gradient(#fff0a0,#ffcc2e 45%,#d98800);color:#6b3a00;}
 .rank-row.top2 .rank-no{background:linear-gradient(#ffffff,#cfd8e6 50%,#8e9bb3);color:#34405a;}
@@ -432,3 +436,4 @@ body.tutorial-on .score-wrap{visibility:hidden;}
 .rank-main{min-width:0;}
 .rank-me{margin:-8px 0 14px;font-size:14px;font-weight:800;color:var(--dim);}
 .rank-me b{color:var(--gold);font-size:18px;}
+.rank-total{font-size:12px;margin-left:2px;}
