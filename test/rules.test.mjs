@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609290403';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609290403';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609290403';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609290403';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609290403';
-import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202609290403';
-import * as Sim from '../src/core/sim.js?v=202609290403';
-import { DealerCore } from '../src/core/dealer.js?v=202609290403';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609290403';
-import { ScoreManager } from '../src/core/score.js?v=202609290403';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609290403';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609290403';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609290403';
+import { Board, createBlock } from '../src/core/board.js?v=202609290413';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609290413';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609290413';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609290413';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609290413';
+import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202609290413';
+import * as Sim from '../src/core/sim.js?v=202609290413';
+import { DealerCore } from '../src/core/dealer.js?v=202609290413';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609290413';
+import { ScoreManager } from '../src/core/score.js?v=202609290413';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609290413';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609290413';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609290413';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609290403';
+  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609290413';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -844,7 +844,8 @@ console.log('スコア倍率');
   eq(streakMultiplier(20) > streakMultiplier(19), true, 'COMBO 倍率は長く続くほど伸び続ける');
   const s = new ScoreManager();
   s.streak = 2;                                              // このターンで COMBO 3
-  eq(s.addStep({ goals: 2, chain: 3 }), Math.round(2 * 100 * 3 * 1.69), '3連鎖目・COMBO 3 のゴール2個');
+  eq(SCORE_PER_GOAL, 90, 'ゴール1個の基本点は 90');
+  eq(s.addStep({ goals: 2, chain: 3 }), Math.round(2 * SCORE_PER_GOAL * 3 * 1.69), '3連鎖目・COMBO 3 のゴール2個'); 
   s.endTurn(true);
   eq(s.addAllClear(), Math.round(ALL_CLEAR_BONUS * 1.69), '全消しボーナスにも COMBO 倍率');
   eq(ALL_CLEAR_BONUS, 5000, '全消しボーナスは 5,000');
@@ -857,14 +858,14 @@ console.log('全消しのあとは、しばらくスコアの倍率が上がる'
   s.endTurn(true); s.addAllClear();
   eq(s.boostTurns, ALL_CLEAR_BOOST_TURNS, `全消しのあと ${ALL_CLEAR_BOOST_TURNS} 手のあいだ`);
   s.streak = 0;
-  eq(s.addStep({ goals: 1, chain: 1 }), 100 * ALL_CLEAR_BOOST, `発動のスコアに ×${ALL_CLEAR_BOOST}`);
+  eq(s.addStep({ goals: 1, chain: 1 }), SCORE_PER_GOAL * ALL_CLEAR_BOOST, `発動のスコアに ×${ALL_CLEAR_BOOST}`);
   const before = s.score; s.addPlaced(4);
   eq(s.score - before, Math.round(4 * ALL_CLEAR_BOOST), '置いたマスの点にも掛かる');
   eq(s.addFit({ kind: 'perfect', rect: null }, 4) > 0, true, 'はまり方のボーナスにも掛かる');
   const gains = [];
   for (let i = 0; i < ALL_CLEAR_BOOST_TURNS + 2; i++) { s.endTurn(false); s.streak = 0; gains.push(s.addStep({ goals: 1, chain: 1 })); }
   // 1手目は上で使い終えたので、残り4手が ×1.5、そのあとは元どおり
-  eq(gains, [150, 150, 150, 150, 100, 100, 100], `${ALL_CLEAR_BOOST_TURNS} 手が終わると元に戻る`);
+  eq(gains, [135, 135, 135, 135, 90, 90, 90], `${ALL_CLEAR_BOOST_TURNS} 手が終わると元に戻る`);
   s.endTurn(true); s.addAllClear(); s.endTurn(false); s.endTurn(false); s.addAllClear();
   eq(s.boostTurns, ALL_CLEAR_BOOST_TURNS, 'もう一度全消しすると手数が戻る（倍率は重ねない）');
   const g = new Game({ random: () => 0.5 });
@@ -1006,7 +1007,7 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202609290403');
+  const api = await import('../functions/api/ranking.js?v=202609290413');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');
