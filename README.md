@@ -196,6 +196,11 @@
   - ゲームは端末の中で動くので、送られた値が本物かまでは確かめられない（ありえない値だけはねる）
   - **準備**（Cloudflare のダッシュボードで1回だけ）: D1 のデータベースを作り（名前は自由）、Pages のプロジェクトの Settings → Bindings で **変数名 `DB`** としてつなぎ、もう一度デプロイする。表は初めて使うときに API が作る
   - `blockmancala.pages.dev` 以外（github.io など）で開いたときは、`blockmancala.pages.dev` の API を使う
+  - **不適切な名前を隠す**（作成者だけ）: `admin.html`（`blockmancala.pages.dev/admin.html`。ゲームからはリンクしない）で、名前を「隠す」にできる。
+    隠した名前は、ほかの人には `＊＊＊`（順位・スコアはそのまま）、本人の画面には本人の名前のまま出る（隠されたことに気づかない）。
+    名前の**書き換えはできない**。隠しているのは「そのときの名前」だけで、本人が名前を変えたら新しい名前はふつうに出る（まだ不適切なら、もう一度隠す）
+  - **準備**（合言葉）: Pages の Settings → Variables and Secrets に **Secret として `ADMIN_KEY`（16文字以上）** を入れて、もう一度デプロイする。
+    入れていない・短いときは、管理 API（`functions/api/admin.js`）は使えない（503）。管理画面は `Authorization: Bearer <ADMIN_KEY>` で呼ぶ（合言葉はこのタブを閉じるまでしか覚えない）
 - **この端末のランキング**: 上位10ゲーム（端末ごと・モードごとに別。`blockmancala-ranking` / `-learn`。`src/core/ranking.js`）
   - 1ゲームを1件として、ゲームオーバーとリセットのときに入れる（チュートリアルと 0 点は入れない）。いちばん最近入ったゲームは金色の枠
   - ランキングができる前のベストスコアは「以前の記録」として入れる
@@ -250,7 +255,7 @@ src/ui/     renderer.js scenes.js shards.js palette.js main.js sfx.js styles.css
             brand.js share-card.js                                       … ゲーム名・URL・端末の記録の名前 / 結果カード
             tray-dealer.js                                               … Web Worker（dealer-worker.js）との窓口
             tutorial-steps.js                                            … チュートリアルの盤面・手駒・説明
-functions/  api/ranking.js                                                … 世界ランキングの API（Cloudflare Pages Functions + D1）
+functions/  api/ranking.js api/admin.js                                        … 世界ランキングの API・名前を隠す管理 API（Cloudflare Pages Functions + D1）
 test/       rules.test.mjs
 scripts/    stamp.mjs build-allclear.mjs subset-fonts.py
 ```

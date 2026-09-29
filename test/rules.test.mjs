@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202609290413';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609290413';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609290413';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609290413';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609290413';
-import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202609290413';
-import * as Sim from '../src/core/sim.js?v=202609290413';
-import { DealerCore } from '../src/core/dealer.js?v=202609290413';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609290413';
-import { ScoreManager } from '../src/core/score.js?v=202609290413';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609290413';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609290413';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609290413';
+import { Board, createBlock } from '../src/core/board.js?v=202609290424';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202609290424';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202609290424';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202609290424';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202609290424';
+import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202609290424';
+import * as Sim from '../src/core/sim.js?v=202609290424';
+import { DealerCore } from '../src/core/dealer.js?v=202609290424';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202609290424';
+import { ScoreManager } from '../src/core/score.js?v=202609290424';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202609290424';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202609290424';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202609290424';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609290413';
+  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202609290424';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -1007,7 +1007,7 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202609290413');
+  const api = await import('../functions/api/ranking.js?v=202609290424');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');
@@ -1047,6 +1047,47 @@ console.log('世界ランキングの API（functions/api/ranking.js）');
       '最下位まで、offset をずらして続きを読める（1回に50人。最後のページは残りだけ）');
     eq((await api.ranking(d1, C, 0, 9999)).top.length, api.PAGE_MAX, '1回に読めるのは PAGE_MAX 人まで');
     eq([...p1.top, ...p2.top].map((x) => x.rank), Array.from({ length: 100 }, (_, i) => i + 1), 'ページをつなげても順位が飛ばない');
+    // 不適切な名前を隠す（作成者だけ。書き換えはできない）
+    const admin = await import('../functions/api/admin.js?v=202609290424');
+    const P = '5'.repeat(32), Q = '6'.repeat(32);
+    await api.submit(d1, { id: P, name: 'わるい名前', score: 700 }, 1000);
+    await api.submit(d1, { id: Q, name: 'ふつう', score: 650 }, 1001);
+    eq(await admin.setHidden(d1, P, true), true, '名前を隠す');
+    const seen = (await api.ranking(d1, null)).top.find((x) => x.score === 700);
+    eq([seen.name, seen.hidden, seen.me], [api.HIDDEN_NAME, true, false], 'ほかの人には ＊＊＊ と出る（順位・スコアはそのまま）');
+    const mine = (await api.ranking(d1, P)).top.find((x) => x.score === 700);
+    eq([mine.name, mine.hidden, mine.me], ['わるい名前', false, true], '本人には本人の名前のまま出る（隠されたことに気づかない）');
+    eq((await api.ranking(d1, null)).top.find((x) => x.score === 650).name, 'ふつう', 'ほかの人の名前は隠れない');
+    await api.submit(d1, { id: P, name: 'わるい名前', score: 800 }, 1002);
+    eq((await api.ranking(d1, null)).top.find((x) => x.score === 800).name, api.HIDDEN_NAME, '同じ名前のまま記録を更新しても、隠れたまま');
+    await api.submit(d1, { id: P, name: 'あたらしい名前', score: 800 }, 1003);
+    eq((await api.ranking(d1, null)).top.find((x) => x.score === 800).name, 'あたらしい名前', '本人が名前を変えたら、新しい名前は出る（まだ不適切なら、もう一度隠す）');
+    await admin.setHidden(d1, P, true);
+    eq((await admin.adminList(d1, { onlyHidden: true })).players.map((x) => [x.name, x.hidden]), [['あたらしい名前', true]], '管理: 隠しているものだけ');
+    eq((await admin.adminList(d1, { q: 'ふつ' })).players.map((x) => x.name), ['ふつう'], '管理: 名前の一部で探せる');
+    eq((await admin.adminList(d1, { q: '%' })).total, 0, '管理: % や _ は文字として探す');
+    eq(await admin.setHidden(d1, P, false), true, '隠すのをやめる');
+    eq((await api.ranking(d1, null)).top.find((x) => x.score === 800).name, 'あたらしい名前', '戻した名前は出る');
+    eq(await admin.setHidden(d1, '7'.repeat(32), true), false, '知らない人は 404 相当');
+    // 古い表（隠す機能ができる前）にも列が足される
+    const old = new sqlite.DatabaseSync(':memory:');
+    old.exec("CREATE TABLE players (id TEXT PRIMARY KEY, name TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, score_at INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0)");
+    old.exec("INSERT INTO players VALUES ('" + 'a'.repeat(32) + "', '前からいる人', 500, 1, 1)");
+    const d1old = { prepare(sql) { let args = []; const st = { bind: (...x) => { args = x; return st; }, run: async () => old.prepare(sql).run(...args),
+      all: async () => ({ results: old.prepare(sql).all(...args) }), first: async () => old.prepare(sql).get(...args) ?? null }; return st; } };
+    eq((await api.ranking(d1old, null)).top.map((x) => [x.name, x.hidden]), [['前からいる人', false]], '古い表でもそのまま動く（列を足す）');
+    // 合言葉（ADMIN_KEY）
+    const req = (key, method = 'GET', body) => new Request('https://x.test/api/admin', { method, headers: key ? { Authorization: 'Bearer ' + key } : {}, body });
+    const K = 'k'.repeat(20);
+    eq([(await admin.onRequestGet({ request: req(K), env: { DB: d1 } })).status, (await admin.onRequestGet({ request: req('x'.repeat(20)), env: { DB: d1, ADMIN_KEY: K } })).status,
+      (await admin.onRequestGet({ request: req(null), env: { DB: d1, ADMIN_KEY: K } })).status], [503, 401, 401], 'ADMIN_KEY が無い → 503 / 違う・無い合言葉 → 401');
+    eq((await admin.onRequestGet({ request: req('short'), env: { DB: d1, ADMIN_KEY: 'short' } })).status, 503, '短い ADMIN_KEY（16文字未満）は使えない');
+    eq((await admin.onRequestGet({ request: req(K), env: { DB: d1, ADMIN_KEY: K } })).status, 200, '合言葉が合えば一覧が見られる');
+    const post = await admin.onRequestPost({ request: req(K, 'POST', JSON.stringify({ id: Q, hidden: true })), env: { DB: d1, ADMIN_KEY: K } });
+    eq([post.status, (await api.ranking(d1, null)).top.find((x) => x.score === 650).name], [200, api.HIDDEN_NAME], 'POST で隠せる');
+    eq([(await admin.onRequestPost({ request: req(K, 'POST', JSON.stringify({ id: Q, name: 'x' })), env: { DB: d1, ADMIN_KEY: K } })).status,
+      (await admin.onRequestPost({ request: req(K, 'POST', JSON.stringify({ id: 'zz', hidden: true })), env: { DB: d1, ADMIN_KEY: K } })).status], [400, 400], '名前の書き換えはできない（hidden 以外は受け付けない）');
+    eq([admin.sameKey('abc', 'abc'), admin.sameKey('abc', 'abd'), admin.sameKey('abc', 'abcd')], [true, false, false], '合言葉の比べ方');
   } else eq(true, true, 'node:sqlite が無いので D1 の確認は飛ばす');
 }
 
