@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609290126';
-import { Shards } from './shards.js?v=202609290126';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609290403';
+import { Shards } from './shards.js?v=202609290403';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -21,6 +21,9 @@ const easeOut = (p) => 1 - Math.pow(1 - p, 2.2);
 const easeInOutInv = (y) => (y < 0.5 ? Math.sqrt(y / 2) : 1 - Math.sqrt((1 - y) * 2) / 2);
 /** ブロックと同じ7色 */
 const COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
+/** コンボ中の背景と盤面の枠の色（0 → 4 → 0 と往復する。styles.css の hue0〜4 と同じ順）。枠の色は背景より明るめ */
+const FEVER_HUES = 5;
+const FRAME_COLORS = ['#7dffd8', '#8fdcff', '#b7a2ff', '#ff9af0', '#ff9cbc'];
 const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /**
@@ -53,6 +56,11 @@ export class Renderer {
     this.tintLayer = document.createElement('div');
     this.tintLayer.className = 'layer';
     this.wellLayer.after(this.tintLayer);
+    // コンボ中に色が変わる盤面の枠（マスの色より上・ブロックより下）
+    this.frameLayer = document.createElement('div');
+    this.frameLayer.id = 'frameLayer';
+    this.frameLayer.className = 'layer off';
+    this.tintLayer.after(this.frameLayer);
     // チュートリアルで動きを説明するときの印（ブロックより上）
     this.annoLayer = document.createElement('div');
     this.annoLayer.className = 'layer';
@@ -85,6 +93,10 @@ export class Renderer {
     // ピンチのときの画面の縁と、コンボが続くほど明るくなる背景
     this.dangerEl = document.getElementById('danger') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'danger' }));
     this.feverEl = document.getElementById('fever') || document.body.insertBefore(Object.assign(document.createElement('div'), { id: 'fever' }), document.body.firstChild);
+    // 背景の色の層（色ごとに1枚。opacity だけを動かして色を入れ替える）
+    if (!this.feverEl.querySelector('.fv')) {
+      for (let i = 0; i < FEVER_HUES; i++) this.feverEl.appendChild(Object.assign(document.createElement('i'), { className: `fv fv${i}` }));
+    }
     const goalText = this.goal.querySelector('span');
     if (goalText) goalText.className = 'upright';
     // ゴールの中の面（入ったブロックの色で満ちる）
@@ -203,6 +215,7 @@ export class Renderer {
         this.tints.set(`${x},${r}`, t);
       }
     }
+    this.drawFrame();
     // ライン番号（縦は盤面の下の通路、横は右の通路）。文字は回転させないので rotWrap 側に置く。
     // 通路のマスの中心から、ゴールに近いほど少し外側へずらす
     if (!this.nums) {
@@ -227,6 +240,25 @@ export class Renderer {
         this.numEls.set(kind + n, a);
       }
     }
+  }
+
+  /**
+   * 盤面の枠（外枠の階段と、升目の線）を色ごとに1枚の SVG にして重ねる。マスの大きさが変わったら描き直す。
+   * どの色も同じ形で、どれを見せるかは opacity（styles.css の hue0〜4）だけで決める
+   */
+  drawFrame() {
+    const c = this.cell, N = SIZE;
+    let outline = `M0 0H${N * c}`;
+    for (let r = 0; r < N; r++) outline += `V${(r + 1) * c}H${(N - 1 - r) * c}`;    // 右下の斜辺は1マスずつの階段
+    outline += 'Z';
+    let grid = '';
+    for (let k = 1; k < N; k++) grid += `M${k * c} 0V${(N - k) * c}M0 ${k * c}H${(N - k) * c}`;
+    this.frameLayer.innerHTML = FRAME_COLORS.map((col, i) =>
+      `<svg class="fr fr${i}" viewBox="0 0 ${this.W} ${this.W}" aria-hidden="true">`
+      + `<g fill="none" stroke="${col}" stroke-linejoin="round" stroke-linecap="round">`
+      + `<path d="${grid}" stroke-width="${(c * 0.045).toFixed(2)}" opacity=".55"/>`
+      + `<path d="${outline}" stroke-width="${(c * 0.22).toFixed(2)}" opacity=".28"/>`
+      + `<path d="${outline}" stroke-width="${(c * 0.08).toFixed(2)}"/></g></svg>`).join('');
   }
 
   /* ---------- ブロック ---------- */
@@ -772,11 +804,15 @@ export class Renderer {
     el.className = `combo-pop show${n >= 5 ? ' hot' : ''}`;
   }
 
-  /** コンボが続くほど背景が強く光る（0 = なし … 1 = 最大） */
+  /** コンボが続くほど背景が強く光り、色が入れ替わる。盤面の枠も同じ色に光る（0 = なし … 1 = 最大） */
   setFever(level) {
-    this.feverEl.style.opacity = Math.max(0, Math.min(1, level));
+    const v = Math.max(0, Math.min(1, level));
+    this.feverEl.style.opacity = v;
     this.feverEl.classList.toggle('max', level >= 1);
     this.feverEl.classList.toggle('off', !(level > 0));
+    this.frameLayer.style.opacity = v;
+    this.frameLayer.classList.toggle('max', level >= 1);
+    this.frameLayer.classList.toggle('off', !(level > 0));
   }
 
   /** 盤面の上に出る大きな文字（Chain・NEW BEST など）。COMBO と同じ場所なので、出ていたら先に消す */
