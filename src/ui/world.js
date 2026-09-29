@@ -3,7 +3,7 @@
  * 端末ごとに id（32 桁の 16 進）と名前を持つ。送れなかったスコアは端末に残し、次に送る（自己ベストだけで足りる）
  * 名前はかならず本人に決めてもらう（自動では付けない）。決めるまでは named が false で、送信もしない
  */
-import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202609281547';
+import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202609290126';
 
 const ID_KEY = STORE_PREFIX + 'world-id';
 const NAME_KEY = STORE_PREFIX + 'world-name';
@@ -70,10 +70,10 @@ export class World {
       });
     try { return await this.sending; } catch { return false; } finally { this.sending = null; }
   }
-  /** { top: [{ rank, name, score, me }], me: { rank, score } | null } */
-  async fetchTop() {
-    await this.flush();
-    const res = await fetch(`${apiUrl()}?id=${this.id}`, { cache: 'no-store' });
+  /** offset 人目からの1ページ { top: [{ rank, name, score, me }], total, me: { rank, score } | null }（最初のページの前に記録を送る） */
+  async fetchTop(offset = 0) {
+    if (!offset) await this.flush();
+    const res = await fetch(`${apiUrl()}?id=${this.id}&offset=${offset}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }

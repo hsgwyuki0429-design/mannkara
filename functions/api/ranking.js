@@ -3,12 +3,15 @@
  * データは D1（Pages の設定で DB という名前でつなぐ）。表は初めて使うときにここで作る。
  *
  * 1人（端末ごとの id）につき1行: 自己ベストのスコアと名前。
- *   GET  /api/ranking?id=<自分の id>  → { top: [{ rank, name, score, me }], me: { rank, score } | null }
+ *   GET  /api/ranking?id=<自分の id>&offset=<何人目から>&limit=<何人>
+ *        → { top: [{ rank, name, score, me }], total: 参加している人数, me: { rank, score } | null }
+ *        最下位まで見られるように、offset をずらして続きを読む（1回に PAGE_MAX 人まで）
  *   POST /api/ranking  { id, name, score }  → 自己ベストを更新（小さい値では下げない）・名前を変える
  * id は他の人に返さない（id を知っていれば名前を書き換えられるので）。
  * ゲームは端末の中で動くので、送られた値が本物かまでは確かめられない（ありえない値だけはねる）
  */
-export const TOP_SIZE = 50;
+export const PAGE_SIZE = 50;
+export const PAGE_MAX = 100;
 export const SCORE_MAX = 100000000;
 export const NAME_MAX = 12;
 
@@ -57,12 +60,15 @@ export async function submit(db, run, now = Date.now()) {
     .bind(run.id, run.name, run.score, now).run();
 }
 
-/** 上位と自分の順位（同じ点なら先に出した人が上） */
-export async function ranking(db, id) {
+/** offset 人目からの limit 人と、参加している人数と、自分の順位（同じ点なら先に出した人が上） */
+export async function ranking(db, id, offset = 0, limit = PAGE_SIZE) {
   await ensureTable(db);
+  offset = Math.max(0, Math.floor(Number(offset) || 0));
+  limit = Math.min(PAGE_MAX, Math.max(1, Math.floor(Number(limit) || PAGE_SIZE)));
   const { results } = await db.prepare(`SELECT id, name, score FROM players
-    WHERE score > 0 ORDER BY score DESC, score_at ASC, id ASC LIMIT ?1`).bind(TOP_SIZE).all();
-  const top = results.map((r, i) => ({ rank: i + 1, name: r.name, score: r.score, me: r.id === id }));
+    WHERE score > 0 ORDER BY score DESC, score_at ASC, id ASC LIMIT ?1 OFFSET ?2`).bind(limit, offset).all();
+  const top = results.map((r, i) => ({ rank: offset + i + 1, name: r.name, score: r.score, me: r.id === id }));
+  const total = (await db.prepare('SELECT COUNT(*) AS n FROM players WHERE score > 0').first()).n;
   let me = null;
   if (validId(id)) {
     const mine = await db.prepare('SELECT score, score_at AS at FROM players WHERE id = ?1').bind(id).first();
@@ -72,14 +78,15 @@ export async function ranking(db, id) {
       me = { rank: ahead.n + 1, score: mine.score };
     }
   }
-  return { top, me };
+  return { top, total, me };
 }
 
 export async function onRequestOptions() { return new Response(null, { status: 204, headers: CORS }); }
 
 export async function onRequestGet({ request, env }) {
   if (!env.DB) return json({ error: 'no-db' }, 503);
-  return json(await ranking(env.DB, new URL(request.url).searchParams.get('id')));
+  const q = new URL(request.url).searchParams;
+  return json(await ranking(env.DB, q.get('id'), q.get('offset'), q.get('limit')));
 }
 
 export async function onRequestPost({ request, env }) {
