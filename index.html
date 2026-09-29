@@ -38,7 +38,7 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609290424" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202609290901" />
 </head>
 <body>
 <div id="app">
@@ -208,6 +208,15 @@
     <button id="btnHowto" class="link howto">遊び方</button>
   </div>
 </div>
+<!-- はじめに、なまえを決める（決めるまで遊べない。世界ランキングに参加する） -->
+<div id="nameGate" class="overlay name-gate hidden">
+  <div class="overlay-box gate-box">
+    <p class="over-title">なまえを決めよう</p>
+    <p class="gate-note">世界ランキングに出る なまえです。<br />ほかの人にも見えます（あとで変更できます）</p>
+    <input id="gateInput" class="rank-name-input gate-input" maxlength="12" autocomplete="off" enterkeyhint="done" placeholder="なまえ" />
+    <button id="gateGo" class="primary" disabled>ランキングに参加して はじめる</button>
+  </div>
+</div>
 <div id="bootError" class="boot-error hidden"></div>
 <script>
   // 起動に失敗したら真っ白にせず、画面に理由を出す
@@ -218,6 +227,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609290424"></script>
+<script type="module" src="./src/ui/main.js?v=202609290901"></script>
 </body>
 </html>

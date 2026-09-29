@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=202609290424';
-import { Board, createBlock } from '../core/board.js?v=202609290424';
-import { Piece } from '../core/pieces.js?v=202609290424';
-import * as Sim from '../core/sim.js?v=202609290424';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609290424';
-import { Renderer, delay } from './renderer.js?v=202609290424';
-import { Sfx } from './sfx.js?v=202609290424';
-import { Scenes } from './scenes.js?v=202609290424';
-import { colorOf } from './palette.js?v=202609290424';
-import { TrayDealer } from './tray-dealer.js?v=202609290424';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609290424';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609290424';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609290424';
-import { World } from './world.js?v=202609290424';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609290424';
+import { Game } from '../core/game.js?v=202609290901';
+import { Board, createBlock } from '../core/board.js?v=202609290901';
+import { Piece } from '../core/pieces.js?v=202609290901';
+import * as Sim from '../core/sim.js?v=202609290901';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609290901';
+import { Renderer, delay } from './renderer.js?v=202609290901';
+import { Sfx } from './sfx.js?v=202609290901';
+import { Scenes } from './scenes.js?v=202609290901';
+import { colorOf } from './palette.js?v=202609290901';
+import { TrayDealer } from './tray-dealer.js?v=202609290901';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609290901';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609290901';
+import { drawResultCard, cardBlob } from './share-card.js?v=202609290901';
+import { World } from './world.js?v=202609290901';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609290901';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609290424', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609290901', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -1197,9 +1197,27 @@ window.addEventListener('resize', () => {
   if (drag) { $('dragLayer').innerHTML = ''; drag.ox = null; updateDrag({ clientX: drag.x, clientY: drag.y }); }
   if (tutorial) { placeTutorialText(); showTutorialTarget(); }
 });
+/* ---------- はじめに、なまえを決める（決めるまで遊べない。世界ランキングに参加する） ---------- */
+/** なまえを決めたら done を呼ぶ。空では決められず、閉じる方法も無い（決めるまで盤面には触れない） */
+function nameGate(done) {
+  const gate = $('nameGate'), input = $('gateInput'), go = $('gateGo');
+  gate.classList.remove('hidden');
+  const ready = () => !!input.value.trim();
+  input.addEventListener('input', () => { go.disabled = !ready(); });
+  const commit = () => {
+    if (!ready() || !world.setName(input.value)) { input.focus(); return; }
+    gate.classList.add('hidden');
+    world.flush(true);                             // ランキングに参加する（前のベストスコアが残っていれば、ここで送る）
+    done();
+  };
+  go.addEventListener('click', commit);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+  setTimeout(() => input.focus(), 60);
+}
 const firstRun = isFirstRun();                   // 始める前に見る（始めると途中の保存ができる）
 startOrResume();
-if (firstRun) startTutorial();
+const begin = () => { if (firstRun) startTutorial(); };
+if (world.named) begin(); else nameGate(begin);    // 途中の保存があっても、なまえが無ければ先に決めてもらう
 // 宝石のかけらの絵（7色）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
 // まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
 {
