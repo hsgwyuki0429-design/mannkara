@@ -1,13 +1,22 @@
 /** 背景だけの色相を変える。各色のグラデーションは固定し、opacity だけで混ぜる。 */
 const PALETTES = [
-  ['#123f4c', '#247884'],   // 深い青緑
-  ['#2451c4', '#2e60d6'],   // これまでの青
-  ['#39265f', '#704797'],   // 紫
-  ['#632e50', '#a6507a'],   // ローズ
-  ['#694132', '#a76e49'],   // 琥珀
-  ['#254b43', '#4b8266'],   // 緑
+  ['#2451c4', '#2e60d6'],   // 最初はこれまでの青
+  ['#74adbc', '#c8ecea'],   // パステルシアン
+  ['#7fab9d', '#cceedd'],   // ミント
+  ['#88ad89', '#d4ebd4'],   // ソフトグリーン
+  ['#a3ad78', '#deedc5'],   // ライム
+  ['#b8aa72', '#f4edc3'],   // バターイエロー
+  ['#c39b7d', '#f5d8bc'],   // ピーチ
+  ['#c38c89', '#f3cccc'],   // コーラル
+  ['#ba8fa9', '#f1d0e2'],   // パステルピンク
+  ['#a48fb9', '#eed3f1'],   // ライラック
+  ['#9291bb', '#dfd5f2'],   // ラベンダー
+  ['#8b9fbd', '#d6dcf4'],   // ペリウィンクル
+  ['#83a6ce', '#c8e2f4'],   // スカイブルー
 ];
-const COMBO_COLORS = [0, 1, 2, 3, 4, 5];
+// 色相環に沿って隣の色へ。1ゲーム中にすべてを見せるために急がせない。
+const HUE_PATH = [0, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const COMBO_COLORS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0];
 
 export class Background {
   constructor() {
@@ -33,10 +42,17 @@ export class Background {
     this.index = index;
     // 動きを減らす設定では、長い色の移動や素早い切り替えを避ける。
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const ms = reduced ? 250 : duration;
     for (const [i, layer] of this.layers.entries()) {
-      layer.style.transitionDuration = `${reduced ? 250 : duration}ms`;
+      layer.style.transitionDuration = `${ms}ms`;
       layer.style.opacity = i === index ? '1' : '0';
     }
+    // 明るい背景では文字と操作アイコンを濃色に。色が混ざる途中で切り替える。
+    clearTimeout(this.themeTimer);
+    const light = index !== 0;
+    const apply = () => document.body.classList.toggle('background-light', light);
+    if (duration === 0) apply();
+    else this.themeTimer = setTimeout(apply, ms * .45);
   }
 
   turn(turn) {
@@ -46,20 +62,20 @@ export class Background {
       const index = COMBO_COLORS[(turn.streak - 2) % COMBO_COLORS.length];
       this.set(index, turn.streak % 5 === 0 ? 220 : 1400);
     } else {
-      if (this.moves % 6 === 0) this.calm = (this.calm + 1) % PALETTES.length;
+      if (this.moves % 6 === 0) this.calm = HUE_PATH[(HUE_PATH.indexOf(this.calm) + 1) % HUE_PATH.length];
       if (this.index !== this.calm) this.set(this.calm, 2400);
     }
   }
 
   chain(tier) {
     if (tier < 3 || performance.now() < this.holdUntil) return;
-    this.set(tier >= 5 ? 4 : tier >= 4 ? 3 : 2, 700);
+    this.set(tier >= 5 ? 5 : tier >= 4 ? 8 : 10, 700);
   }
 
   celebrate(kind) {
     if (kind === 'best' && performance.now() < this.holdUntil) return;
     this.holdUntil = performance.now() + 1600;
-    this.set(kind === 'clear' ? 5 : 4, kind === 'clear' ? 220 : 450);
+    this.set(kind === 'clear' ? 2 : 5, kind === 'clear' ? 220 : 450);
   }
 
   settle() {

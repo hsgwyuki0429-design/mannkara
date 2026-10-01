@@ -269,6 +269,26 @@ button{font-family:inherit;cursor:pointer;}
 #ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
 .ambient-layer{position:absolute;inset:0;opacity:0;transition:opacity 1800ms ease;
   background:var(--ambient-low) radial-gradient(90% 55% at 50% 30%,var(--ambient-high),var(--ambient-low) 75%);}
+/* パステルの明るさを保ち、スコア・番号・操作を濃色で読みやすくする。 */
+.background-light .score,.background-light .lane-num,.background-light .pop{color:#18283a;text-shadow:0 1px 1px rgba(255,255,255,.35);}
+.background-light .lane-num.lit{color:#fff;text-shadow:var(--ts-s);}
+.background-light .combo-pop{color:#18283a;text-shadow:0 1px 1px rgba(255,255,255,.35);}
+.background-light .combo-pop b{color:#705018;}
+.background-light .combo-pop.hot b{color:#803c22;}
+.background-light .pop.t1{--tc:#235e39;}
+.background-light .pop.t2{--tc:#255565;}
+.background-light .pop.t3{--tc:#685018;}
+.background-light .pop.t4{--tc:#743458;}
+.background-light .pop.t5{--tc:#18283a;animation-name:popText,rainbowPastel;}
+@keyframes rainbowPastel{0%,100%{color:#7b3044}16%{color:#754321}33%{color:#645218}50%{color:#235536}66%{color:#215363}83%{color:#513675}}
+.background-light .best-pill{color:#18283a;border-color:rgba(32,48,71,.4);background:rgba(255,255,255,.15);}
+.background-light .round-btn{color:#18283a;border-color:rgba(32,48,71,.4);background:rgba(255,255,255,.18);}
+.background-light .round-btn svg{fill:#18283a;}
+.background-light #btnRank svg,.background-light .learn-btn.on svg{fill:#80611e;}
+.background-light .learn-btn.on,.background-light .best-pill.beat{border-color:#9c7928;background:rgba(255,232,153,.3);}
+.background-light .mode-badge{color:#70561b;border-color:rgba(112,86,27,.6);background:rgba(255,255,255,.2);}
+.background-light .goal{border-color:#32636e;color:#244e5c;background:rgba(255,255,255,.18);}
+.background-light .brand,.background-light .brand-name{color:#18283a;text-shadow:none;}
 #fever .fv{position:absolute;inset:0;opacity:0;animation-timing-function:linear;animation-iteration-count:infinite;animation-duration:16s;}
 #fever .fv{width:100%;height:100%;}
 .fv0{animation-name:hue0;} .fv1{animation-name:hue1;} .fv2{animation-name:hue2;}
@@ -482,7 +502,7 @@ body.tutorial-on .score-wrap{visibility:hidden;}
 #gameOver{padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));
   background:rgba(0,0,0,.38);}
 #gameOver .over-box{width:min(100%,360px);max-height:100%;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;
-  padding:28px 24px 20px;border:1px solid rgba(255,255,255,.22);border-radius:24px;background:rgba(0,0,0,.22);color:#fff;
+  padding:28px 24px 20px;border:none;border-radius:24px;background:rgba(0,0,0,.22);color:#fff;
   box-shadow:0 16px 48px rgba(0,0,0,.3);--dim:#b5bfd0;--gold:#ead39b;}
 #gameOver .over-box *{touch-action:pan-y;}
 #gameOver .over-title{margin:0 0 22px;font-size:22px;line-height:1.4;text-shadow:none;}
