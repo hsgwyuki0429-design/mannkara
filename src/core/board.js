@@ -1,4 +1,4 @@
-import { SIZE, isInside, lineCells, KINDS, MAX_BLOCKS } from './constants.js?v=2026100101';
+import { SIZE, isInside, lineCells, KINDS, MAX_BLOCKS } from './constants.js?v=2026100102';
 
 let nextBlockId = 1;
 export function createBlock(color) {
