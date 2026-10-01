@@ -261,59 +261,12 @@ button{font-family:inherit;cursor:pointer;}
 .float-score.warm{color:var(--gold);font-size:calc(var(--cell) * .75);}
 .float-score.hot{color:#ff9ad6;font-size:calc(var(--cell) * .9);}
 @keyframes floatUp{0%{opacity:0;scale:.5}15%{opacity:1;scale:1.25}30%{scale:1}75%{opacity:1}100%{opacity:0;translate:-50% calc(-50% - var(--cell) * 1.2)}}
-/* コンボが続くほど背景が明るくなって脈打ち、色が 緑青 → 水色 → 青紫 → 桃紫 → 薄紅 と行き来する。
-   色は5枚の層で、隣り合う2色が入れ替わるように重ねて、動かすのは opacity（と全体の scale）だけ（filter や box-shadow は動かさない）。
-   5色は 0 → 4 → 0 と往復するので、緑青と薄紅（反対の色）が直接まざって灰色に濁ることはない */
-#fever{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 500ms;
-  animation:feverPulse 900ms ease-in-out infinite alternate;}
-#ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
-.ambient-layer{position:absolute;inset:0;opacity:0;transition:opacity 1800ms ease;
-  background:var(--ambient-low) radial-gradient(90% 55% at 50% 30%,var(--ambient-high),var(--ambient-low) 75%);}
-/* パステルの明るさを保ち、スコア・番号・操作を濃色で読みやすくする。 */
-.background-light .score,.background-light .lane-num,.background-light .pop{color:#18283a;text-shadow:0 1px 1px rgba(255,255,255,.35);}
-.background-light .lane-num.lit{color:#fff;text-shadow:var(--ts-s);}
-.background-light .combo-pop{color:#18283a;text-shadow:0 1px 1px rgba(255,255,255,.35);}
-.background-light .combo-pop b{color:#705018;}
-.background-light .combo-pop.hot b{color:#803c22;}
-.background-light .pop.t1{--tc:#235e39;}
-.background-light .pop.t2{--tc:#255565;}
-.background-light .pop.t3{--tc:#685018;}
-.background-light .pop.t4{--tc:#743458;}
-.background-light .pop.t5{--tc:#18283a;animation-name:popText,rainbowPastel;}
-@keyframes rainbowPastel{0%,100%{color:#7b3044}16%{color:#754321}33%{color:#645218}50%{color:#235536}66%{color:#215363}83%{color:#513675}}
-.background-light .best-pill{color:#18283a;border-color:rgba(32,48,71,.4);background:rgba(255,255,255,.15);}
-.background-light .round-btn{color:#18283a;border-color:rgba(32,48,71,.4);background:rgba(255,255,255,.18);}
-.background-light .round-btn svg{fill:#18283a;}
-.background-light #btnRank svg,.background-light .learn-btn.on svg{fill:#80611e;}
-.background-light .learn-btn.on,.background-light .best-pill.beat{border-color:#9c7928;background:rgba(255,232,153,.3);}
-.background-light .mode-badge{color:#70561b;border-color:rgba(112,86,27,.6);background:rgba(255,255,255,.2);}
-.background-light .goal{border-color:#32636e;color:#244e5c;background:rgba(255,255,255,.18);}
-.background-light .brand,.background-light .brand-name{color:#18283a;text-shadow:none;}
-#fever .fv{position:absolute;inset:0;opacity:0;animation-timing-function:linear;animation-iteration-count:infinite;animation-duration:16s;}
-#fever .fv{width:100%;height:100%;}
-.fv0{animation-name:hue0;} .fv1{animation-name:hue1;} .fv2{animation-name:hue2;}
-.fv3{animation-name:hue3;} .fv4{animation-name:hue4;}
-#fever.max .fv{animation-duration:10s;}
-.fv0{background:radial-gradient(75% 50% at 50% 55%,rgba(60,230,190,.5),rgba(50,190,210,.24) 58%,transparent 82%),
-             radial-gradient(120% 55% at 50% 112%,rgba(60,235,200,.3),transparent 62%);}
-.fv1{background:radial-gradient(75% 50% at 50% 42%,rgba(90,205,255,.5),rgba(70,150,255,.24) 58%,transparent 82%),
-             radial-gradient(120% 55% at 50% 112%,rgba(90,215,255,.3),transparent 62%);}
-.fv2{background:radial-gradient(75% 50% at 50% 45%,rgba(140,120,255,.52),rgba(110,90,245,.26) 58%,transparent 82%),
-             radial-gradient(110% 50% at 50% -8%,rgba(150,130,255,.32),transparent 62%);}
-.fv3{background:radial-gradient(75% 50% at 50% 48%,rgba(240,105,230,.56),rgba(190,80,235,.3) 58%,transparent 82%),
-             radial-gradient(120% 55% at 50% 112%,rgba(240,110,225,.32),transparent 62%);}
-.fv4{background:radial-gradient(75% 50% at 50% 42%,rgba(255,115,165,.6),rgba(235,90,190,.32) 58%,transparent 82%),
-             radial-gradient(110% 50% at 50% -8%,rgba(255,130,175,.38),transparent 62%);}
-/* 層 i は、色の位置(0〜4)が i のとき opacity 1、隣の色のとき 0（合計はいつも 1）。1周期 = 0 → 4 → 0 */
-@keyframes hue0{0%,100%{opacity:1}12.5%,87.5%{opacity:0}}
-@keyframes hue1{0%,25%,75%,100%{opacity:0}12.5%,87.5%{opacity:1}}
-@keyframes hue2{0%,12.5%,37.5%,62.5%,87.5%,100%{opacity:0}25%,75%{opacity:1}}
-@keyframes hue3{0%,25%,50%,75%,100%{opacity:0}37.5%,62.5%{opacity:1}}
-@keyframes hue4{0%,37.5%,62.5%,100%{opacity:0}50%{opacity:1}}
-@keyframes feverPulse{from{scale:1}to{scale:1.05}}
-/* ピンチ: 画面の縁が暖色でゆっくり脈打つ（発動で空くと消える）。影は固定で、濃さ(opacity)だけを動かす */
+/* コンボでも青のまま、控えめな同系色のグラデーションを重ねる。 */
+#fever{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 600ms;}
+#fever .fv{position:absolute;inset:0;background:radial-gradient(80% 55% at 50% 42%,rgba(75,145,255,.14),rgba(55,110,245,.06) 58%,transparent 82%);}
+/* ピンチ: 画面の縁が同系色の青でゆっくり脈打つ（発動で空くと消える）。影は固定で、濃さ(opacity)だけを動かす */
 #danger{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 600ms;}
-#danger::before{content:"";position:absolute;inset:0;box-shadow:inset 0 0 90px 16px rgba(255,90,60,.55);
+#danger::before{content:"";position:absolute;inset:0;box-shadow:inset 0 0 90px 16px rgba(75,140,255,.22);
   animation:danger 1.4s ease-in-out infinite alternate;}
 @keyframes danger{from{opacity:.65}to{opacity:1}}
 /* 見えていない間は動かさない */
@@ -325,17 +278,12 @@ button{font-family:inherit;cursor:pointer;}
 #sceneFront{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:24;}
 /* 色の変化は 400px の絵を拡大して使う（画面より大きい絵をそのまま作ると、高解像度の画面で描く量が桁違いに増える） */
 #sceneTint{position:fixed;left:50%;top:50%;width:400px;height:400px;margin:-200px 0 0 -200px;z-index:0;pointer-events:none;opacity:0;}
-/* 背景の青の上に半透明で重ねるので、色は青と混ざっても濁らない水色・青紫・桃紫の範囲にする
-   （黄・橙を薄く重ねると灰色に濁る）。大きな絵（200vmax）の中で、画面は縦 25%〜75% の範囲に当たる */
-#sceneTint.t-gold{background:radial-gradient(closest-side,rgba(150,230,255,.92),rgba(120,170,255,.66) 22%,rgba(190,130,255,.42) 40%,transparent 58%);}
-#sceneTint.t-amazing{background:radial-gradient(closest-side,rgba(255,150,225,.9),rgba(190,90,255,.55) 42%,rgba(90,80,255,.3) 72%,transparent);}
-#sceneTint.t-warm{background:linear-gradient(to top,transparent 23%,rgba(255,120,200,.9) 25%,rgba(190,100,255,.62) 38%,rgba(120,120,255,.28) 52%,transparent 64%);}
-#sceneTint.t-rainbow{background:center/100% 100% no-repeat;}   /* 絵は scenes.rainbowImage */
+/* 新記録・連鎖の背景も色相を変えず、ごく薄い青のグラデーションだけ。 */
+#sceneTint.t-blue{background:radial-gradient(closest-side,rgba(95,155,255,.16),rgba(65,125,245,.08) 42%,transparent 72%);}
 .best-pill.beat{border-color:var(--gold);background:rgba(255,213,74,.14);animation:beat 1.2s ease-in-out infinite;}
 @keyframes beat{50%{scale:1.04}}
 @media (prefers-reduced-motion: reduce){#fever,#fever .fv,#danger::before,.hi,.goal.ready,.hint,.pop .ch,.pop small,.slot.hinted .piece,.tut-next{animation:none}}
 
-@media (prefers-reduced-motion: reduce){.fv1{opacity:1}}   /* 動かさないときは水色1色 */
 
 /* ---- トレイ ----
    リスタートボタンを無くして浮いた分の高さをここへ回し、枠を無くした代わりに手駒がなるべく

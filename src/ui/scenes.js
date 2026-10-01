@@ -1,4 +1,4 @@
-import { gemSprite } from './shards.js?v=2026100103';
+import { gemSprite } from './shards.js?v=2026100104';
 
 /**
  * 画面全体の演出（シーン）。盤面の外側まで使う、大きな色の変化のための層。
@@ -34,7 +34,6 @@ export class Scenes {
     // 盤面の前: 新記録の風船と、はじけた粒
     this.front = mk('canvas', 'sceneFront');
     this.fctx = this.front.getContext('2d');
-    this.sprites = new Map();
     this.actors = [];        // 毎フレーム描くもの。draw(now) が false を返したら消える
     this.bits = [];          // はじけた粒（丸）
     this.raf = 0;
@@ -62,7 +61,7 @@ export class Scenes {
     this.actors.length = this.bits.length = 0;
     this.fctx.setTransform(1, 0, 0, 1, 0, 0);
     this.fctx.clearRect(0, 0, this.front.width, this.front.height);
-    this._tintAnim?.cancel(); this._tintSpin?.cancel();
+    this._tintAnim?.cancel();
   }
 
   /* =====================================================================
@@ -70,11 +69,11 @@ export class Scenes {
    * ===================================================================== */
 
   /**
-   * 新記録: 水色〜青紫に明るく染まり、ベストスコアの枠から宝石のかけらがはじけ、画面の両下からかけらが2回噴き上がる。
+   * 新記録: 青のグラデーションをわずかに重ね、ベストスコアの枠から宝石のかけらがはじけ、画面の両下からかけらが2回噴き上がる。
    * 風船の NEW BEST が浮かんで、割れるとかけらになって散る。from = ベストスコアの枠の画面上の四角（あれば）
    */
   newBest(from = null) {
-    this.wash('gold', 2600, 0.62);
+    this.wash(2600, 0.62);
     if (from) this.burst(from.x + from.width / 2, from.y + from.height / 2, 16, 380);
     this.fountain(0);
     this.fountain(520);
@@ -113,42 +112,37 @@ export class Scenes {
     }, at);
   }
 
-  /** 大きな連鎖（褒め言葉が Amazing 以上）: 画面全体が段階の色に染まる。Unbelievable（tier 5）は虹色 */
+  /** 大きな連鎖（褒め言葉が Amazing 以上）: 同系色の薄い青を重ねる */
   bigChain(tier) {
     const now = performance.now();
     if (now - (this._lastBig ?? -1e9) < 1100) return;       // 続けて重ならないように（長い連鎖で光りっぱなしにしない）
     this._lastBig = now;
-    const kind = tier >= 5 ? 'rainbow' : 'amazing';
     // 画面いっぱいの半透明の層は、遅い端末では合成が重いので省く（演出の量 quality が下がっているとき）
     const q = this.quality();
-    if (q >= 0.45) this.wash(kind, 1400, tier >= 5 ? 0.5 : 0.42);
+    if (q >= 0.45) this.wash(1400, tier >= 5 ? 0.5 : 0.42);
   }
 
-  /** コンボが5の倍数に届いた: 画面の下から桃〜青紫に染まる */
+  /** コンボが5の倍数に届いた: 同系色の薄い青を重ねる */
   comboWave() {
-    if (this.quality() >= 0.45) this.wash('warm', 1500, 0.6);
+    if (this.quality() >= 0.45) this.wash(1500, 0.6);
   }
 
   /* =====================================================================
    * 部品（奥の層）
    * ===================================================================== */
 
-  /** 画面全体の色（kind ごとの1枚絵）を opacity だけで出して消す。rainbow はゆっくり回す */
-  wash(kind, dur, alpha) {
+  /** 薄い青のグラデーションを opacity だけで出して消す（文字やボタンの色は変えない） */
+  wash(dur, alpha) {
     const el = this.tint;
-    el.className = `t-${kind}`;
-    el.style.backgroundImage = kind === 'rainbow' ? `url(${this.rainbowImage()})` : '';
+    el.className = 't-blue';
+    el.style.backgroundImage = '';
     const k = (2 * Math.max(this.W, this.H)) / 400;          // 400px の絵を画面の2倍の大きさに拡大する
     el.style.transform = `scale(${k})`;
     this._tintAnim?.cancel();
     this._tintAnim = el.animate(
       [{ opacity: 0 }, { opacity: alpha, offset: 0.16 }, { opacity: alpha * 0.8, offset: 0.7 }, { opacity: 0 }],
       { duration: dur, easing: 'ease-out' });
-    this._tintSpin?.cancel();
-    if (kind === 'rainbow' && !this.reduced) {
-      this._tintSpin = el.animate([{ transform: `scale(${k}) rotate(0deg)` }, { transform: `scale(${k}) rotate(200deg)` }],
-        { duration: dur, easing: 'linear' });
-    }
+
   }
 
   /* =====================================================================
@@ -200,42 +194,6 @@ export class Scenes {
    * ===================================================================== */
 
   /** 使う絵を先に作っておくための仕事（最初に使う瞬間に作ると、その演出の始まりで一瞬止まる。かけらの絵は shards.js が作る） */
-  warmJobs() { return [() => this.rainbowImage()]; }
-
-  cached(key, make) {
-    let img = this.sprites.get(key);
-    if (!img) { img = make(); this.sprites.set(key, img); }
-    return img;
-  }
-  canvas(w, h = w) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
-
-  /**
-   * 虹色の絵（400px）: なめらかな色相の輪を、外側へ向かって透明にしたもの。
-   * 扇形を並べるとつなぎ目が放射状の線に見えるので、conic グラデーション 1 枚で描き、丸いグラデーションで抜く
-   */
-  rainbowImage() {
-    return this.cached('rainbow', () => {
-      const S = 400, R = S / 2, cv = this.canvas(S), g = cv.getContext('2d');
-      // 黄・橙は背景の青と混ざると灰色に濁るので、水色〜青緑〜青紫〜桃の範囲で1周させる
-      const hues = ['63,216,255', '90,235,210', '110,160,255', '160,110,255', '225,100,235', '255,110,180', '63,216,255'];
-      if (g.createConicGradient) {
-        const cg = g.createConicGradient(0, R, R);
-        hues.forEach((c, i) => cg.addColorStop(i / (hues.length - 1), `rgb(${c})`));
-        g.fillStyle = cg;
-      } else {
-        const lg = g.createLinearGradient(0, 0, S, S);                   // conic が無い環境: 斜めの虹
-        hues.forEach((c, i) => lg.addColorStop(i / (hues.length - 1), `rgb(${c})`));
-        g.fillStyle = lg;
-      }
-      g.fillRect(0, 0, S, S);
-      g.globalCompositeOperation = 'destination-in';
-      const fade = g.createRadialGradient(R, R, 0, R, R, R);
-      fade.addColorStop(0, 'rgba(0,0,0,.7)'); fade.addColorStop(0.45, 'rgba(0,0,0,.42)'); fade.addColorStop(1, 'rgba(0,0,0,0)');
-      g.fillStyle = fade;
-      g.fillRect(0, 0, S, S);
-      return cv.toDataURL();
-    });
-  }
+  warmJobs() { return []; }
 
 }
-

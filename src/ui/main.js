@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=2026100103';
-import { Board, createBlock } from '../core/board.js?v=2026100103';
-import { Piece } from '../core/pieces.js?v=2026100103';
-import * as Sim from '../core/sim.js?v=2026100103';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=2026100103';
-import { Renderer, delay } from './renderer.js?v=2026100103';
-import { Sfx } from './sfx.js?v=2026100103';
-import { Scenes } from './scenes.js?v=2026100103';
-import { colorOf } from './palette.js?v=2026100103';
-import { TrayDealer } from './tray-dealer.js?v=2026100103';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=2026100103';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=2026100103';
-import { drawResultCard, cardBlob } from './share-card.js?v=2026100103';
-import { World } from './world.js?v=2026100103';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=2026100103';
+import { Game } from '../core/game.js?v=2026100104';
+import { Board, createBlock } from '../core/board.js?v=2026100104';
+import { Piece } from '../core/pieces.js?v=2026100104';
+import * as Sim from '../core/sim.js?v=2026100104';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=2026100104';
+import { Renderer, delay } from './renderer.js?v=2026100104';
+import { Sfx } from './sfx.js?v=2026100104';
+import { Scenes } from './scenes.js?v=2026100104';
+import { colorOf } from './palette.js?v=2026100104';
+import { TrayDealer } from './tray-dealer.js?v=2026100104';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=2026100104';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=2026100104';
+import { drawResultCard, cardBlob } from './share-card.js?v=2026100104';
+import { World } from './world.js?v=2026100104';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=2026100104';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=2026100103', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=2026100104', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -237,7 +237,6 @@ async function playTurn(turn) {
     return;
   }
   const speeds = planSpeeds(turn.steps);
-  if (!tutorial) renderer.background.turn(turn);
   if (turn.steps.length) {
     renderer.setFever((turn.streak - 1) / 5);
     if (turn.streak >= 2) { renderer.showCombo(turn.streak); sfx.combo(turn.streak); }
@@ -262,7 +261,6 @@ async function playTurn(turn) {
       renderer.showText(`${step.chain} CHAIN<small>${praise}</small>`, `t${tier}`);
       if (tier > shownTier) {                                  // 段階が上がった時だけ（毎回だと染まりっぱなしになる）
         shownTier = tier;
-        if (!tutorial) renderer.background.chain(tier);
         if (tier >= 4) scenes.bigChain(tier);    // Amazing 以上で画面全体の色が変わる
       } else if (step.chain >= 12 && step.chain % 4 === 0) scenes.bigChain(5);   // 12・16・20…連鎖でもう一度
       sfx.praise(tier);
@@ -273,7 +271,6 @@ async function playTurn(turn) {
     if (stale()) return;
   }
   if (turn.allClear) {
-    if (!tutorial) renderer.background.celebrate('clear');
     renderer.showText(allClearText(turn), 't5');
     renderer.allClearBlast();
     sfx.fanfare();
@@ -287,7 +284,6 @@ async function playTurn(turn) {
     await renderer.wait(350);
     if (stale()) return;
     renderer.setFever(0);
-    renderer.background.settle();
     sfx.over();
     gameOverShown = true;
     const prev = { ...records };
@@ -362,7 +358,6 @@ function showScore(v, bump = false) {
     bestCelebrated = true;
     const pill = document.querySelector('.best-pill');
     scenes.newBest(pill?.getBoundingClientRect());
-    renderer.background.celebrate('best');
     renderer.showText('NEW BEST!', 't5');
     sfx.fanfare();
     pill?.classList.add('beat');
