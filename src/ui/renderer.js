@@ -1,7 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=2026100103';
-import { Shards } from './shards.js?v=2026100103';
-import { Background } from './background.js?v=2026100103';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=2026100104';
+import { Shards } from './shards.js?v=2026100104';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -22,8 +21,8 @@ const easeOut = (p) => 1 - Math.pow(1 - p, 2.2);
 const easeInOutInv = (y) => (y < 0.5 ? Math.sqrt(y / 2) : 1 - Math.sqrt((1 - y) * 2) / 2);
 /** ブロックと同じ7色 */
 const COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
-/** コンボ中の背景の色の層の数（0 → 4 → 0 と往復する。styles.css の hue0〜4 と同じ順） */
-const FEVER_HUES = 5;
+/** コンボ中も同じ青の控えめなグラデーションだけを重ねる。 */
+const FEVER_HUES = 1;
 const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /**
@@ -34,7 +33,6 @@ const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: redu
 export class Renderer {
   constructor(sfx) {
     this.sfx = sfx;
-    this.background = new Background();
     // 必要な要素が HTML に無くても（古い HTML がキャッシュされている等）自前で作る
     const need = (id, cls, parent = 'playfield') => {
       if (document.getElementById(id)) return;
@@ -825,7 +823,6 @@ export class Renderer {
     this.clearAnnotations();
     this.setFever(0);
     this.setDanger(0);
-    this.background.reset();
     this.els.clear();
     this.manual.clear();
     this.setRush(false);
