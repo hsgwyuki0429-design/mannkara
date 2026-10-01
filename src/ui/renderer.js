@@ -1,6 +1,7 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202609290953';
-import { Shards } from './shards.js?v=202609290953';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=2026100103';
+import { Shards } from './shards.js?v=2026100103';
+import { Background } from './background.js?v=2026100103';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -33,6 +34,7 @@ const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: redu
 export class Renderer {
   constructor(sfx) {
     this.sfx = sfx;
+    this.background = new Background();
     // 必要な要素が HTML に無くても（古い HTML がキャッシュされている等）自前で作る
     const need = (id, cls, parent = 'playfield') => {
       if (document.getElementById(id)) return;
@@ -109,19 +111,22 @@ export class Renderer {
     this.cell = 40;
     this.layout();
     window.addEventListener('resize', () => this.layout());
+    // Split View・ブラウザのバーなどでステージだけが変わったときも収め直す。
+    this.layoutObserver = new ResizeObserver(() => this.layout());
+    this.layoutObserver.observe(this.wrap.parentElement);
   }
 
   /* ---------- レイアウト ---------- */
   layout() {
     const stage = this.wrap.parentElement.getBoundingClientRect();
-    const sw = Math.min(stage.width || window.innerWidth, 560);
+    const sw = stage.width || window.innerWidth;
     const sh = stage.height || window.innerHeight - 380;
     // 盤面をできるだけ大きく: 見えている範囲（左右の番号「8」の外側まで、ゴール上端〜直角の先端まで）が
     // ステージにぴったり収まる最大のマスの大きさにする
     const EXT_UP = 8.99, EXT_DOWN = 8.55;                     // 斜辺の中心線から上下に見えている範囲（h 単位）
     const SPAN_W = 11.62;                                     // 左右の番号を含めた横幅（マス単位）
     const SPAN_H = (EXT_UP + EXT_DOWN) / Math.SQRT2;          // 縦幅（マス単位）
-    const cell = Math.max(16, Math.floor(Math.min((sw - 4) / SPAN_W, (sh - 4) / SPAN_H)));
+    const cell = Math.max(1, Math.floor(Math.min((sw - 4) / SPAN_W, (sh - 4) / SPAN_H)));
     const k = cell / this.cell;
     this.cell = cell;
     document.documentElement.style.setProperty('--cell', cell + 'px');
@@ -820,6 +825,7 @@ export class Renderer {
     this.clearAnnotations();
     this.setFever(0);
     this.setDanger(0);
+    this.background.reset();
     this.els.clear();
     this.manual.clear();
     this.setRush(false);

@@ -38,7 +38,7 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202609290953" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=2026100103" />
 </head>
 <body>
 <div id="app">
@@ -143,7 +143,7 @@
 </div>
 
 <div id="gameOver" class="overlay hidden">
-  <div class="overlay-box">
+  <div class="overlay-box over-box">
     <p class="over-title">置ける場所がない！</p>
     <p class="over-label">SCORE</p>
     <p id="finalScore" class="over-score">0</p>
@@ -157,7 +157,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 7.2 7.6l1.6 1.6 2.1-2.1V15h2.2V7.1l2.1 2.1 1.6-1.6z" /><path d="M5 11h3v2H7v6h10v-6h-1v-2h3v10H5z" /></svg>
       結果をシェア
     </button>
-    <button id="btnOverRank" class="link howto over-rank">ランキングを見る</button>
+    <div class="over-links">
+      <button id="btnOverRank" class="link howto over-rank">ランキングを見る</button>
+      <button id="btnOverHowto" class="link howto">遊び方</button>
+    </div>
   </div>
 </div>
 <!-- 画像のシェアができないブラウザ: カードを見せて、長押し・保存・リンクのコピーで送ってもらう -->
@@ -227,6 +230,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202609290953"></script>
+<script type="module" src="./src/ui/main.js?v=2026100103"></script>
 </body>
 </html>
