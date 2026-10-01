@@ -1,7 +1,7 @@
-import { SIZE, SCORE_PER_GOAL, chainMultiplier } from './constants.js?v=202609290953';
-import { SHAPE_BY_NAME } from './pieces.js?v=202609290953';
-import { solvable } from './planner.js?v=202609290953';
-import * as Sim from './sim.js?v=202609290953';
+import { SIZE, SCORE_PER_GOAL, chainMultiplier } from './constants.js?v=2026100101';
+import { SHAPE_BY_NAME } from './pieces.js?v=2026100101';
+import { solvable } from './planner.js?v=2026100101';
+import * as Sim from './sim.js?v=2026100101';
 
 /**
  * 学習モードの「おすすめの置き場所」（AI ではなく、今の盤面での総当たり）。

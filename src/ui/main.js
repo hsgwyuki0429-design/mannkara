@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=202609290953';
-import { Board, createBlock } from '../core/board.js?v=202609290953';
-import { Piece } from '../core/pieces.js?v=202609290953';
-import * as Sim from '../core/sim.js?v=202609290953';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202609290953';
-import { Renderer, delay } from './renderer.js?v=202609290953';
-import { Sfx } from './sfx.js?v=202609290953';
-import { Scenes } from './scenes.js?v=202609290953';
-import { colorOf } from './palette.js?v=202609290953';
-import { TrayDealer } from './tray-dealer.js?v=202609290953';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202609290953';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202609290953';
-import { drawResultCard, cardBlob } from './share-card.js?v=202609290953';
-import { World } from './world.js?v=202609290953';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202609290953';
+import { Game } from '../core/game.js?v=2026100101';
+import { Board, createBlock } from '../core/board.js?v=2026100101';
+import { Piece } from '../core/pieces.js?v=2026100101';
+import * as Sim from '../core/sim.js?v=2026100101';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=2026100101';
+import { Renderer, delay } from './renderer.js?v=2026100101';
+import { Sfx } from './sfx.js?v=2026100101';
+import { Scenes } from './scenes.js?v=2026100101';
+import { colorOf } from './palette.js?v=2026100101';
+import { TrayDealer } from './tray-dealer.js?v=2026100101';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=2026100101';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=2026100101';
+import { drawResultCard, cardBlob } from './share-card.js?v=2026100101';
+import { World } from './world.js?v=2026100101';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=2026100101';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202609290953', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=2026100101', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -920,18 +920,11 @@ function startOrResume() {
 /**
  * 決めた盤面・手駒で1手ずつ置かせる（src/ui/tutorial-steps.js）。置く場所は金色の枠で示し、指の絵がトレイから運んで見せる。
  * 決めた場所にしか置けない（近くで離せば吸い付く）。補充・詰み・点数の記録・途中の保存は無し。
- * 最初に開いたとき（ベストスコアも途中の保存も無い）に出て、一時停止の「遊び方」からもう一度見られる。
+ * 一時停止・ゲームオーバーの「遊び方」から開く（初回も自動では出さない）。
  * 遊んでいる途中に見たときは、終わったらそのゲームの続きから
  */
-const TUTORIAL_KEY = 'blockmancala-tutorial';
 const TUTORIAL_SNAP = 2.6;                       // 決めた場所へ吸い付く距離（マス）。慣れていない人でも置けるように広め
 const TUTORIAL_SLOT = 1;                         // 手駒はまん中の枠に出す
-function isFirstRun() {
-  try {
-    return ![TUTORIAL_KEY, 'blockmancala-best', 'blockmancala-best-learn', 'blockmancala-save', 'blockmancala-save-learn']
-      .some((k) => localStorage.getItem(k));
-  } catch { return false; }
-}
 /** 今置かせたい手（置いた後・最後の説明の間は null） */
 function tutorialTarget() {
   const st = tutorial && !tutorial.placed && TUTORIAL_STEPS[tutorial.i];
@@ -1127,7 +1120,6 @@ function stopTutorial() {
   if (!tutorial) return;
   tutorial = null;
   tapDone?.();                                   // 説明の途中でタップを待っていたら終わらせる
-  try { localStorage.setItem(TUTORIAL_KEY, '1'); } catch {}
   $('tutorial').classList.add('hidden');
   $('tutSkip').classList.add('hidden');
   document.body.classList.remove('tutorial-on');
@@ -1139,6 +1131,7 @@ function endTutorial() { sfx.unlock(); stopTutorial(); startOrResume(); }
 $('tutStart').addEventListener('click', endTutorial);
 $('tutSkip').addEventListener('click', endTutorial);
 $('btnHowto').addEventListener('click', () => { sfx.unlock(); setPaused(false); startTutorial(); });
+$('btnOverHowto').addEventListener('click', () => { sfx.unlock(); startTutorial(); });
 
 /* ---------- ゲーム名と遊べる場所・結果のシェア ---------- */
 $('brandUrl').textContent = displayUrl();
@@ -1214,10 +1207,8 @@ function nameGate(done) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
   setTimeout(() => input.focus(), 60);
 }
-const firstRun = isFirstRun();                   // 始める前に見る（始めると途中の保存ができる）
 startOrResume();
-const begin = () => { if (firstRun) startTutorial(); };
-if (world.named) begin(); else nameGate(begin);    // 途中の保存があっても、なまえが無ければ先に決めてもらう
+if (!world.named) nameGate(() => {});              // 途中の保存があっても、なまえが無ければ先に決めてもらう
 // 宝石のかけらの絵（7色）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
 // まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
 {
