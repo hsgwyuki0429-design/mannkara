@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency } from '../src/ui/sfx.js?v=202610020836';
-import { Renderer } from '../src/ui/renderer.js?v=202610020836';
+import { Sfx, note, voicedFrequency } from '../src/ui/sfx.js?v=202610020848';
+import { Renderer } from '../src/ui/renderer.js?v=202610020848';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -148,4 +148,32 @@ test('動きを減らす設定ではラインの揺れや飛び散りを生成�
   const r = timerRenderer();
   r.shake = () => assert.fail('shake'); r.punch = () => assert.fail('punch');
   assert.doesNotThrow(() => r.lineBlast('col', 8, 'cyan', 12));
+});
+
+test('列から動き出すブロックと盤面に拡縮・揺れを掛けない', () => {
+  globalThis.window = { matchMedia: () => ({ matches: false }) };
+  const r = timerRenderer(), classes = new Set(['pop-in', 'fit-in', 'charging']);
+  const el = {
+    classList: { remove: (...names) => names.forEach((n) => classes.delete(n)) },
+    animate: () => assert.fail('座標を持つブロックに拡縮を掛けた'),
+  };
+  r.els = new Map([[1, el]]); r.frameMs = 16.7;
+  r.shake = () => assert.fail('移動開始時に盤面を揺らした');
+  r.punch = () => assert.fail('移動開始時に盤面を拡縮した');
+  r.lineBlast('col', 8, 'cyan', 12, [{ id: 1 }]);
+  assert.equal(classes.size, 0);
+});
+
+test('溜めは座標を持つ親要素を拡縮せず、移動前に面の縮みを解除する', async () => {
+  globalThis.window = { matchMedia: () => ({ matches: false }) };
+  const r = timerRenderer(), classes = new Set();
+  const el = {
+    classList: { add: (n) => classes.add(n), remove: (n) => classes.delete(n) },
+    style: { setProperty() {} },
+    animate: () => assert.fail('溜めでブロックの座標を拡縮した'),
+  };
+  r.els = new Map([[1, el]]);
+  r.wait = async () => assert.ok(classes.has('charging'));
+  await r.charge('col', 3, [{ id: 1 }]);
+  assert.equal(classes.has('charging'), false);
 });

@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610020836';
-import { Shards } from './shards.js?v=202610020836';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610020848';
+import { Shards } from './shards.js?v=202610020848';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -394,12 +394,16 @@ export class Renderer {
     if (this.rush) return;
     this.sfx?.charge(1, Math.max(0.035, ms / (1000 * Math.max(1, this.timeScale))));
     if (reducedMotion()) { await this.wait(ms); return; }
-    for (const b of stack) {
-      const a = this.els.get(b.id)?.animate([{ scale: '1' }, { scale: '.9' }], { duration: ms, easing: 'ease-in', fill: 'forwards' });
-      if (a) a.onfinish = () => a.cancel();
+    // 位置を持つ親要素を scale すると translate まで拡縮されて列からずれる。
+    // 溜めはその場の宝石の面だけに掛け、移動を始める前に戻す。
+    const els = stack.map((b) => this.els.get(b.id)).filter(Boolean);
+    for (const el of els) {
+      el.style.setProperty('--charge', ms + 'ms');
+      el.classList.add('charging');
     }
     this.numEls?.get(kind + n)?.animate([{ scale: '1' }, { scale: '1.5' }, { scale: '1' }], { duration: ms + 160, easing: 'ease-out' });
     await this.wait(ms);
+    for (const el of els) el.classList.remove('charging');
   }
 
   /** 再生の時間で ms 待つ（一時停止中は止まり、速めると早く終わる。早送り・リスタートしたらすぐ終わる） */
@@ -548,6 +552,10 @@ export class Renderer {
   async playStep(step, speed = 1, pause = null) {
     const { kind, n: N, stack, chain, before, after } = step;
     const gen = this.gen;                                    // 途中でリスタートしたら、古い盤面の続きは描かない
+    // 着地・前の見せ場の拡縮を移動へ持ち越さず、通路上では盤面を固定する。
+    this._bounce?.cancel();
+    this._shake?.cancel();
+    this._punch?.cancel();
     const cellT = ANIM.step / speed;                         // 1マスあたりの時間
     const F = kind === 'col' ? (x, r) => ({ x, r }) : (x, r) => ({ x: r, r: x });   // 画面 <-> 縦列の座標
     const P = (fx, fr) => { const q = F(fx, fr); return this.pos(q.x, q.r); };
@@ -634,7 +642,6 @@ export class Renderer {
     if (goals.length) this.goalIn(goals.map((g) => g.b), chain);     // 同時に着くブロックの演出はまとめて1回
     for (const m of moves) { this.manual.delete(m.b.id); m.el.classList.remove('travel'); }
     this.applySnapshot(after);
-    if (!this.rush) this.bounce([[0, 1], [0.3, 1.012], [0.6, 0.997], [1, 1]], 220);
   }
 
   /** 配られたブロックがラインの中で止まった: 小さな音だけ（弾ませない） */
@@ -737,18 +744,14 @@ export class Renderer {
   /** マス中心のローカル px -> rotWrap 内の座標 */
   cellCenter(p) { return this.localToWrap(p.x + this.cell / 2, p.y + this.cell / 2); }
 
-  /** ラインが手前から順に弾ける。動く宝石自体の面を使い、小さな同色のかけらだけを添える。 */
+  /** 移動中は宝石と盤面の大きさを固定し、小さな同色のかけらだけを添える。 */
   lineBlast(kind, n, color = 'yellow', chain = 1, moving = [], before = null) {
-    if (reducedMotion()) return;
-    this.shake(this.cell * Math.min(0.035 + chain * 0.012, 0.13), 150 + Math.min(chain, 8) * 12);
-    if (chain >= 4) this.punch(Math.min(0.008 + chain * 0.002, 0.026));
-    for (const [i, block] of moving.entries()) {
+    for (const block of moving) {
       const el = this.els.get(block.id);
       if (!el) continue;
-      el.classList.remove('pop-in', 'fit-in');
-      el.animate(eased([{ scale: '.91' }, { scale: '1.075', offset: 0.35 }, { scale: '1' }], 'ease-out'),
-        { duration: 190, delay: Math.min(i * 16, 90) / Math.max(1, this.timeScale) });
+      el.classList.remove('pop-in', 'fit-in', 'charging');
     }
+    if (reducedMotion()) return;
     if (n >= 3 && this.q >= 0.7 && moving[0]) {
       const at = before?.get(moving[0].id);
       if (at) {

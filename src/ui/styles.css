@@ -173,7 +173,11 @@ button{font-family:inherit;cursor:pointer;}
   64%{scale:1;animation-timing-function:ease-out}
   72%{scale:1.2;animation-timing-function:ease-in}
   100%{scale:0}}
+.block.charging::before,.block.charging::after{animation:chargeGem var(--charge,150ms) ease-in both;}
+@keyframes chargeGem{from{scale:1}to{scale:.9}}
 .block.travel{z-index:5;}
+.block.travel::before,.block.travel::after{animation:none;}
+.block.travel:not(.fly)::before,.block.travel:not(.fly)::after{scale:1;transition:none;}
 /* 発動したラインの空いたマス・全消しの盤面: マスの中にブロックの色が満ちて引く。
    マスと同じ形・同じ内側の影（くぼみの底に色が溜まって見える）。光のにじみは付けない */
 .well-tint{scale:0;}
@@ -285,7 +289,7 @@ button{font-family:inherit;cursor:pointer;}
 .best-pill.beat{border-color:var(--gold);background:rgba(255,213,74,.14);animation:beat 1.2s ease-in-out infinite;}
 @keyframes beat{50%{scale:1.04}}
 @media (prefers-reduced-motion: reduce){#fever,#fever .fv,#danger::before,.hi,.goal.ready,.hint,.pop .ch,.pop small,.slot.hinted .piece,.tut-next{animation:none}}
-@media (prefers-reduced-motion: reduce){.block.pop-in::before,.block.pop-in::after{animation:none}.block::before,.block::after{transition:none}}
+@media (prefers-reduced-motion: reduce){.block.pop-in::before,.block.pop-in::after,.block.charging::before,.block.charging::after{animation:none}.block::before,.block::after{transition:none}}
 
 
 /* ---- トレイ ----
