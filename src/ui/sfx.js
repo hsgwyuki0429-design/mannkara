@@ -238,7 +238,7 @@ export class Sfx {
   }
   /** ガラスを置く音だけ。variant = コップの高さ（0〜3）、weight = 重さ（0〜1。重いほど低い） */
   glass(variant = 0, weight = 0.3) {
-    this.playBuffer(`glass${variant % GLASS_VARIANTS}`, { gain: 0.5, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
+    this.playBuffer(`glass${variant % GLASS_VARIANTS}`, { gain: 0.58, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
   }
   /**
    * シャラン: クリスマスのベルのように、鈴のきらめきから音階が駆け上がり、最後の音が長く響く。
@@ -248,7 +248,7 @@ export class Sfx {
     if (!at && !this.allow('shalan', 0.1)) return;
     let top = note(chain - 1, 330) * LOWER * 4;
     while (top >= 2800) top /= 2;
-    this.playBuffer('shalan', { gain: 0.2 * size, rate: top / SHALAN_TOP, at, priority: 1 });
+    this.playBuffer('shalan', { gain: 0.3 * size, rate: top / SHALAN_TOP, at, priority: 1 });
   }
   /** 穴にぴったりはまる場所に入った（カチッ）・ぴったり置いた（カチッ + 上がる2音） */
   fitHover()    { if (!this.allow('fitHover', 0.08)) return;
