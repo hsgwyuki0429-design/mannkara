@@ -159,8 +159,10 @@ button{font-family:inherit;cursor:pointer;}
   box-shadow:inset -.8px 0 0 rgba(255,255,255,.3),inset .8px 0 0 rgba(0,0,0,.08),inset 0 .8px 0 rgba(0,0,0,.06);}
 .block{transition:transform var(--t,0ms) var(--e,ease),filter 160ms;will-change:transform;}
 .block::before,.block::after{transition:opacity 180ms,scale 200ms ease-in,filter 160ms;}
-.block.pop-in::before,.block.pop-in::after{animation:land 340ms cubic-bezier(.25,1.4,.5,1) var(--d,0ms) both;}
-@keyframes land{0%{scale:1.22}45%{scale:.9}72%{scale:1.04}100%{scale:1}}
+.block.pop-in::before,.block.pop-in::after{animation:land 240ms ease-out var(--d,0ms) both;}
+@keyframes land{0%{scale:1.12}24%{scale:.9}58%{scale:1.035}100%{scale:1}}
+.block.pop-in.fit-in::before,.block.pop-in.fit-in::after{animation-name:landFit;animation-duration:290ms;}
+@keyframes landFit{0%{scale:1.13}22%{scale:.87}56%{scale:1.075}78%{scale:.99}100%{scale:1}}
 /* 全消し: 空いたマスに宝石がぽんと満ち、しばらく並んでから砕けて小さくなる（renderer.allClearBlast。濃さは変えず大きさだけ） */
 .ac-gem{pointer-events:none;}
 .ac-gem::before,.ac-gem::after{animation:acGem var(--life) linear var(--d) both;}
@@ -171,7 +173,11 @@ button{font-family:inherit;cursor:pointer;}
   64%{scale:1;animation-timing-function:ease-out}
   72%{scale:1.2;animation-timing-function:ease-in}
   100%{scale:0}}
+.block.charging::before,.block.charging::after{animation:chargeGem var(--charge,150ms) ease-in both;}
+@keyframes chargeGem{from{scale:1}to{scale:.9}}
 .block.travel{z-index:5;}
+.block.travel::before,.block.travel::after{animation:none;}
+.block.travel:not(.fly)::before,.block.travel:not(.fly)::after{scale:1;transition:none;}
 /* 発動したラインの空いたマス・全消しの盤面: マスの中にブロックの色が満ちて引く。
    マスと同じ形・同じ内側の影（くぼみの底に色が溜まって見える）。光のにじみは付けない */
 .well-tint{scale:0;}
@@ -180,7 +186,7 @@ button{font-family:inherit;cursor:pointer;}
   box-shadow:inset -2.5px -2.5px 5px rgba(4,12,60,.4),inset .8px .8px 0 rgba(255,255,255,.35);}
 /* ゴールから飛び散る宝石のかけら（shards.js。色ごとに1回だけ描いた絵を貼り、transform だけで動かす） */
 .shard{position:absolute;left:0;top:0;pointer-events:none;background:center/100% 100% no-repeat;}
-.block.fly::before,.block.fly::after{opacity:0;scale:.4;}
+.block.fly::before,.block.fly::after{opacity:1;scale:0;}
 .ghost{opacity:.38;filter:saturate(.8);animation:ghostIn 140ms ease-out;}
 /* 学習モードのおすすめの場所: 白い枠 + 中にピースの色の小さな面（ベタ塗り。半透明にすると背景の紺と混ざって濁るので）。
    大きさだけで脈打つ（手順どおりの手は金色の枠） */
@@ -283,6 +289,7 @@ button{font-family:inherit;cursor:pointer;}
 .best-pill.beat{border-color:var(--gold);background:rgba(255,213,74,.14);animation:beat 1.2s ease-in-out infinite;}
 @keyframes beat{50%{scale:1.04}}
 @media (prefers-reduced-motion: reduce){#fever,#fever .fv,#danger::before,.hi,.goal.ready,.hint,.pop .ch,.pop small,.slot.hinted .piece,.tut-next{animation:none}}
+@media (prefers-reduced-motion: reduce){.block.pop-in::before,.block.pop-in::after,.block.charging::before,.block.charging::after{animation:none}.block::before,.block::after{transition:none}}
 
 
 /* ---- トレイ ----
