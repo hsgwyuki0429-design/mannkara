@@ -300,7 +300,7 @@ export class Ambient {
     const { el } = p;
     p.anim?.cancel();
     for (const [name, value] of Object.entries(look.board)) el.style.setProperty(name, value);
-    el.style.zIndex = String(p.z = z);
+    el.style.zIndex = String(p.z = z);                            // 増え続ける。#wellLayer（isolation: isolate）の中だけで効く（外へ漏れると、土台がブロックより前に出る）
     el.style.opacity = '0';
     el.style.display = 'block';
     p.on = true;
