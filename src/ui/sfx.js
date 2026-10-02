@@ -1,7 +1,18 @@
+import { glassBuffer, shalanBuffer, GLASS_VARIANTS, SHALAN_TOP } from './synth.js?v=202610020948';
+
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
 const LOWER = Math.pow(2, -3 / 12), MAX_HZ = 1760;
 const VOICE_LIMIT = 40;
+const LEVEL = 0.32;                                    // 全体の音量（ミュートでは 0）
+/**
+ * 作っておく波形（synth.js）。ガラスを置く音（コップの高さ違い 4 つ）と、ベルのシャラン。
+ * 鳴らすたびに計算せず、AudioBuffer を 1 回だけ作って使い回す（作るのは数 ms。起動後の空き時間に先に作っておく）
+ */
+const WAVES = {
+  ...Object.fromEntries(Array.from({ length: GLASS_VARIANTS }, (_, v) => [`glass${v}`, (sr) => glassBuffer(sr, v)])),
+  shalan: shalanBuffer,
+};
 // 上限で切りそろえると和音も大連鎖も同じ音になる。上限を超えた音はオクターブ下へ戻す。
 export const voicedFrequency = (hz) => {
   hz = Math.max(45, Number.isFinite(hz) ? hz : 220);
@@ -18,14 +29,14 @@ export class Sfx {
   constructor() {
     this.ctx = null; this._enabled = true; this.paused = false;
     this.gestureAt = 0; this.stuckSince = 0; this.stale = false;
-    this.voices = new Set(); this.last = new Map(); this.placement = 0;
+    this.voices = new Set(); this.last = new Map(); this.placement = 0; this.waves = new Map();
     try { this._enabled = localStorage.getItem('blockmancala-sound') !== 'off'; } catch {}
   }
   get enabled() { return this._enabled; }
   set enabled(on) {
     this._enabled = !!on;
     if (!on) this.stop();
-    if (this.master && this.ctx) this.master.gain.setTargetAtTime(on ? 0.32 : 0, this.ctx.currentTime, 0.008);
+    if (this.ctx) for (const out of [this.master, this.bright]) out?.gain.setTargetAtTime(on ? LEVEL : 0, this.ctx.currentTime, 0.008);
     try { localStorage.setItem('blockmancala-sound', on ? 'on' : 'off'); } catch {}
   }
   /** 音を止めると、予約済みのアルペジオ・余韻も残さない。 */
@@ -102,19 +113,27 @@ export class Sfx {
       else this.resumeUntilRunning();
     };
     this.resumeUntilRunning();
+    this.warmSoon();
   }
   /** 音の出口。OfflineAudioContext でも同じ回路を検証できる。 */
   connect() {
     this.noiseBuf = null; this._tickAt = 0;                  // 前の AudioContext のバッファ・時刻は使えない
+    this.waves.clear();
     this.last.clear();
     this.master = this.ctx.createGain();
-    this.master.gain.value = this.enabled ? 0.32 : 0;
+    this.master.gain.value = this.enabled ? LEVEL : 0;
     // 耳心地のため、高い倍音を少し丸め、音が重なって大きくなったときも割れないよう軽く抑える
     this.soft = this.ctx.createBiquadFilter();
     this.soft.type = 'lowpass'; this.soft.frequency.value = 3800; this.soft.Q.value = 0.5;
     const comp = this.ctx.createDynamicsCompressor();
     comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
     this.master.connect(this.soft); this.soft.connect(comp); comp.connect(this.ctx.destination);
+    // 明るい出口: ガラスやベルの高い響き（〜9kHz）は、上の 3.8kHz のローパスで丸めずに通す。音量・ミュートは master と同じ
+    this.bright = this.ctx.createGain();
+    this.bright.gain.value = this.enabled ? LEVEL : 0;
+    this.air = this.ctx.createBiquadFilter();
+    this.air.type = 'lowpass'; this.air.frequency.value = 9500; this.air.Q.value = 0.5;
+    this.bright.connect(this.air); this.air.connect(comp);
     this.output = comp;
   }
   /** 無音を一瞬だけ鳴らす（iOS の音の許可を確実にするため。操作の中で呼ぶ） */
@@ -164,18 +183,72 @@ export class Sfx {
     if (!this.track(o, [g], priority)) return;
     o.start(t); o.stop(t + dur + 0.03);
   }
+  /**
+   * 作っておいた波形（synth.js の WAVES）を明るい出口から鳴らす。rate = 再生の速さ（1 = そのまま。高さと長さが変わる）。
+   * 1 回の発音で 1 ボイス（たくさんの共鳴を足し合わせた音でも、同時発音の枠を使い切らない）
+   */
+  playBuffer(key, { gain = 1, rate = 1, at = 0, priority = 1 } = {}) {
+    if (!this.ready()) return;
+    const wave = this.waveOf(key);
+    if (!wave) return;
+    const t = this.ctx.currentTime + at, dur = wave.dur / rate;
+    const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
+    src.buffer = wave.buf;
+    src.playbackRate.value = rate;
+    g.gain.value = gain;
+    src.connect(g); g.connect(this.bright);
+    if (!this.track(src, [g], priority)) return;
+    src.start(t); src.stop(t + dur + 0.02);
+  }
+  /** 波形 key の AudioBuffer（無ければ作る。この AudioContext の sampleRate で）。作れなければ null */
+  waveOf(key) {
+    let w = this.waves.get(key);
+    if (w || !WAVES[key]) return w ?? null;
+    try {
+      const sr = this.ctx.sampleRate, data = WAVES[key](sr), buf = this.ctx.createBuffer(1, data.length, sr);
+      buf.getChannelData(0).set(data);
+      w = { buf, dur: data.length / sr };
+    } catch { return null; }
+    this.waves.set(key, w);
+    return w;
+  }
+  /** 波形を 1 つ作っておく（まだ作っていないものがあれば true）。最初に鳴らす瞬間に、作る計算で引っかからないように */
+  warm() {
+    if (!this.ctx || this.ctx.state === 'closed') return false;
+    const next = Object.keys(WAVES).find((k) => !this.waves.has(k));
+    if (next && !this.waveOf(next)) return false;
+    return Object.keys(WAVES).some((k) => !this.waves.has(k));
+  }
+  /** 起動後の空き時間に、波形を 1 つずつ作っておく（まとめて作ると、それはそれで一瞬止まるので） */
+  warmSoon() {
+    const ctx = this.ctx;
+    const idle = (f) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout: 1500 }) : setTimeout(f, 150));
+    const next = () => { if (this.ctx === ctx && this.warm()) idle(next); };
+    idle(next);
+  }
   vibe(p) { if (this.enabled && !this.paused && !this.stale) try { navigator.vibrate?.(p); } catch {} }
 
   pick()        { this.tone(530, { dur: 0.045, gain: 0.19, slide: 1.12, priority: 2 }); this.vibe(5); }
-  // 4つの控えめな音色差。マス数で重さが変わり、置いた瞬間に乾いた接触音が鳴る。
+  // ガラスのコップをテーブルに置く音。コップの高さを順に変え（4 種）、マス数が多いほど低く重く
   place(cells = 1) {
-    const variant = [1, 1.035, 0.975, 1.018][this.placement++ % 4];
     const weight = Math.min(1, Math.max(0, (cells - 1) / 8));
-    this.noise({ dur: 0.036, gain: 0.28, from: 2300, to: 820, attack: 0.001, priority: 3 });
-    this.tone((290 - weight * 65) * variant, { dur: 0.095, type: 'triangle', gain: 0.7, slide: 0.52, attack: 0.002, priority: 3 });
-    this.tone(740 * variant, { dur: 0.13, gain: 0.19, at: 0.012, priority: 2 });
-    this.tone(1110 * variant, { dur: 0.1, gain: 0.065, at: 0.022 });
+    this.glass(this.placement++ % GLASS_VARIANTS, weight);
+    this.tone(250 - weight * 55, { dur: 0.08, gain: 0.22, slide: 0.55, attack: 0.002, priority: 3 });   // 盤面が受け止める低い胴鳴り
     this.vibe(10 + Math.round(weight * 5));
+  }
+  /** ガラスを置く音だけ。variant = コップの高さ（0〜3）、weight = 重さ（0〜1。重いほど低い） */
+  glass(variant = 0, weight = 0.3) {
+    this.playBuffer(`glass${variant % GLASS_VARIANTS}`, { gain: 0.5, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
+  }
+  /**
+   * シャラン: クリスマスのベルのように、鈴のきらめきから音階が駆け上がり、最後の音が長く響く。
+   * ゴールの音（note(chain - 1, 330)）と同じ音階の、2 オクターブ上。連鎖が進むほど高くなる（8 連鎖までは、1 連鎖ごとに別の高さ）。size = 大きさ（1 = 全消し・新記録の見せ場、ふだんのラインは 0.65 ほど）、at = 何秒後か
+   */
+  shalan(chain = 1, { size = 1, at = 0 } = {}) {
+    if (!at && !this.allow('shalan', 0.1)) return;
+    let top = note(chain - 1, 330) * LOWER * 4;
+    while (top >= 2800) top /= 2;
+    this.playBuffer('shalan', { gain: 0.2 * size, rate: top / SHALAN_TOP, at, priority: 1 });
   }
   /** 穴にぴったりはまる場所に入った（カチッ）・ぴったり置いた（カチッ + 上がる2音） */
   fitHover()    { if (!this.allow('fitHover', 0.08)) return;
@@ -227,13 +300,14 @@ export class Sfx {
                   this.vibe(tier >= 4 ? [0, 30, 40, 50] : 16); }
   // 新記録: ファンファーレ
   fanfare()     { [0, 2, 4, 5].forEach((k, i) => this.tone(note(k + 2, 523.25), { dur: i === 3 ? 0.5 : 0.12, gain: 0.3, type: 'triangle', at: i * 0.1 }));
-                  this.tone(note(7, 523.25), { dur: 0.6, gain: 0.12, at: 0.3 }); this.vibe([0, 30, 40, 30, 40, 80]); }
+                  this.tone(note(7, 523.25), { dur: 0.6, gain: 0.12, at: 0.3 }); this.shalan(5, { at: 0.08 }); this.vibe([0, 30, 40, 30, 40, 80]); }
   // 全消し専用: 短い立ち上がりと、盤面へ色が広がる間の上昇フレーズ。
   allClear() {
     this.noise({ dur: 0.32, gain: 0.23, from: 600, to: 2400, attack: 0.025, priority: 2 });
     this.tone(130.81, { dur: 0.3, gain: 0.45, slide: 0.6, priority: 2 });
     [0, 2, 4, 5, 7, 9].forEach((k, i) => this.tone(note(k, 262), { dur: i === 5 ? 0.52 : 0.2, gain: 0.23, type: 'triangle', at: 0.04 + i * 0.065, priority: 2 }));
     [262, 330, 392].forEach((f) => this.tone(f, { dur: 0.65, gain: 0.11, at: 0.4, priority: 2 }));
+    this.shalan(1, { at: 0.06 }); this.shalan(4, { size: 0.85, at: 0.5 });          // シャラン、シャラン
     this.vibe([22, 35, 35]);
   }
   shatter() { this.noise({ dur: 0.11, gain: 0.16, from: 2600, to: 1000, attack: 0.002 });

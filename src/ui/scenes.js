@@ -1,4 +1,4 @@
-import { gemSprite } from './shards.js?v=202610020848';
+import { gemSprite } from './shards.js?v=202610020948';
 
 /**
  * 画面全体の演出（シーン）。盤面の外側まで使う、大きな色の変化のための層。
@@ -9,8 +9,10 @@ import { gemSprite } from './shards.js?v=202610020848';
  *
  * 全消しは画面を覆う演出を使わない（盤面の中だけ。renderer.allClearBlast）。
  * 飛び散るものはブロックと同じ塗り・同じ光の向きの宝石のかけら（shards.js の gemSprite。回さない）。
- * 線・細長い光・光線は使わない。色はブロックの7色。薄くせず、消えるときは小さくなるだけ。
+ * この層では、線・細長い光・光線は使わない。色はブロックの7色。薄くせず、消えるときは小さくなるだけ。
  * ぼんやり光る丸（光の玉・ぼかしの丸・フレア）は使わない（盤面の陰影と合わず浮いて見えるので）。
+ * （盤面の中のラインの光は renderer.lineGlow / trail と sparkles.js。背景の色の変化は ambient.js。ここの色の変化は、
+ *  背景の色相に合わせた同系色 --amb-glow を薄く重ねるだけ）
  * 何も動いていない間は requestAnimationFrame を止め、手前の canvas も描き直さない。
  */
 const TAU = Math.PI * 2;
@@ -131,7 +133,7 @@ export class Scenes {
    * 部品（奥の層）
    * ===================================================================== */
 
-  /** 薄い青のグラデーションを opacity だけで出して消す（文字やボタンの色は変えない） */
+  /** 背景と同系色（--amb-glow。最初は青）の薄いグラデーションを opacity だけで出して消す（文字やボタンの色は変えない） */
   wash(dur, alpha) {
     const el = this.tint;
     el.className = 't-blue';

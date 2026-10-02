@@ -15,6 +15,7 @@
   --plate:#1a3eae; --well:#0b163f; --well-rim:#4b71cf;
   --text:#fff; --dim:rgba(255,255,255,.62);
   --gold:#ffd54a; --goal:#3fd6e0; --goal-text:#8ef1f8;
+  --amb-glow:95,155,255;                  /* 背景の色相に合わせた明るい同系色（r,g,b）。ambient.js が背景を変えるたびに書き換える */
   /* 文字の影はすべてこれ（光源は宝石と同じ上から。ふち取りや光のにじみは付けない） */
   --ts:0 3px 3px rgba(0,0,0,.18); --ts-s:0 2px 2px rgba(0,0,0,.18);
   /* 宝石の色: --col 本体 / --hi 上面の明るい面 / --lo 下側の濃い色 / --rim 上側のふち */
@@ -184,6 +185,18 @@ button{font-family:inherit;cursor:pointer;}
 .well-tint::after{content:'';position:absolute;inset:14%;border-radius:18%;
   background:var(--col);
   box-shadow:inset -2.5px -2.5px 5px rgba(4,12,60,.4),inset .8px .8px 0 rgba(255,255,255,.35);}
+/* ラインの光（renderer.lineGlow / trail）: ラインが満杯になったときの枠の光と、ブロックが通り過ぎた跡の光。
+   光は白（ふち）+ ブロックの明るい色のにじみ（--g）。光の帯と星（sparkles.js）が加わる。動かすのは opacity・scale・translate だけ。
+   ブロックの陰影と合わないぼんやりした丸い光や、画面全体のフラッシュは使わない */
+.line-glow{position:absolute;left:0;top:0;pointer-events:none;overflow:hidden;opacity:0;border-radius:calc(var(--cell) * .3);
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.96),inset 0 0 12px 1px var(--g),0 0 0 1px rgba(255,255,255,.65),0 0 11px 2px var(--g);}
+.lg-shine{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 28%,rgba(255,255,255,.88) 50%,transparent 72%);}
+.line-glow.row .lg-shine{background:linear-gradient(to right,transparent 28%,rgba(255,255,255,.88) 50%,transparent 72%);}
+.rim-flash{position:absolute;left:0;top:0;width:var(--cell);height:var(--cell);pointer-events:none;opacity:0;}
+.rim-flash::after{content:'';position:absolute;inset:5%;border-radius:20%;
+  box-shadow:inset 0 0 0 2.5px #fff,inset 0 0 9px 1px var(--g),0 0 0 1px rgba(255,255,255,.55),0 0 11px 3px var(--g);}
+/* キラキラの星（sparkles.js。星の絵は色ごとに 1 回だけ読み込む。大きさ 0 から開いて、小さくなって消える） */
+.spark{position:absolute;left:0;top:0;pointer-events:none;background:center/100% 100% no-repeat;scale:0;}
 /* ゴールから飛び散る宝石のかけら（shards.js。色ごとに1回だけ描いた絵を貼り、transform だけで動かす） */
 .shard{position:absolute;left:0;top:0;pointer-events:none;background:center/100% 100% no-repeat;}
 .block.fly::before,.block.fly::after{opacity:1;scale:0;}
@@ -259,7 +272,8 @@ button{font-family:inherit;cursor:pointer;}
 @keyframes comboIn{0%{opacity:0;scale:2.2}14%{opacity:1;scale:.9}24%{scale:1.08}34%{scale:1}80%{opacity:1}100%{opacity:0;translate:-50% -14px}}
 
 /* ---- 発動・ゴールの演出 ----
-   盤面の中の演出は動き（弾む・揺れる・寄る）だけにし、光の粒・輪・フレアは出さない */
+   盤面の中の演出は、動き（弾む・揺れる・寄る）と宝石のかけら、ラインの光（.line-glow の枠・.rim-flash の跡・星 .spark。
+   くっきりした形で、ほんの短い間だけ）。ぼんやり丸い光の粒・輪・フレアや、画面全体のフラッシュは出さない */
 .fx2{z-index:7;overflow:visible;}
 /* 得点: 白（3連鎖〜 金 / 5連鎖〜 桃）のベタ塗り + 薄い影 */
 .float-score{position:absolute;translate:-50% -50%;font-weight:900;font-size:calc(var(--cell) * .62);color:#fff;white-space:nowrap;
@@ -267,12 +281,16 @@ button{font-family:inherit;cursor:pointer;}
 .float-score.warm{color:var(--gold);font-size:calc(var(--cell) * .75);}
 .float-score.hot{color:#ff9ad6;font-size:calc(var(--cell) * .9);}
 @keyframes floatUp{0%{opacity:0;scale:.5}15%{opacity:1;scale:1.25}30%{scale:1}75%{opacity:1}100%{opacity:0;translate:-50% calc(-50% - var(--cell) * 1.2)}}
-/* コンボでも青のまま、控えめな同系色のグラデーションを重ねる。 */
+/* 背景の色（ambient.js）: 色ごとの全面グラデーションの層を重ね、opacity だけで入れ替える。
+   縁の色 --lo と中央の明るい色 --hi は、同じ明るさで色相だけを回したもの（白い文字・ボタンはそのまま読める） */
+#ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
+.amb{position:absolute;inset:0;display:none;opacity:0;background:var(--lo) radial-gradient(90% 55% at 50% 30%,var(--hi),var(--lo) 75%);}
+/* コンボでは背景の色相に合わせた、控えめな同系色のグラデーションを重ねる。 */
 #fever{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 600ms;}
-#fever .fv{position:absolute;inset:0;background:radial-gradient(80% 55% at 50% 42%,rgba(75,145,255,.14),rgba(55,110,245,.06) 58%,transparent 82%);}
-/* ピンチ: 画面の縁が同系色の青でゆっくり脈打つ（発動で空くと消える）。影は固定で、濃さ(opacity)だけを動かす */
+#fever .fv{position:absolute;inset:0;background:radial-gradient(80% 55% at 50% 42%,rgba(var(--amb-glow),.14),rgba(var(--amb-glow),.06) 58%,transparent 82%);}
+/* ピンチ: 画面の縁が背景と同系色でゆっくり脈打つ（発動で空くと消える）。影は固定で、濃さ(opacity)だけを動かす */
 #danger{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 600ms;}
-#danger::before{content:"";position:absolute;inset:0;box-shadow:inset 0 0 90px 16px rgba(75,140,255,.22);
+#danger::before{content:"";position:absolute;inset:0;box-shadow:inset 0 0 90px 16px rgba(var(--amb-glow),.22);
   animation:danger 1.4s ease-in-out infinite alternate;}
 @keyframes danger{from{opacity:.65}to{opacity:1}}
 /* 見えていない間は動かさない */
@@ -284,8 +302,8 @@ button{font-family:inherit;cursor:pointer;}
 #sceneFront{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:24;}
 /* 色の変化は 400px の絵を拡大して使う（画面より大きい絵をそのまま作ると、高解像度の画面で描く量が桁違いに増える） */
 #sceneTint{position:fixed;left:50%;top:50%;width:400px;height:400px;margin:-200px 0 0 -200px;z-index:0;pointer-events:none;opacity:0;}
-/* 新記録・連鎖の背景も色相を変えず、ごく薄い青のグラデーションだけ。 */
-#sceneTint.t-blue{background:radial-gradient(closest-side,rgba(95,155,255,.16),rgba(65,125,245,.08) 42%,transparent 72%);}
+/* 新記録・連鎖の色の変化は、背景の色相に合わせたごく薄いグラデーションだけ。 */
+#sceneTint.t-blue{background:radial-gradient(closest-side,rgba(var(--amb-glow),.16),rgba(var(--amb-glow),.08) 42%,transparent 72%);}
 .best-pill.beat{border-color:var(--gold);background:rgba(255,213,74,.14);animation:beat 1.2s ease-in-out infinite;}
 @keyframes beat{50%{scale:1.04}}
 @media (prefers-reduced-motion: reduce){#fever,#fever .fv,#danger::before,.hi,.goal.ready,.hint,.pop .ch,.pop small,.slot.hinted .piece,.tut-next{animation:none}}

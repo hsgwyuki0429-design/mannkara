@@ -1,18 +1,19 @@
-import { Game } from '../core/game.js?v=202610020848';
-import { Board, createBlock } from '../core/board.js?v=202610020848';
-import { Piece } from '../core/pieces.js?v=202610020848';
-import * as Sim from '../core/sim.js?v=202610020848';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610020848';
-import { Renderer, delay } from './renderer.js?v=202610020848';
-import { Sfx } from './sfx.js?v=202610020848';
-import { Scenes } from './scenes.js?v=202610020848';
-import { colorOf } from './palette.js?v=202610020848';
-import { TrayDealer } from './tray-dealer.js?v=202610020848';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610020848';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610020848';
-import { drawResultCard, cardBlob } from './share-card.js?v=202610020848';
-import { World } from './world.js?v=202610020848';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610020848';
+import { Game } from '../core/game.js?v=202610020948';
+import { Board, createBlock } from '../core/board.js?v=202610020948';
+import { Piece } from '../core/pieces.js?v=202610020948';
+import * as Sim from '../core/sim.js?v=202610020948';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610020948';
+import { Renderer, delay } from './renderer.js?v=202610020948';
+import { Sfx } from './sfx.js?v=202610020948';
+import { Scenes } from './scenes.js?v=202610020948';
+import { Ambient } from './ambient.js?v=202610020948';
+import { colorOf } from './palette.js?v=202610020948';
+import { TrayDealer } from './tray-dealer.js?v=202610020948';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610020948';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610020948';
+import { drawResultCard, cardBlob } from './share-card.js?v=202610020948';
+import { World } from './world.js?v=202610020948';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610020948';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -20,6 +21,8 @@ sfx.bindGestures();
 const renderer = new Renderer(sfx);
 /** 画面全体の演出（新記録の風船・大連鎖やコンボの色の変化など。画面を覆う演出は使わない） */
 const scenes = new Scenes({ sfx, colorOf });
+/** 背景の色（今の青と同じ明るさのまま色相を回す。コンボ・連鎖・全消し・新記録で変わる。チュートリアル中は変えない） */
+const ambient = new Ambient();
 
 /* ---------- モード（通常 / 学習）とベストスコア（端末ごと・モードごとに別） ---------- */
 // 端末に残す記録の名前はゲーム名（blockmancala-）で始める。前の名前で残っている記録は、読む前にここで移す
@@ -179,7 +182,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610020848', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610020948', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -231,9 +234,10 @@ async function playTurn(turn) {
   const rush = turn.seq < rushBefore;
   renderer.setRush(rush);
   showScore(turn.scoreAfterPlace);
+  if (!tutorial) ambient.turn(turn);                     // 背景の色（コンボが続くと色相が進む。早送りでも色は合わせる）
   if (rush) {                                            // 早送り: 演出なしで盤面と点数だけ最後まで進める
     for (const step of turn.steps) { await renderer.playStep(step, 1); if (stale()) return; }
-    if (turn.allClear) { renderer.showText(allClearText(turn), 't5'); sfx.allClear(); }   // 全消しは見せ場なので早送りでも出す
+    if (turn.allClear) { renderer.showText(allClearText(turn), 't5'); sfx.allClear(); if (!tutorial) ambient.celebrate('clear'); }   // 全消しは見せ場なので早送りでも出す
     showScore(turn.score);
     return;
   }
@@ -263,8 +267,8 @@ async function playTurn(turn) {
       if (tier > shownTier) {                                  // 段階が上がった時だけ（毎回だと染まりっぱなしになる）
         shownTier = tier;
         sfx.praise(tier);                                      // 毎連鎖に和音を重ねず、段階の変化を聴かせる
-        if (tier >= 4) scenes.bigChain(tier);    // Amazing 以上で画面全体の色が変わる
-      } else if (step.chain >= 12 && step.chain % 4 === 0) scenes.bigChain(5);   // 12・16・20…連鎖でもう一度
+        if (tier >= 4) { scenes.bigChain(tier); if (!tutorial) ambient.chain(tier); }    // Amazing 以上で画面全体の色が変わる
+      } else if (step.chain >= 12 && step.chain % 4 === 0) { scenes.bigChain(5); if (!tutorial) ambient.chain(5); }   // 12・16・20…連鎖でもう一度
     }
     if (step.gained) renderer.floatScore(step.gained, step.chain);
     showScore(step.score, true);
@@ -274,6 +278,7 @@ async function playTurn(turn) {
   if (turn.allClear) {
     renderer.showText(allClearText(turn), 't5');
     renderer.allClearBlast();
+    if (!tutorial) ambient.celebrate('clear');
   }
   showScore(turn.score);
   // 補充の手駒を別スレッドで決めているときは、届いてから（詰みの判定・ピンチ・おすすめは手駒で決まる）
@@ -284,6 +289,7 @@ async function playTurn(turn) {
     await renderer.wait(350);
     if (stale()) return;
     renderer.setFever(0);
+    ambient.settle();
     sfx.over();
     gameOverShown = true;
     const prev = { ...records };
@@ -358,6 +364,7 @@ function showScore(v, bump = false) {
     bestCelebrated = true;
     const pill = document.querySelector('.best-pill');
     scenes.newBest(pill?.getBoundingClientRect());
+    ambient.celebrate('best');
     renderer.showText('NEW BEST!', 't5');
     sfx.fanfare();
     pill?.classList.add('beat');
@@ -885,6 +892,7 @@ function showState(st) {
   game.importState(st);
   renderer.reset();
   scenes.clear();
+  ambient.reset();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
   dropShare();
@@ -910,6 +918,7 @@ function restart() {
   endDrag();
   renderer.reset();
   scenes.clear();
+  ambient.reset();
   renderer.bindBoard(game.board);
   $('gameOver').classList.add('hidden');
   dropShare();
@@ -1224,7 +1233,7 @@ if (!world.named) nameGate(() => {});              // 途中の保存があっ�
 // 宝石のかけらの絵（7色）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
 // まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
 {
-  const jobs = [...renderer.shardLayer.warmJobs(), ...scenes.warmJobs()];
+  const jobs = [...renderer.shardLayer.warmJobs(), ...renderer.sparkLayer.warmJobs(), ...scenes.warmJobs()];
   const idle = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 2000 }) : (f) => setTimeout(f, 120);
   const next = () => { const job = jobs.shift(); if (!job) return; job(); idle(next); };
   setTimeout(() => idle(next), 300);
@@ -1233,4 +1242,5 @@ window.__booted = true;
 window.__game = game;
 window.__renderer = renderer;
 window.__scenes = scenes;
+window.__ambient = ambient;
 window.__ui = { showScore, renderTray, setBest(v) { best = v; }, pending: () => pending };

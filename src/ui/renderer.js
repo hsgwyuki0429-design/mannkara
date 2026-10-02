@@ -1,6 +1,8 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610020848';
-import { Shards } from './shards.js?v=202610020848';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610020948';
+import { Shards } from './shards.js?v=202610020948';
+import { Sparkles } from './sparkles.js?v=202610020948';
+import { colorOf } from './palette.js?v=202610020948';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -21,9 +23,14 @@ const easeOut = (p) => 1 - Math.pow(1 - p, 2.2);
 const easeInOutInv = (y) => (y < 0.5 ? Math.sqrt(y / 2) : 1 - Math.sqrt((1 - y) * 2) / 2);
 /** ブロックと同じ7色 */
 const COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
-/** コンボ中も同じ青の控えめなグラデーションだけを重ねる。 */
+/** コンボ中は背景の色相に合わせた控えめなグラデーションだけを重ねる（色は ambient.js が --amb-glow で渡す）。 */
 const FEVER_HUES = 1;
 const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+/** 色名 → 光のにじみの色（ブロックの明るい面の色。ラインの枠・通り過ぎた跡の光に使う。--g に渡す） */
+const glowOf = (name, a = 0.85) => {
+  const h = colorOf(name).hi, v = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) || 255);
+  return `rgba(${v.join(',')},${a})`;
+};
 
 /**
  * 描画とアニメーションだけを担当（ルールは持たない）。
@@ -81,6 +88,8 @@ export class Renderer {
     this.wrap.appendChild(this.fx2);
     // ゴールから飛び散る宝石のかけら（色ごとに1回だけ描いた小さな絵を貼って動かす）
     this.shardLayer = new Shards(this.fx2);
+    // ラインの枠・通り過ぎた跡・ゴールで、またたく星（同じく色ごとに 1 回だけ描いた絵を貼って動かす）
+    this.sparkLayer = new Sparkles(this.fx2);
     this.comboPop = document.createElement('div');
     this.comboPop.className = 'combo-pop';
     this.wrap.appendChild(this.comboPop);
@@ -392,6 +401,7 @@ export class Renderer {
    */
   async charge(kind, n, stack, ms = 150) {
     if (this.rush) return;
+    this.lineGlow(kind, n, stack[0]?.color, 1, Math.max(320, 700 / Math.max(1, this.timeScale)));   // 満杯になったラインの枠が光る（このあとの発動の始まりでは二重に出さない）
     this.sfx?.charge(1, Math.max(0.035, ms / (1000 * Math.max(1, this.timeScale))));
     if (reducedMotion()) { await this.wait(ms); return; }
     // 位置を持つ親要素を scale すると translate まで拡縮されて列からずれる。
@@ -568,8 +578,10 @@ export class Renderer {
     const trainT = 9 * cellT;
     if (!this.rush) {
       this.sfx?.sink(chain, N);
+      this.lineGlow(kind, N, stack[0]?.color, chain, Math.max(320, Math.min(800, trainT + 160)));   // 連鎖の 2 番目以降は、ここで枠が光る（1 番目は溜めの始まりで出している。速い再生では短く）
       this.lineBlast(kind, N, stack[0]?.color, chain, stack, before);
       this.wake(kind, N, stack[0]?.color, trainT);
+      this.trail(kind, N, stack[0]?.color, trainT);
     }
     let lastCell = -1;
     await this.tween(trainT, (t) => {
@@ -674,6 +686,7 @@ export class Renderer {
     const color = list[0].color;
     this.hitGoal(chain, color, list.length);
     this.shatter(list.map((b) => b.color), 3 + Math.min(chain, 4) + Math.min(list.length - 1, 3));
+    this.goalSparkle(list.map((b) => b.color), Math.min(chain, 4));
   }
 
   /** ゴールがぽんと弾み、中の面が入ったブロックの色で満ちて引いていく（光らせない） */
@@ -704,6 +717,91 @@ export class Renderer {
     n = Math.max(2, Math.round(n * this.q));
     const q = this.cellCenter(this.goalPos()), c = this.cell;
     this.shardLayer.burst(q.x, q.y, colors, n, c * 0.33, c * 4.1, { life: 0.6 });
+  }
+
+  /**
+   * ラインが満杯になった（溜めの始まり・連鎖の 2 番目以降の発動の始まり）: そのラインの枠が白く光って
+   * （ふちは白、外側と内側にブロックの明るい色のにじみ）、光の帯がブロックの流れる向きに走り、星がきらきらとまたたく。
+   * シャランの音もここで鳴らす。同じラインに溜めと発動で二重に出さない。動きを減らす設定では、枠がふわっと光って消えるだけ
+   */
+  lineGlow(kind, n, color = 'yellow', chain = 1, ms = 700) {
+    if (this.rush || !this.fxLayer) return;
+    const now = performance.now(), key = kind + n;
+    if (this._glowKey === key && now - this._glowAt < 320) return;
+    this._glowKey = key; this._glowAt = now;
+    this.sfx?.shalan(chain, { size: chain > 1 ? 0.8 : 0.65 });
+    const c = this.cell, fixed = SIZE - n, quiet = reducedMotion();
+    const vertical = kind === 'col';
+    const box = vertical ? { x: fixed * c, y: 0, w: c, h: n * c } : { x: 0, y: fixed * c, w: n * c, h: c };
+    const el = document.createElement('div');
+    el.className = `line-glow ${kind}`;
+    el.style.cssText = `transform:translate(${box.x}px,${box.y}px);width:${box.w}px;height:${box.h}px;--g:${glowOf(color)}`;
+    const shine = document.createElement('i');
+    shine.className = 'lg-shine';
+    el.appendChild(shine);
+    this.addFx(this.fxLayer, el, ms + 60);
+    if (quiet) {
+      el.animate([{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0 }], { duration: ms * 0.7, easing: 'ease-out' });
+      return;
+    }
+    el.animate(eased([
+      { opacity: 0, scale: '0.96' },
+      { opacity: 1, scale: '1.035', offset: 0.18 },
+      { opacity: 0.9, scale: '1', offset: 0.55 },
+      { opacity: 0, scale: '1' },
+    ], 'ease-out'), { duration: ms });
+    // 光の帯: ブロックが流れていく向き（斜辺側の端）へ、ラインの長さぶん走り抜ける
+    shine.animate([{ translate: vertical ? '0 -100%' : '-100% 0' }, { translate: vertical ? '0 100%' : '100% 0' }],
+      { duration: ms * 0.62, delay: ms * 0.05, easing: 'ease-in-out', fill: 'backwards' });
+    if (this.q < 0.6) return;
+    const m = Math.max(4, Math.min(12, Math.round(n * 1.6)));
+    for (let i = 0; i < m; i++) {
+      const along = ((i + 0.3 + Math.random() * 0.4) / m) * (vertical ? box.h : box.w);
+      const side = (i % 2 ? 0.1 : 0.9) + (Math.random() - 0.5) * 0.12;
+      const p = this.localToWrap(vertical ? box.x + side * box.w : box.x + along, vertical ? box.y + along : box.y + side * box.h);
+      this.sparkLayer.twinkle(p.x, p.y, { color: i % 3 === 0 ? color : 'white', size: c * (0.55 + Math.random() * 0.35), delay: i * 30 + Math.random() * 50, life: 440 + Math.random() * 180 });
+    }
+  }
+
+  /**
+   * ブロックが通り過ぎた跡が、ほんの少しのあいだ光る: 抜けたマスの縁が白く光って引き、星が 1 つまたたく。
+   * ラインの外（斜辺と通路の間・通路の入り口）も、ゴールの手前まで。wake（色が満ちる）と同じ時刻に始まる。
+   * 光る要素はブロックより下（動いているブロックの後ろ）に出る
+   */
+  trail(kind, n, color = 'yellow', trainT = 540) {
+    if (this.rush || !this.fxLayer || reducedMotion() || this.q < 0.5) return;
+    const src = SIZE - n, F = kind === 'col' ? (x, r) => ({ x, r }) : (x, r) => ({ x: r, r: x });
+    const glow = glowOf(color), stars = this.q >= 0.7, c = this.cell;
+    for (let p = 0; p <= 8; p++) {
+      const cell = F(src, p), pos = this.pos(cell.x, cell.r);
+      const at = trainT * easeInOutInv(Math.min(1, (p + 1) / 9));   // 列車の後ろが抜けた時刻（wake と同じ）
+      const el = document.createElement('div');
+      el.className = 'rim-flash';
+      el.style.cssText = `transform:translate(${pos.x}px,${pos.y}px);--g:${glow}`;
+      this.fxLayer.appendChild(el);
+      el.animate(eased([
+        { opacity: 0, scale: '0.8' },
+        { opacity: 1, scale: '1.06', offset: 0.14 },
+        { opacity: 0.55, scale: '1.02', offset: 0.45 },
+        { opacity: 0, scale: '1' },
+      ], 'ease-out'), { duration: 300, delay: at, fill: 'backwards' }).onfinish = () => el.remove();
+      if (stars) {
+        const mid = this.cellCenter(pos);
+        this.sparkLayer.twinkle(mid.x + (Math.random() - 0.5) * c * 0.5, mid.y + (Math.random() - 0.5) * c * 0.5,
+          { color: p % 2 ? color : 'white', size: c * (0.55 + Math.random() * 0.2), delay: at + 20, life: 460 });
+      }
+    }
+  }
+
+  /** ブロックがゴールに入った: ゴールの回りに星がはじけるようにまたたく（宝石のかけらと同時） */
+  goalSparkle(colors, n = 1) {
+    if (this.rush || reducedMotion() || this.q < 0.6) return;
+    const p = this.cellCenter(this.goalPos()), c = this.cell, m = Math.min(8, 4 + n);
+    for (let i = 0; i < m; i++) {
+      const a = (i / m) * Math.PI * 2 + Math.random() * 0.5, r = c * (0.55 + Math.random() * 0.5);
+      this.sparkLayer.twinkle(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r,
+        { color: i % 2 ? colors[i % colors.length] : 'white', size: c * (0.5 + Math.random() * 0.4), delay: i * 22, life: 460 + Math.random() * 140, rise: 10 });
+    }
   }
 
   /**
@@ -892,6 +990,7 @@ export class Renderer {
     this.blockLayer.innerHTML = '';
     this.fxLayer.innerHTML = '';
     this.shardLayer.clear();
+    this.sparkLayer.clear();
     this.fx2.innerHTML = '';
     for (const d of this.tints?.values() ?? []) { d.__anim?.cancel(); this.cancelFxTimer(d.__t); }
     this.hintLayer.innerHTML = '';
