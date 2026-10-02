@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   Ambient, ambientLook, comboLook, nextCalm, skipOlive, hexToOklch, oklchToHex, contrastWithWhite, wrapHue, hueDelta,
   ORIGIN, BASE_HUE, TONES, MIN_CONTRAST,
-} from '../src/ui/ambient.js?v=202610020948';
+} from '../src/ui/ambient.js?v=202610021033';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const hue = (hex) => hexToOklch(hex).h;

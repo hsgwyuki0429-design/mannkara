@@ -1,5 +1,5 @@
-import { Piece, SHAPES } from './pieces.js?v=202610020948';
-import * as Sim from './sim.js?v=202610020948';
+import { Piece, SHAPES } from './pieces.js?v=202610021033';
+import * as Sim from './sim.js?v=202610021033';
 
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 const CELLS = Object.fromEntries(SHAPES.map((s) => [s.name, new Piece(s.name).cells]));

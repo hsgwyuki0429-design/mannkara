@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop } from '../src/ui/sfx.js?v=202610020948';
-import { Renderer } from '../src/ui/renderer.js?v=202610020948';
+import { Sfx, note, voicedFrequency, shalanTop } from '../src/ui/sfx.js?v=202610021033';
+import { Renderer } from '../src/ui/renderer.js?v=202610021033';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };

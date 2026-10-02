@@ -1,11 +1,11 @@
-import { glassBuffer, shalanBuffer, GLASS_VARIANTS } from './synth.js?v=202610020948';
+import { glassBuffer, shalanBuffer, GLASS_VARIANTS } from './synth.js?v=202610021033';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
 const LOWER = Math.pow(2, -3 / 12), MAX_HZ = 1760;
 const VOICE_LIMIT = 40;
 const LEVEL = 0.32;                                    // 全体の音量（ミュートでは 0）
-const SHALAN_GAIN = 0.3;                               // シャランの音量（size 1 のとき）
+const SHALAN_GAIN = 0.48;                              // シャランの音量（size 1 のとき）。波形（synth.js）は尖った音のぶん山が高いので、波形の大きさを抑えて、ここで上げる
 // 上限で切りそろえると和音も大連鎖も同じ音になる。上限を超えた音はオクターブ下へ戻す。
 export const voicedFrequency = (hz) => {
   hz = Math.max(45, Number.isFinite(hz) ? hz : 220);
@@ -253,7 +253,8 @@ export class Sfx {
     this.playBuffer(`glass${variant % GLASS_VARIANTS}`, { gain: 0.58, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
   }
   /**
-   * シャラン: バーチャイム（マークツリー）をなでたような、高い金属の音が駆け上がって、最後のバーが長く響く音。
+   * シャラン: バーチャイム（マークツリー）を指で 2 回なでたような、尖った高い金属の「シャン、シャン」。
+   * 高い音が駆け上がるたびに「シャッ」とはじけ、最後のバーが長く響く。
    * 最後のバーの高さは shalanTop（ゴールの音と同じ音階。連鎖が進むほど高い）。size = 大きさ（1 = 全消し・新記録の見せ場、
    * ふだんのラインは 0.65 ほど）、at = 何秒後か
    */
