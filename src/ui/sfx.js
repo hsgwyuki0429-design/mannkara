@@ -1,4 +1,4 @@
-import { glassBuffer, shalanBuffer, bellBuffer, GLASS_VARIANTS } from './synth.js?v=202610021101';
+import { glassBuffer, shalanBuffer, bellBuffer, GLASS_VARIANTS } from './synth.js?v=202610021128';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];

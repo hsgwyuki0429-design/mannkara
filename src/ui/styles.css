@@ -94,6 +94,9 @@ button{font-family:inherit;cursor:pointer;}
 .playfield{position:absolute;transform:rotate(225deg);}   /* 実際の transform は renderer.layout が設定 */
 .upright{display:inline-block;rotate:-225deg;}
 .layer{position:absolute;inset:0;pointer-events:none;}
+/* 土台の層の z-index（ambient.js が付ける。色が変わるたびに増える）を、この中だけで効かせる（重ね合わせの文脈を閉じる）。
+   開いたままだと、増えた z-index が盤面の中（ブロック・プレビュー・ヒント・演出の層）より前へ出て、土台がそれらを隠してしまう */
+#wellLayer{isolation:isolate;}
 /* 盤面の土台（マスの下の土台 + くぼみ + まわりの光と影）。色は .well-set の変数で、ambient.js が背景の色相に合わせて書き換える
    （背景と同じ重ね方: 色の違う層を重ねて opacity だけで切り替える。0 番だけが最初から見えていて、今の青。動かすのは opacity だけ） */
 .well-set{position:absolute;inset:0;

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   Ambient, ambientLook, comboLook, nextCalm, skipOlive, hexToOklch, oklchToHex, contrastWithWhite, wrapHue, hueDelta,
   ORIGIN, BASE_HUE, TONES, MIN_CONTRAST, BOARD, BOARD_VARS, boardLook, PLATE_SETS,
-} from '../src/ui/ambient.js?v=202610021101';
+} from '../src/ui/ambient.js?v=202610021128';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const hue = (hex) => hexToOklch(hex).h;
@@ -203,7 +203,7 @@ test('層の入れ替え: 新しい色は一番上へ opacity だけで重ね、
 
 /* ---------------- 盤面の土台（プレート）も背景と一緒に変わる ---------------- */
 
-const css = readFileSync(new URL('../src/ui/styles.css?v=202610021101', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../src/ui/styles.css?v=202610021128', import.meta.url), 'utf8');
 /** 'rgba(4, 12, 60, .7)' や '#1A3EAE' を比べられる形（数値の配列・小文字）にそろえる */
 const norm = (c) => (c.startsWith('#') ? c.toLowerCase() : c.match(/[\d.]+/g).map(Number));
 
@@ -287,4 +287,19 @@ test('土台の層をつなげていなくても（チュートリアル・テ�
   assert.equal(q.a.plates.filter((p) => p.on).length, 2, '最初の青 + 新しい色の 1 枚');
   assert.ok(q.a.layers.find((l) => l.on).plate.anim.opts.duration >= 700);
   stop(q.a);
+});
+
+test('土台の層の z-index（色が変わるたびに増える）は #wellLayer の中だけで効く。外へ漏れると、土台がブロック・プレビュー・ヒントより前に出て隠してしまう', () => {
+  const rule = css.match(/#wellLayer\{([^}]*)\}/);
+  assert.ok(rule, '#wellLayer の規則が要る');
+  assert.match(rule[1], /isolation:\s*isolate/, '重ね合わせの文脈を閉じる（以前は filter が閉じていた）');
+  const renderer = readFileSync(new URL('../src/ui/renderer.js?v=202610021128', import.meta.url), 'utf8');
+  assert.match(renderer, /className = 'well-set';[^}]*this\.wellLayer\.appendChild\(d\)/s, '土台の層は #wellLayer の中に作る');
+  const ambient = readFileSync(new URL('../src/ui/ambient.js?v=202610021128', import.meta.url), 'utf8');
+  assert.match(ambient, /el\.style\.zIndex = String\(p\.z = z\)/, '層の前後は z-index で決める（だから外へ漏らさない）');
+  // 土台の層に z-index を付けても、盤面の中の他の層（ブロック・プレビュー・ヒント）には付かない
+  const { a, sets } = makeBoard();
+  a.go(BASE_HUE + 30, 'base', 500); a.go(BASE_HUE + 60, 'base', 800);
+  assert.ok(sets.some((e) => Number(e.style.zIndex) > 0), '土台の層には z-index が付く');
+  stop(a);
 });

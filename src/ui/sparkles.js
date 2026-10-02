@@ -1,4 +1,4 @@
-import { colorOf } from './palette.js?v=202610021101';
+import { colorOf } from './palette.js?v=202610021128';
 
 /**
  * キラキラ（四方にとがった星）。ラインが満杯になったときの枠のまたたきと、ブロックが通り過ぎた跡に残る光で使う。
