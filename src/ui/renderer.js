@@ -1,6 +1,6 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=2026100104';
-import { Shards } from './shards.js?v=2026100104';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610020836';
+import { Shards } from './shards.js?v=202610020836';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -104,6 +104,10 @@ export class Renderer {
     this.waiters = new Set();  // wait() の途中のもの（早送り・リスタートしたらすぐ終わらせる）
     this.timeScale = 1;        // 再生の速さ（一時停止中は 0、再生中にピースを持ち上げたら追いつくよう速く）
     this.gen = 0;              // リスタートするたびに増やす（古いゲームの再生を新しい盤面に残さない）
+    this.fxTimers = new Set();
+    this.fxPaused = false;
+    this.pausedAnimations = new Set();
+    this.celebration = 0;
     this.els = new Map();     // blockId -> element
     this.manual = new Set();  // 手動制御中
     this.cell = 40;
@@ -286,19 +290,21 @@ export class Renderer {
   }
 
   /** 置いた直後の着地演出: ブロックがぽよんと弾み、盤面が小さく沈む（光や粒は出さない） */
-  popIn(placed) {
+  popIn(placed, fit = false) {
+    this.clearCelebration();
     placed.forEach(({ block, x, r }, i) => {
       const el = this.ensureEl(block);
       this.setPos(el, this.pos(x, r), 0);
       // 弾みのアニメを最初からやり直すのは、前の弾みが残っているときだけ（置いたブロックは新しい要素なので普通は無い。
       // offsetWidth を読むと、そのたびにページ全体のスタイルとレイアウトを計算し直すことになる）
       if (el.classList.contains('pop-in')) { el.classList.remove('pop-in'); void el.offsetWidth; }
-      el.style.setProperty('--d', i * 18 + 'ms');
+      el.style.setProperty('--d', Math.min(i * 9, 36) + 'ms');
+      el.classList.toggle('fit-in', fit);
       el.classList.add('pop-in');
-      clearTimeout(el.__landT);
-      el.__landT = setTimeout(() => el.classList.remove('pop-in'), 420 + i * 18);
+      this.cancelFxTimer(el.__landT);
+      el.__landT = this.later(() => el.classList.remove('pop-in', 'fit-in'), 340);
     });
-    this.bounce([[0, 1], [0.35, 1.008], [0.7, 0.998], [1, 1]], 240);
+    this.bounce([[0, 1], [0.22, 0.996], [0.52, fit ? 1.014 : 1.007], [1, 1]], 220);
   }
 
   /* ---------- ドラッグ中のプレビュー ---------- */
@@ -386,6 +392,8 @@ export class Renderer {
    */
   async charge(kind, n, stack, ms = 150) {
     if (this.rush) return;
+    this.sfx?.charge(1, Math.max(0.035, ms / (1000 * Math.max(1, this.timeScale))));
+    if (reducedMotion()) { await this.wait(ms); return; }
     for (const b of stack) {
       const a = this.els.get(b.id)?.animate([{ scale: '1' }, { scale: '.9' }], { duration: ms, easing: 'ease-in', fill: 'forwards' });
       if (a) a.onfinish = () => a.cancel();
@@ -428,7 +436,47 @@ export class Renderer {
   /** 演出用の要素を layer に足し、ms 後に消す */
   addFx(layer, el, ms) {
     layer.appendChild(el);
-    setTimeout(() => el.remove(), ms);
+    this.later(() => el.remove(), ms);
+  }
+
+  /** 装飾用の遅延も停止・リセットに追従させる（古い全消しの破裂を次のゲームへ持ち越さない）。 */
+  later(fn, ms) {
+    const timer = { fn, left: Math.max(0, ms), started: 0, id: null, gen: this.gen };
+    this.fxTimers.add(timer);
+    if (!this.fxPaused) this.armFxTimer(timer);
+    return timer;
+  }
+  armFxTimer(timer) {
+    timer.started = performance.now();
+    timer.id = setTimeout(() => {
+      this.fxTimers.delete(timer);
+      if (timer.gen === this.gen) timer.fn();
+    }, timer.left);
+  }
+  cancelFxTimer(timer) {
+    if (!timer) return;
+    clearTimeout(timer.id);
+    this.fxTimers.delete(timer);
+  }
+  setPaused(on) {
+    if (this.fxPaused === on) return;
+    this.fxPaused = on;
+    for (const t of this.fxTimers) {
+      if (on) { clearTimeout(t.id); t.left = Math.max(0, t.left - (performance.now() - t.started)); }
+      else this.armFxTimer(t);
+    }
+    if (on) {
+      for (const a of this.wrap.getAnimations({ subtree: true })) if (a.playState === 'running') {
+        a.pause(); this.pausedAnimations.add(a);
+      }
+    } else {
+      for (const a of this.pausedAnimations) if (a.playState === 'paused') a.play();
+      this.pausedAnimations.clear();
+    }
+  }
+  clearCelebration() {
+    this.celebration++;
+    this.fxLayer.querySelectorAll('.ac-gem').forEach((el) => el.remove());
   }
 
   /** スナップショット Map<id,{x,r,color}> の位置へ全ブロックを即座に合わせる（載っていないブロックは触らない） */
@@ -477,7 +525,7 @@ export class Renderer {
    *     先頭（一番下だったブロック）はゴール (8,8) に着く。
    *  2) 残りのブロックが各ラインへ下から入る。押し込む相手がいる場合、押されるブロックの位置は
    *     入ってくるブロックの位置から計算する（= 常に接触したまま一緒に動く、隙間ができない）。
-   *  連鎖が進むほど速く再生する。
+   *  連鎖数では速めず、次の操作に追いつくときだけ再生速度を変える。
    */
   /**
    * playStep の再生時間（speed 1 のとき、ms）。列車の 9 マス + 一番遠くまで入るブロックのマス数（playStep と同じ計算）。
@@ -511,7 +559,7 @@ export class Renderer {
     const start = stack.map((_, k) => N - 1 - k);           // slot k の r = N-1-k
     const trainT = 9 * cellT;
     if (!this.rush) {
-      this.sfx?.sink();
+      this.sfx?.sink(chain, N);
       this.lineBlast(kind, N, stack[0]?.color, chain, stack, before);
       this.wake(kind, N, stack[0]?.color, trainT);
     }
@@ -522,7 +570,7 @@ export class Renderer {
       const c = Math.floor(u);
       if (c !== lastCell) {
         lastCell = c;
-        if (c > 0 && c < 9 && !this.rush && this.timeScale <= 1.5) this.sfx?.step(c);     // 速めている間は刻みの音を鳴らさない
+        if (c > 0 && c < 9 && !this.rush && this.timeScale <= 1.5) this.sfx?.step(c, chain);     // 速めている間は刻みの音を鳴らさない
       }
     });
     if (gen !== this.gen) return;
@@ -613,21 +661,23 @@ export class Renderer {
       el.style.setProperty('--t', '0ms'); el.__t = '0ms';
       if (this.rush) { this.removeEl(block.id); continue; }
       el.classList.add('fly');
-      setTimeout(() => this.removeEl(block.id), 220);
+      this.later(() => { if (this.els.get(block.id) === el) this.removeEl(block.id); }, 220);
     }
     if (this.rush) return;
     const color = list[0].color;
-    this.hitGoal(chain, color);
-    this.shatter(color, 3 + Math.min(chain, 3) + Math.min(list.length - 1, 2));
+    this.hitGoal(chain, color, list.length);
+    this.shatter(list.map((b) => b.color), 3 + Math.min(chain, 4) + Math.min(list.length - 1, 3));
   }
 
   /** ゴールがぽんと弾み、中の面が入ったブロックの色で満ちて引いていく（光らせない） */
-  hitGoal(chain, color) {
+  hitGoal(chain, color, count = 1) {
     this._goalHit?.cancel();
     const k = Math.min(chain, 8);
-    this._goalHit = this.goal.animate(eased([
+    if (!reducedMotion()) this._goalHit = this.goal.animate(eased([
       { transform: 'none' },
-      { transform: `scale(${1.14 + k * 0.012})`, offset: 0.35 },
+      { transform: 'scale(.93)', offset: 0.12 },
+      { transform: `scale(${1.13 + k * 0.009 + Math.min(count - 1, 3) * 0.012})`, offset: 0.36 },
+      { transform: 'scale(.985)', offset: 0.72 },
       { transform: 'none' },
     ], 'ease-out'), { duration: 300 });
     if (color) {
@@ -638,16 +688,15 @@ export class Renderer {
         { opacity: 1, scale: '0' }, { scale: '1.04', offset: 0.28 }, { scale: '1', offset: 0.55 }, { opacity: 1, scale: '0' },
       ], { duration: 460, easing: 'ease-in-out' });
     }
-    this.sfx?.goal(chain);
+    this.sfx?.goal(chain, count);
   }
 
-  /** ゴールから宝石のかけら（ブロックと同じ塗り・同じ向き）が n 個はじけ、重力で落ちていく（3個に1個はほかの色） */
-  shatter(color, n) {
+  /** 入った宝石と同じ色・塗り・向きのかけらが n 個はじけ、重力で落ちていく。 */
+  shatter(colors, n) {
     if (reducedMotion() || this.q < 0.6) return;
     n = Math.max(2, Math.round(n * this.q));
     const q = this.cellCenter(this.goalPos()), c = this.cell;
-    const colors = Array.from({ length: n }, (_, i) => (i % 3 === 2 ? COLORS[Math.floor(Math.random() * COLORS.length)] : color));
-    this.shardLayer.burst(q.x, q.y, colors, n, c * 0.46, c * 4.6);
+    this.shardLayer.burst(q.x, q.y, colors, n, c * 0.33, c * 4.1, { life: 0.6 });
   }
 
   /**
@@ -655,7 +704,7 @@ export class Renderer {
    * ブロックが抜けた瞬間から、通路と反対側の端から順に
    */
   wake(kind, n, color, trainT) {
-    if (this.q < 0.55) return;
+    if (this.q < 0.55 || reducedMotion()) return;
     for (const { x, r } of lineCells(kind, n)) {
       const along = kind === 'col' ? r : x;                   // 列車の進む向きの位置（0 = 通路と反対側の端）
       const at = trainT * easeInOutInv(Math.min(1, (along + 1) / 9));
@@ -671,8 +720,8 @@ export class Renderer {
     const d = this.tints?.get(`${x},${r}`);
     if (!d) return;
     d.__anim?.cancel();
-    clearTimeout(d.__t);
-    d.__t = setTimeout(() => { d.className = `cell well-tint c-${color}`; }, delay);
+    this.cancelFxTimer(d.__t);
+    d.__t = this.later(() => { d.className = `cell well-tint c-${color}`; }, delay);
     // 半透明にすると背景の紺と混ざって濁るので、濃さは変えずにマスの中心から大きさだけで満ちて引く
     d.__anim = d.animate([{ scale: '0' }, { scale: '1.06', offset: 0.26 }, { scale: '1', offset: 0.4 }, { scale: '1', offset: 0.6 }, { scale: '0' }],
       { duration: life, delay, easing: 'ease-in-out' });
@@ -680,6 +729,7 @@ export class Renderer {
 
   /** 盤面がぽんと弾む（[offset, scale] の並び, ms）。クラスの付け外しと強制レイアウトを使わない */
   bounce(frames, dur) {
+    if (reducedMotion()) return;
     this._bounce?.cancel();
     this._bounce = this.pf.animate(eased(frames.map(([offset, v]) => ({ offset, scale: `${v}` })), 'ease-out'), { duration: dur });
   }
@@ -687,10 +737,25 @@ export class Renderer {
   /** マス中心のローカル px -> rotWrap 内の座標 */
   cellCenter(p) { return this.localToWrap(p.x + this.cell / 2, p.y + this.cell / 2); }
 
-  /** ラインの発動: 盤面が揺れ、大きな連鎖では画面がぐっと寄る（光や粒は出さない） */
+  /** ラインが手前から順に弾ける。動く宝石自体の面を使い、小さな同色のかけらだけを添える。 */
   lineBlast(kind, n, color = 'yellow', chain = 1, moving = [], before = null) {
-    this.shake(Math.min(2 + chain * 1.2, 11), 180 + Math.min(chain, 8) * 20);
-    if (chain >= 4) this.punch(Math.min(0.01 + chain * 0.003, 0.035));
+    if (reducedMotion()) return;
+    this.shake(this.cell * Math.min(0.035 + chain * 0.012, 0.13), 150 + Math.min(chain, 8) * 12);
+    if (chain >= 4) this.punch(Math.min(0.008 + chain * 0.002, 0.026));
+    for (const [i, block] of moving.entries()) {
+      const el = this.els.get(block.id);
+      if (!el) continue;
+      el.classList.remove('pop-in', 'fit-in');
+      el.animate(eased([{ scale: '.91' }, { scale: '1.075', offset: 0.35 }, { scale: '1' }], 'ease-out'),
+        { duration: 190, delay: Math.min(i * 16, 90) / Math.max(1, this.timeScale) });
+    }
+    if (n >= 3 && this.q >= 0.7 && moving[0]) {
+      const at = before?.get(moving[0].id);
+      if (at) {
+        const p = this.cellCenter(this.pos(at.x, at.r));
+        this.shardLayer.burst(p.x, p.y, [color], Math.min(4, 2 + Math.floor(chain / 4)), this.cell * 0.19, this.cell * 2.2, { life: 0.4 });
+      }
+    }
   }
 
   /** 画面が一瞬ぐっと寄って戻る（大きな連鎖の衝撃）。scale だけを動かす */
@@ -715,9 +780,12 @@ export class Renderer {
    * 宝石は半透明にせず、大きさだけで出し入れする（背景の青と混ざって濁らないように）
    */
   allClearBlast() {
+    this.clearCelebration();
+    const celebration = this.celebration;
+    this.sfx?.allClear();
     this.punch(0.045, 320);
     const c = this.cell, cx = (SIZE - 1) / 3, cr = (SIZE - 1) / 3;   // 直角三角形の盤面の重心あたり
-    const RING = 75, LIFE = 1150;                                  // 輪ごとの遅れ・1つの宝石の一生（ms）
+    const RING = 55, LIFE = 760;                                   // 短い余韻。次を置いたらすぐ引く
     const cells = [];
     for (let x = 0; x < SIZE; x++) for (let r = 0; r < SIZE; r++) {
       if (isInside(x, r)) cells.push({ x, r, ring: Math.round(Math.hypot(x - cx, r - cr) * 1.3) });   // 7色がひと回りする細かさ
@@ -738,17 +806,16 @@ export class Renderer {
       this.addFx(this.fxLayer, el, d + LIFE + 50);
       if (i % shardEvery) return;
       // 宝石が砕ける瞬間（アニメの 72% の所）にかけらを散らす
-      setTimeout(() => {
-        if (!el.isConnected) return;
+      this.later(() => {
+        if (!el.isConnected || this.celebration !== celebration) return;
         const p = this.cellCenter(this.pos(q.x, q.r));
-        this.shardLayer.burst(p.x, p.y, [color, COLORS[(q.ring + 3) % COLORS.length]], 2, c * 0.52, c * 3.8, { spread: 3.4, cap: 64 });
+        this.shardLayer.burst(p.x, p.y, [color], 2, c * 0.29, c * 3.2, { spread: 3.4, cap: 42, life: 0.55 });
       }, d + LIFE * 0.72);
     });
     // 砕け始め・砕け終わりで盤面がぐっと寄る
     const burstAt = 40 + LIFE * 0.72;
-    setTimeout(() => this.punch(0.03, 260), burstAt);
-    setTimeout(() => this.punch(0.02, 240), burstAt + rings * RING);
-    setTimeout(() => this.sfx?.bubbles?.(), burstAt);
+    this.later(() => { if (this.celebration === celebration) { this.punch(0.022, 230); this.sfx?.shatter(); } }, burstAt);
+    this.later(() => { if (this.celebration === celebration) this.punch(0.015, 220); }, burstAt + rings * RING);
   }
 
   /** 盤面が揺れる（強さ px, 長さ ms） */
@@ -813,12 +880,17 @@ export class Renderer {
 
   reset() {
     this.gen++;                                              // 再生中の発動はここで打ち切る
+    this.sfx?.stop();
+    this.clearCelebration();
+    for (const timer of [...this.fxTimers]) this.cancelFxTimer(timer);
+    for (const a of this.wrap.getAnimations({ subtree: true })) a.cancel();
+    this.pausedAnimations.clear();
     for (const w of [...this.waiters]) w();
     this.blockLayer.innerHTML = '';
     this.fxLayer.innerHTML = '';
     this.shardLayer.clear();
     this.fx2.innerHTML = '';
-    for (const d of this.tints?.values() ?? []) { d.__anim?.cancel(); clearTimeout(d.__t); }
+    for (const d of this.tints?.values() ?? []) { d.__anim?.cancel(); this.cancelFxTimer(d.__t); }
     this.hintLayer.innerHTML = '';
     this.clearAnnotations();
     this.setFever(0);

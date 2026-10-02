@@ -1,4 +1,4 @@
-import { colorOf } from './palette.js?v=2026100104';
+import { colorOf } from './palette.js?v=202610020836';
 
 /**
  * ゴールから飛び散る宝石のかけら。
@@ -70,12 +70,12 @@ export class Shards {
    * (x, y) から色 colors[i] のかけらを n 個、上向きの扇形に散らす。size = かけらの対角線の長さ px, speed = 初速 px/秒。
    * spread = 扇の開き（ラジアン）、cap = 同時に出していてよい数（全消しのような見せ場だけ増やす）
    */
-  burst(x, y, colors, n, size, speed, { spread = 2.4, cap = MAX } = {}) {
+  burst(x, y, colors, n, size, speed, { spread = 2.4, cap = MAX, life = 0.72 } = {}) {
     n = Math.min(n, cap - this.alive.size);
     for (let i = 0; i < n; i++) {
       const a = -Math.PI / 2 + ((i + 0.5) / n - 0.5) * spread + (Math.random() - 0.5) * 0.4;
       const v = speed * (1 + Math.random() * 0.55), vx = Math.cos(a) * v, vy = Math.sin(a) * v, g = speed * 3;
-      const T = 0.72 + Math.random() * 0.22, sz = size * (0.8 + Math.random() * 0.45);
+      const T = life + Math.random() * 0.14, sz = size * (0.8 + Math.random() * 0.45);
       const d = document.createElement('div');
       d.className = 'shard ' + this.cls(colors[i % colors.length]);
       d.style.cssText = `width:${sz}px;height:${sz}px`;

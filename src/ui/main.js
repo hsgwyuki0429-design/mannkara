@@ -1,18 +1,18 @@
-import { Game } from '../core/game.js?v=2026100104';
-import { Board, createBlock } from '../core/board.js?v=2026100104';
-import { Piece } from '../core/pieces.js?v=2026100104';
-import * as Sim from '../core/sim.js?v=2026100104';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=2026100104';
-import { Renderer, delay } from './renderer.js?v=2026100104';
-import { Sfx } from './sfx.js?v=2026100104';
-import { Scenes } from './scenes.js?v=2026100104';
-import { colorOf } from './palette.js?v=2026100104';
-import { TrayDealer } from './tray-dealer.js?v=2026100104';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=2026100104';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=2026100104';
-import { drawResultCard, cardBlob } from './share-card.js?v=2026100104';
-import { World } from './world.js?v=2026100104';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=2026100104';
+import { Game } from '../core/game.js?v=202610020836';
+import { Board, createBlock } from '../core/board.js?v=202610020836';
+import { Piece } from '../core/pieces.js?v=202610020836';
+import * as Sim from '../core/sim.js?v=202610020836';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610020836';
+import { Renderer, delay } from './renderer.js?v=202610020836';
+import { Sfx } from './sfx.js?v=202610020836';
+import { Scenes } from './scenes.js?v=202610020836';
+import { colorOf } from './palette.js?v=202610020836';
+import { TrayDealer } from './tray-dealer.js?v=202610020836';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610020836';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610020836';
+import { drawResultCard, cardBlob } from './share-card.js?v=202610020836';
+import { World } from './world.js?v=202610020836';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610020836';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -179,7 +179,7 @@ let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=2026100104', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610020836', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -192,7 +192,8 @@ const game = new Game({
     },
     onTurn(turn) {
       // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように。補充の手駒は届いたら onTray で出す）
-      sfx.place();
+      if (pending > 0) sfx.stop();
+      sfx.place(turn.placed.length);
       turn.seq = ++turnSeq;
       // 穴にぴったり・凹みを埋めて長方形: 置いた瞬間に手応え（連鎖の文字が出ればそちらで上書き）
       if (turn.fit === 'perfect' || turn.rect) {
@@ -202,7 +203,7 @@ const game = new Game({
       // 前のターンの再生がまだ終わっていなければ、残りを一気に最後まで進める（表示を盤面に追いつかせる）。
       // ルールは置いた瞬間に確定しているので、遅れた表示のまま新しいピースを出すと古いブロックに重なって見える
       if (pending > 0) { rushBefore = turn.seq; renderer.setRush(true); }
-      renderer.popIn(turn.placed);
+      renderer.popIn(turn.placed, turn.fit === 'perfect' || !!turn.rect);
       dropHint();
       const refilledNow = turn.refilled && !turn.trayReady;
       renderTray(refilledNow);
@@ -232,7 +233,7 @@ async function playTurn(turn) {
   showScore(turn.scoreAfterPlace);
   if (rush) {                                            // 早送り: 演出なしで盤面と点数だけ最後まで進める
     for (const step of turn.steps) { await renderer.playStep(step, 1); if (stale()) return; }
-    if (turn.allClear) { renderer.showText(allClearText(turn), 't5'); sfx.fanfare(); }   // 全消しは見せ場なので早送りでも出す
+    if (turn.allClear) { renderer.showText(allClearText(turn), 't5'); sfx.allClear(); }   // 全消しは見せ場なので早送りでも出す
     showScore(turn.score);
     return;
   }
@@ -261,9 +262,9 @@ async function playTurn(turn) {
       renderer.showText(`${step.chain} CHAIN<small>${praise}</small>`, `t${tier}`);
       if (tier > shownTier) {                                  // 段階が上がった時だけ（毎回だと染まりっぱなしになる）
         shownTier = tier;
+        sfx.praise(tier);                                      // 毎連鎖に和音を重ねず、段階の変化を聴かせる
         if (tier >= 4) scenes.bigChain(tier);    // Amazing 以上で画面全体の色が変わる
       } else if (step.chain >= 12 && step.chain % 4 === 0) scenes.bigChain(5);   // 12・16・20…連鎖でもう一度
-      sfx.praise(tier);
     }
     if (step.gained) renderer.floatScore(step.gained, step.chain);
     showScore(step.score, true);
@@ -273,7 +274,6 @@ async function playTurn(turn) {
   if (turn.allClear) {
     renderer.showText(allClearText(turn), 't5');
     renderer.allClearBlast();
-    sfx.fanfare();
   }
   showScore(turn.score);
   // 補充の手駒を別スレッドで決めているときは、届いてから（詰みの判定・ピンチ・おすすめは手駒で決まる）
@@ -658,10 +658,15 @@ $('btnLearn').addEventListener('click', () => {
 });
 
 /* ---------- サウンド ---------- */
+function updateSoundButton() {
+  $('btnSound').classList.toggle('off', !sfx.enabled);
+  $('btnSound').setAttribute('aria-pressed', String(sfx.enabled));
+}
+updateSoundButton();
 $('btnSound').addEventListener('click', () => {
   sfx.unlock();
   sfx.enabled = !sfx.enabled;
-  $('btnSound').classList.toggle('off', !sfx.enabled);
+  updateSoundButton();
 });
 
 /* ---------- 一時停止 ---------- */
@@ -671,6 +676,8 @@ function setPaused(v) {
   paused = v;
   if (v) cancelDrag();
   renderer.timeScale = v ? 0 : 1;
+  renderer.setPaused(v);
+  sfx.setPaused(v);
   if (v) {
     const chain = Math.max(records.chain, tutorial ? 0 : game.score.bestChain), combo = Math.max(records.combo, tutorial ? 0 : game.score.bestStreak);
     $('pauseRecords').innerHTML = `記録　最大連鎖 ${chain}・最大コンボ ${combo}`;

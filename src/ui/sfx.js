@@ -1,11 +1,63 @@
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
-const PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];      // ペンタトニック（連鎖で上がっていく）
-/** 高すぎる音は大音量で耳に刺さるので、全体を少し低くし（LOWER 半音）、上限も設ける（MAX_HZ） */
-const LOWER = Math.pow(2, -3 / 12), MAX_HZ = 1400;
-const note = (i, base = 523.25) => base * Math.pow(2, PENTA[Math.min(i, 8)] / 12);
+const PENTA = [0, 2, 4, 7, 9];
+const LOWER = Math.pow(2, -3 / 12), MAX_HZ = 1760;
+const VOICE_LIMIT = 40;
+// 上限で切りそろえると和音も大連鎖も同じ音になる。上限を超えた音はオクターブ下へ戻す。
+export const voicedFrequency = (hz) => {
+  hz = Math.max(45, Number.isFinite(hz) ? hz : 220);
+  while (hz > MAX_HZ) hz /= 2;
+  return hz;
+};
+// 2オクターブの旋律。長い連鎖でも音を潰さず、フレーズを繰り返しながら厚みを足す。
+export const note = (i, base = 261.63) => {
+  const k = Math.max(0, Math.floor(i)) % 10;
+  return base * 2 ** ((PENTA[k % 5] + Math.floor(k / 5) * 12) / 12);
+};
 
 export class Sfx {
-  constructor() { this.ctx = null; this.enabled = true; this.gestureAt = 0; this.stuckSince = 0; this.stale = false; }
+  constructor() {
+    this.ctx = null; this._enabled = true; this.paused = false;
+    this.gestureAt = 0; this.stuckSince = 0; this.stale = false;
+    this.voices = new Set(); this.last = new Map(); this.placement = 0;
+    try { this._enabled = localStorage.getItem('blockmancala-sound') !== 'off'; } catch {}
+  }
+  get enabled() { return this._enabled; }
+  set enabled(on) {
+    this._enabled = !!on;
+    if (!on) this.stop();
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(on ? 0.32 : 0, this.ctx.currentTime, 0.008);
+    try { localStorage.setItem('blockmancala-sound', on ? 'on' : 'off'); } catch {}
+  }
+  /** 音を止めると、予約済みのアルペジオ・余韻も残さない。 */
+  stop() {
+    for (const v of [...this.voices]) v.end();
+    this.last.clear();
+    try { navigator.vibrate?.(0); } catch {}
+  }
+  setPaused(on) { this.paused = !!on; if (on) this.stop(); }
+  /** 同時発音を制限し、操作音には飾りの音より優先して枠を渡す。 */
+  track(source, nodes, priority) {
+    if (this.voices.size >= VOICE_LIMIT) {
+      const victim = [...this.voices].find((v) => v.priority <= priority);
+      if (!victim) { nodes.forEach((n) => n.disconnect()); source.disconnect(); return false; }
+      victim.end();
+    }
+    const cleanup = () => {
+      this.voices.delete(v); source.disconnect(); nodes.forEach((n) => n.disconnect());
+    };
+    const v = { priority, end: () => { try { source.stop(); } catch {} cleanup(); } };
+    source.onended = cleanup;
+    this.voices.add(v);
+    return true;
+  }
+  /** 高速ドラッグ・同時着地では細かい音を束ねる。止まった AudioContext に時刻を残さない。 */
+  allow(key, interval) {
+    if (!this.ready()) return false;
+    const now = this.ctx.currentTime, prev = this.last.get(key) ?? -Infinity;
+    if (now - prev < interval) return false;
+    this.last.set(key, now);
+    return true;
+  }
   /**
    * 音を使えるようにする。指の操作のたびに呼ぶ（bindGestures）。
    * iOS Safari は、指を「離した」時（touchend / click）の中でしか音の開始・再開を許さない。
@@ -24,6 +76,7 @@ export class Sfx {
       if (gesture && this.stuckSince && performance.now() - this.stuckSince > 1500) {
         this.closeCtx();
         this.build();
+        if (!this.ctx) return;
       } else this.resumeUntilRunning();
     }
     if (this.ctx.state === 'running') this.stuckSince = 0;
@@ -31,9 +84,9 @@ export class Sfx {
     // iOS: 操作の中で無音を1つ鳴らすと、そのあとの音が確実に出るようになる
     if (gesture) this.kick();
   }
-  closeCtx() { const c = this.ctx; if (!c) return; c.onstatechange = null; try { c.close().catch(() => {}); } catch {} }
+  closeCtx() { this.stop(); const c = this.ctx; if (!c) return; c.onstatechange = null; try { c.close().catch(() => {}); } catch {} }
   /** 画面が裏に回った（アプリの切り替え・通知・画面収録の開始など）。次の操作で作り直す */
-  markStale() { if (this.ctx) this.stale = true; }
+  markStale() { this.stop(); if (this.ctx) this.stale = true; }
   /** AudioContext と出力までの経路を作る */
   build() {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -41,16 +94,8 @@ export class Sfx {
     // iOS Safari 16.4+: 既定では消音（サイレント）スイッチがオンだと鳴らない。ゲームの効果音として
     // 消音スイッチを無視して鳴らす（マナーモードでも音が出るようになる）
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
-    this.ctx = new AC();
-    this.noiseBuf = null; this._tickAt = 0;                  // 前の AudioContext のバッファ・時刻は使えない
-    this.master = this.ctx.createGain();
-    this.master.gain.value = 0.25;
-    // 耳心地のため、高い倍音を少し丸め、音が重なって大きくなったときも割れないよう軽く抑える
-    this.soft = this.ctx.createBiquadFilter();
-    this.soft.type = 'lowpass'; this.soft.frequency.value = 3200; this.soft.Q.value = 0.5;
-    const comp = this.ctx.createDynamicsCompressor();
-    comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
-    this.master.connect(this.soft); this.soft.connect(comp); comp.connect(this.ctx.destination);
+    try { this.ctx = new AC({ latencyHint: 'interactive' }); } catch { this.ctx = null; return; }
+    this.connect();
     // 中断（コントロールセンター・画面収録・着信など）から戻ったら、すぐ再開を試みる
     this.ctx.onstatechange = () => {
       if (this.ctx?.state === 'running') this.stuckSince = 0;
@@ -58,27 +103,42 @@ export class Sfx {
     };
     this.resumeUntilRunning();
   }
+  /** 音の出口。OfflineAudioContext でも同じ回路を検証できる。 */
+  connect() {
+    this.noiseBuf = null; this._tickAt = 0;                  // 前の AudioContext のバッファ・時刻は使えない
+    this.last.clear();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.enabled ? 0.32 : 0;
+    // 耳心地のため、高い倍音を少し丸め、音が重なって大きくなったときも割れないよう軽く抑える
+    this.soft = this.ctx.createBiquadFilter();
+    this.soft.type = 'lowpass'; this.soft.frequency.value = 3800; this.soft.Q.value = 0.5;
+    const comp = this.ctx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
+    this.master.connect(this.soft); this.soft.connect(comp); comp.connect(this.ctx.destination);
+    this.output = comp;
+  }
   /** 無音を一瞬だけ鳴らす（iOS の音の許可を確実にするため。操作の中で呼ぶ） */
   kick() {
     try {
       const src = this.ctx.createBufferSource();
       src.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
       src.connect(this.ctx.destination);
+      src.onended = () => src.disconnect();
       src.start(0);
     } catch {}
   }
   /** running になるまで resume() を繰り返す（中断が解けるまで少し間が要ることがあるため） */
-  resumeUntilRunning(triesLeft = 10) {
-    if (!this.ctx || this.ctx.state === 'running' || this.ctx.state === 'closed' || triesLeft <= 0) return;
-    this.ctx.resume().catch(() => {});
-    setTimeout(() => this.resumeUntilRunning(triesLeft - 1), 400);
+  resumeUntilRunning(triesLeft = 10, ctx = this.ctx) {
+    if (!ctx || ctx !== this.ctx || ctx.state === 'running' || ctx.state === 'closed' || triesLeft <= 0) return;
+    ctx.resume().catch(() => {});
+    setTimeout(() => this.resumeUntilRunning(triesLeft - 1, ctx), 400);
   }
   /**
    * 今この音を予約してよいか。止まった時計に予約した音は、ずっと後で戻ったときにまとめて鳴ってしまうので出さない。
    * ただし操作の直後（再開を頼んだばかりで、まだ running に変わっていないだけ）は予約する（すぐ再開して鳴る）
    */
   ready() {
-    if (!this.enabled || !this.ctx) return false;
+    if (!this.enabled || this.paused || this.stale || !this.ctx || this.ctx.state === 'closed') return false;
     if (this.ctx.state === 'running') return true;
     this.resumeUntilRunning();
     return this.ctx.state === 'suspended' && performance.now() - this.gestureAt < 500;
@@ -88,68 +148,99 @@ export class Sfx {
     const on = () => this.unlock(true);
     for (const type of ['touchend', 'pointerup', 'click', 'keydown']) target.addEventListener(type, on, { capture: true, passive: true });
   }
-  tone(freq, { dur = 0.1, type = 'sine', gain = 0.6, at = 0, slide = 0 } = {}) {
+  tone(freq, { dur = 0.1, type = 'sine', gain = 0.6, at = 0, slide = 0, attack = 0.004, priority = 1 } = {}) {
     if (!this.ready()) return;
     const t = this.ctx.currentTime + at;
-    freq = Math.min(freq * LOWER, MAX_HZ);
+    freq = voicedFrequency(freq * LOWER);
     const o = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     o.type = type;
     o.frequency.setValueAtTime(freq, t);
-    if (slide) o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
+    if (slide) o.frequency.exponentialRampToValueAtTime(voicedFrequency(freq * slide), t + dur);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(gain, t + Math.min(attack, dur * 0.4));
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(this.master);
+    if (!this.track(o, [g], priority)) return;
     o.start(t); o.stop(t + dur + 0.03);
   }
-  vibe(p) { if (this.enabled) try { navigator.vibrate?.(p); } catch {} }
+  vibe(p) { if (this.enabled && !this.paused && !this.stale) try { navigator.vibrate?.(p); } catch {} }
 
-  pick()        { this.tone(660, { dur: 0.06, gain: 0.3 }); this.vibe(6); }
-  // はまる音: 低い「コトッ」＋澄んだ高音の2音
-  place()       { this.tone(330, { dur: 0.08, type: 'triangle', gain: 0.75, slide: 0.55 });
-                  this.tone(988, { dur: 0.09, gain: 0.22, at: 0.02 });
-                  this.tone(1319, { dur: 0.12, gain: 0.14, at: 0.06 }); this.vibe(12); }
+  pick()        { this.tone(530, { dur: 0.045, gain: 0.19, slide: 1.12, priority: 2 }); this.vibe(5); }
+  // 4つの控えめな音色差。マス数で重さが変わり、置いた瞬間に乾いた接触音が鳴る。
+  place(cells = 1) {
+    const variant = [1, 1.035, 0.975, 1.018][this.placement++ % 4];
+    const weight = Math.min(1, Math.max(0, (cells - 1) / 8));
+    this.noise({ dur: 0.036, gain: 0.28, from: 2300, to: 820, attack: 0.001, priority: 3 });
+    this.tone((290 - weight * 65) * variant, { dur: 0.095, type: 'triangle', gain: 0.7, slide: 0.52, attack: 0.002, priority: 3 });
+    this.tone(740 * variant, { dur: 0.13, gain: 0.19, at: 0.012, priority: 2 });
+    this.tone(1110 * variant, { dur: 0.1, gain: 0.065, at: 0.022 });
+    this.vibe(10 + Math.round(weight * 5));
+  }
   /** 穴にぴったりはまる場所に入った（カチッ）・ぴったり置いた（カチッ + 上がる2音） */
-  fitHover()    { this.tone(1318.5, { dur: 0.035, type: 'triangle', gain: 0.22 }); this.vibe(8); }
+  fitHover()    { if (!this.allow('fitHover', 0.08)) return;
+                  this.tone(1318.5, { dur: 0.035, type: 'triangle', gain: 0.22 }); this.vibe(8); }
   fit()         { this.tone(1046.5, { dur: 0.04, type: 'triangle', gain: 0.4 });
                   [0, 4].forEach((k, i) => this.tone(note(k, 1046.5), { dur: 0.09, gain: 0.22, type: 'sine', at: 0.06 + i * 0.07 })); this.vibe(14); }
-  hover()       { this.tone(1760, { dur: 0.025, gain: 0.05 }); }
+  hover()       { if (this.allow('hover', 0.055)) this.tone(1245, { dur: 0.022, gain: 0.035, priority: 0 }); }
   // 消える場所に入った: 連鎖が多いほど高く上がっていくキラッという音（期待）
-  anticipate(chain) { const f = note(Math.min(chain, 6) + 1, 659);
+  anticipate(chain) { if (!this.allow('anticipate', 0.12)) return;
+                  const f = note(Math.min(chain, 7) + 1, 330);
                   this.tone(f, { dur: 0.12, gain: 0.16, type: 'triangle', slide: 1.12 });
                   this.tone(f * 1.5, { dur: 0.16, gain: 0.08, at: 0.05 }); this.vibe(8); }
-  invalid()     { this.tone(180, { dur: 0.12, type: 'square', gain: 0.15, slide: 0.8 }); }
-  // 発動: 低い衝撃音＋上へ抜けるシュッという音
-  sink()        { this.tone(300, { dur: 0.16, type: 'sine', gain: 0.3, slide: 0.5 });
-                  this.tone(110, { dur: 0.18, type: 'sine', gain: 0.55, slide: 0.45 });
-                  this.tone(700, { dur: 0.14, type: 'triangle', gain: 0.05, slide: 1.8 }); this.vibe(14); }
-  step(i)       { this.tone(note(i, 392), { dur: 0.05, type: 'triangle', gain: 0.25 }); }
-  goal(chain)   { const f = note(chain + 1);
-                  this.tone(f, { dur: 0.18, gain: 0.5 });
-                  this.tone(f * 1.5, { dur: 0.22, gain: 0.3, at: 0.05 });
-                  this.vibe([0, 16, 20, 24]); }
-  push(chain)   { this.tone(140 + chain * 12, { dur: 0.14, type: 'triangle', gain: 0.5, slide: 1.6 }); this.vibe(20); }
+  invalid()     { this.tone(155, { dur: 0.075, type: 'triangle', gain: 0.2, slide: 0.75, priority: 2 }); }
+  charge(chain = 1, dur = 0.13) {
+    this.noise({ dur, gain: 0.12, from: 430, to: 1550, attack: dur * 0.7, priority: 0 });
+    this.tone(note(chain - 1, 196), { dur, gain: 0.1, slide: 1.12, attack: dur * 0.25, priority: 0 });
+  }
+  // 解放: 短い割れ音 → 低い胴鳴り → 上へ抜ける空気。高さは連鎖、厚みはラインの長さ。
+  sink(chain = 1, cells = 1) {
+    const weight = Math.min(cells, 8) / 8;
+    this.noise({ dur: 0.075, gain: 0.32 + weight * 0.12, from: 2800, to: 650, attack: 0.002, priority: 2 });
+    this.tone(132 + Math.min(chain, 8) * 4, { dur: 0.19, gain: 0.6, slide: 0.43, priority: 2 });
+    this.tone(note(chain - 1, 262), { dur: 0.13, type: 'triangle', gain: 0.2, slide: 1.045, priority: 2 });
+    this.noise({ dur: 0.15, gain: 0.075, from: 550, to: 2600, at: 0.025, priority: 0 });
+    this.vibe(12 + Math.min(chain, 6) * 2);
+  }
+  step(i, chain = 1) { if (this.allow('step', 0.038)) this.tone(note(i + (chain - 1) % 3, 220), { dur: 0.04, type: 'triangle', gain: 0.105, priority: 0 }); }
+  goal(chain = 1, count = 1) {
+    const f = note(chain - 1, 330);
+    this.tone(f, { dur: 0.2, gain: 0.43, priority: 2 });
+    this.tone(f * 1.5, { dur: 0.24, gain: 0.18, at: 0.025, priority: 2 });
+    this.tone(190, { dur: 0.075, gain: 0.22, slide: 0.6, priority: 2 });
+    if (chain >= 4 || count > 1) this.tone(f * 1.25, { dur: 0.26, gain: 0.12, at: 0.05 });
+    if (chain >= 8) this.tone(f * 2, { dur: 0.16, gain: 0.075, at: 0.09 });
+    this.vibe(count > 1 ? [12, 24, 18] : 14);
+  }
+  push(chain)   { if (this.allow('push', 0.06)) this.tone(140 + Math.min(chain, 10) * 9, { dur: 0.09, type: 'triangle', gain: 0.24, slide: 1.3 }); }
   rows(n, chain){ for (let k = 0; k < 3 + n; k++) this.tone(note(chain + k), { dur: 0.16, gain: 0.35, at: k * 0.045 });
                   this.vibe([0, 20, 30, 30]); }
   // 連続発動: 上がっていく和音＋キラキラ
-  combo(n)      { const f = note(Math.min(n, 8), 523.25);
-                  [1, 1.25, 1.5, 2].forEach((m, k) => this.tone(f * m, { dur: 0.22, gain: 0.26, type: 'triangle', at: k * 0.04 }));
-                  this.tone(f * 2, { dur: 0.3, gain: 0.06, at: 0.16 });
+  combo(n)      { const f = note(n - 2, 262);
+                  [1, 1.25, 1.5].forEach((m, k) => this.tone(f * m, { dur: 0.16, gain: 0.16, type: 'triangle', at: 0.025 + k * 0.035 }));
                   this.vibe([0, 18, 30, 26]); }
   // 褒め言葉: 段階が上がるほど和音が厚く、高く
-  praise(tier)  { const base = 392 * Math.pow(2, (tier - 1) / 6);
-                  const chord = [1, 1.26, 1.5, 2, 2.52, 3].slice(0, 2 + tier);
-                  chord.forEach((m, k) => this.tone(base * m, { dur: 0.35, gain: 0.2, type: k % 2 ? 'sine' : 'triangle', at: k * 0.03 }));
-                  if (tier >= 3) this.tone(base * 2, { dur: 0.5, gain: 0.06, type: 'sine', at: 0.12, slide: 1.02 });
-                  if (tier >= 4) this.tone(80, { dur: 0.35, type: 'sine', gain: 0.6, slide: 0.5 });
+  praise(tier)  { const base = [262, 294, 330, 392, 440][Math.max(0, Math.min(4, tier - 1))];
+                  const chord = [1, 1.25, 1.5, 2, 2.5].slice(0, 2 + tier);
+                  chord.forEach((m, k) => this.tone(base * m, { dur: 0.23 + tier * 0.025, gain: 0.25 / Math.sqrt(chord.length), type: k % 2 ? 'sine' : 'triangle', at: k * 0.035 }));
+                  if (tier >= 4) this.tone(98, { dur: 0.22, gain: 0.35, slide: 0.65 });
                   this.vibe(tier >= 4 ? [0, 30, 40, 50] : 16); }
   // 新記録: ファンファーレ
   fanfare()     { [0, 2, 4, 5].forEach((k, i) => this.tone(note(k + 2, 523.25), { dur: i === 3 ? 0.5 : 0.12, gain: 0.3, type: 'triangle', at: i * 0.1 }));
                   this.tone(note(7, 523.25), { dur: 0.6, gain: 0.12, at: 0.3 }); this.vibe([0, 30, 40, 30, 40, 80]); }
+  // 全消し専用: 短い立ち上がりと、盤面へ色が広がる間の上昇フレーズ。
+  allClear() {
+    this.noise({ dur: 0.32, gain: 0.23, from: 600, to: 2400, attack: 0.025, priority: 2 });
+    this.tone(130.81, { dur: 0.3, gain: 0.45, slide: 0.6, priority: 2 });
+    [0, 2, 4, 5, 7, 9].forEach((k, i) => this.tone(note(k, 262), { dur: i === 5 ? 0.52 : 0.2, gain: 0.23, type: 'triangle', at: 0.04 + i * 0.065, priority: 2 }));
+    [262, 330, 392].forEach((f) => this.tone(f, { dur: 0.65, gain: 0.11, at: 0.4, priority: 2 }));
+    this.vibe([22, 35, 35]);
+  }
+  shatter() { this.noise({ dur: 0.11, gain: 0.16, from: 2600, to: 1000, attack: 0.002 });
+              [784, 988, 1175].forEach((f, i) => this.tone(f, { dur: 0.17, gain: 0.09, at: i * 0.038, priority: 0 })); }
   refill()      { [0, 1, 2].forEach((k) => this.tone(note(k, 784), { dur: 0.07, gain: 0.18, at: k * 0.05 })); }
   /** 短いざらざらした音（波・しぶき）。ノイズを帯域フィルタに通す */
-  noise({ dur = 0.6, gain = 0.3, from = 400, to = 1400, q = 0.8, at = 0 } = {}) {
+  noise({ dur = 0.6, gain = 0.3, from = 400, to = 1400, q = 0.8, at = 0, attack = dur * 0.3, priority = 1 } = {}) {
     if (!this.ready()) return;                                  // tone() と同じ
     const ctx = this.ctx, t = ctx.currentTime + at;
     if (!this.noiseBuf) {
@@ -161,8 +252,9 @@ export class Sfx {
     src.buffer = this.noiseBuf;
     f.type = 'bandpass'; f.Q.value = q;
     f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(to, t + dur);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + dur * 0.3); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(f); f.connect(g); g.connect(this.master);
+    if (!this.track(src, [f, g], priority)) return;
     src.start(t); src.stop(t + dur + 0.05);
   }
   // 全消し: ザザーッと波がせり上がる音＋明るい和音
@@ -186,7 +278,9 @@ export class Sfx {
   swoosh(close = false) { this.noise({ dur: 0.55, gain: 0.35, from: close ? 1800 : 300, to: close ? 300 : 1800, q: 0.8 });
                   if (!close) [0, 4, 7, 12].forEach((k, i) => this.tone(523.25 * Math.pow(2, k / 12), { dur: 0.5, gain: 0.1, type: 'triangle', at: 0.15 + i * 0.06 })); }
   // ブロックが列に入って止まった: 小さなコツッ
-  settle(i = 0) { this.tone(note(i, 784), { dur: 0.05, gain: 0.12, type: 'triangle' }); }
+  settle(i = 0) { if (!this.allow('settle', 0.032)) return;
+                 this.noise({ dur: 0.025, gain: 0.075, from: 1800, to: 650, attack: 0.001, priority: 0 });
+                 this.tone(note(i, 392), { dur: 0.06, gain: 0.13, type: 'triangle', priority: 0 }); }
   // ゲームオーバー: やわらかい三角波・正弦波の和音が、ゆっくり下がって消える（耳障りなのこぎり波は使わない）
   over()        { [392, 311.1, 261.6].forEach((f, i) => this.tone(f, { dur: 0.9, type: i ? 'sine' : 'triangle', gain: 0.22, slide: 0.7, at: i * 0.12 }));
                   this.tone(196, { dur: 1.1, type: 'sine', gain: 0.25, slide: 0.8, at: 0.3 }); this.vibe([0, 60, 50, 140]); }
