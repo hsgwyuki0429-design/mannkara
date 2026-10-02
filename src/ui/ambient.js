@@ -8,6 +8,10 @@
  * 動かすのは opacity だけ: 色ごとに全面のグラデーションの層を1枚作り、新しい色の層を上に重ねて opacity 0 → 1
  * （合成だけで済み、毎フレームの描き直しは起きない）。遠い色へのグラデーションは、近い色どうしの小さな重ねを続けて行う
  * （遠い色を一度に混ぜると、間の色が灰色に濁るので）。「一気に変わる」ときは、短い重ね 1 回。
+ *
+ * 盤面の土台（プレート・マスのくぼみ・縁の光）も、背景と同じ色相・同じ濃さ・同じ瞬間・同じ長さで変わる（bindBoard）。
+ * 土台の色は、今の青の土台（BOARD）の明るさ・鮮やかさ・色相のずれをそのまま保って、背景と同じ角度だけ色相を回したもの。
+ * 背景より少し暗い板、その中にもっと暗いくぼみ、という見え方は、どの色でも変わらない。
  */
 const RAD = Math.PI / 180;
 const lin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
@@ -74,8 +78,42 @@ export const TONES = {
 /** 中央の明るい所でも、白い小さな文字（ラインの番号など）が読める下限 */
 export const MIN_CONTRAST = 4.3;
 
+/**
+ * 盤面の土台の、今の青（styles.css の .well-set と同じ値）。plate = マスの下の土台 / well = マスのくぼみ /
+ * shade1・shade2 = くぼみの内側の影 / rim・hi = くぼみの縁（上下の線）/ edge・edgeShade = 盤面全体のまわりの光と影。[r, g, b, 透明度]
+ */
+export const BOARD = {
+  plate: '#1a3eae', well: '#1f3285',
+  shade1: [4, 12, 60, 0.7], shade2: [4, 12, 60, 0.45], rim: [96, 140, 245, 0.8], hi: [150, 186, 255, 0.95],
+  edge: [80, 130, 255, 0.9], edgeShade: [0, 8, 50, 0.35],
+};
+/** styles.css の変数名 → BOARD の項目 */
+export const BOARD_VARS = {
+  '--plate': 'plate', '--well': 'well', '--well-s1': 'shade1', '--well-s2': 'shade2', '--well-rim': 'rim', '--well-hi': 'hi',
+  '--plate-edge': 'edge', '--plate-shade': 'edgeShade',
+};
+const boardCss = (v) => (typeof v === 'string' ? v : `rgba(${v[0]},${v[1]},${v[2]},${v[3]})`);
+const hexOf = (v) => (typeof v === 'string' ? v : toHex(v.slice(0, 3)));
+/**
+ * 色相 hue・濃さ tone の盤面の土台の色 { '--plate': 色, ... }（CSS の変数名 → 色）。背景と同じだけ色相を回し、背景の濃さの段（soft / deep）と同じだけ
+ * 明るさ・鮮やかさをずらす。元の青のときは、元の値そのもの
+ */
+export function boardLook(hue, tone = 'base') {
+  tone = TONES[tone] ? tone : 'base';
+  const dh = wrapHue(hue) - BASE_HUE, dL = TONES[tone].L - O.L, cs = TONES[tone].C / O.C;
+  const same = tone === 'base' && Math.abs(hueDelta(hue, BASE_HUE)) < 0.05;
+  const look = {};
+  for (const [name, key] of Object.entries(BOARD_VARS)) {
+    const v = BOARD[key];
+    if (same) { look[name] = boardCss(v); continue; }
+    const o = hexToOklch(hexOf(v)), rgb = oklchToRgb(Math.min(0.97, Math.max(0.03, o.L + dL)), o.C * cs, o.h + dh);
+    look[name] = typeof v === 'string' ? toHex(rgb) : `rgba(${rgb.join(',')},${v[3]})`;
+  }
+  return look;
+}
+
 const looks = new Map();
-/** 色相 hue・濃さ tone の背景の色 { hue, tone, lo, hi, glow }。lo = 縁の色, hi = 中央の明るい色, glow = 同系色の明るい重ね色（'r,g,b'） */
+/** 色相 hue・濃さ tone の背景の色 { hue, tone, lo, hi, glow, board }。lo = 縁の色, hi = 中央の明るい色, glow = 同系色の明るい重ね色（'r,g,b'）, board = 盤面の土台の色（boardLook） */
 export function ambientLook(hue, tone = 'base') {
   hue = wrapHue(hue);
   tone = TONES[tone] ? tone : 'base';
@@ -92,7 +130,7 @@ export function ambientLook(hue, tone = 'base') {
     while (contrastWithWhite(hi) < MIN_CONTRAST && L > 0.3) { L -= 0.005; lo = oklchToHex(L, t.C, hue); hi = oklchToHex(L + t.up, t.C + 0.003, hue); }
   }
   const glow = oklchToRgb(0.68, 0.15, hue).join(',');
-  look = { hue, tone, lo, hi, glow };
+  look = { hue, tone, lo, hi, glow, board: boardLook(hue, tone) };
   looks.set(key, look);
   return look;
 }
@@ -107,6 +145,8 @@ const COMBO_TONES = ['soft', 'deep', 'base'];
 const HOP = 40;                                        // 1 回の重ねで動かす色相の上限（°）
 const MIN_FADE = 90;                                   // 「一気に」でも、これだけは重ねる（下の層を外した瞬間に下地がのぞかないように）
 const LAYERS = 4;
+/** 盤面の土台の層の数: 背景の層 + 最初から見えている今の青の 1 枚（renderer が作る） */
+export const PLATE_SETS = LAYERS + 1;
 const CALM_MS = 3000, COMBO_MS = 1400, SNAP_MS = 160;
 
 /** コンボ streak のときの色（calm = ふだんの色） */
@@ -144,9 +184,18 @@ export class Ambient {
     this.rest = this.calm;                                      // この場面で落ち着く先（コンボ中ならコンボの色）
     this.moves = 0;
     this.holdUntil = 0;
+    this.plates = null;                                         // 盤面の土台の層（bindBoard）
   }
 
   reduced() { return !!this.reducedQuery?.matches; }
+
+  /**
+   * 盤面の土台の層（renderer.plateSets。中身は同じ土台の絵）を受け取る。背景の層と同じように、色を変えるたびに新しい色の層を一番上に重ねて
+   * opacity 0 → 1、覆い終わったら下の層を外す。0 番は最初から見えている（今の青）
+   */
+  bindBoard(sets) {
+    this.plates = sets.map((el, i) => ({ el, anim: null, on: i === 0, z: 0 }));
+  }
 
   /** 手を置くたびに呼ぶ。発動しない手が続くと、ふだんの色がゆっくり進む。コンボは色相を進めていく（5 の倍数は一気に） */
   turn(turn) {
@@ -237,9 +286,26 @@ export class Ambient {
     el.style.opacity = '0';
     el.style.display = 'block';
     layer.on = true;
+    layer.plate = this.mountPlate(look, ms, layer.z);
     const anim = layer.anim = el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
     anim.onfinish = () => { if (layer.anim === anim) this.cover(layer, look); };
     this.doc.documentElement.style.setProperty('--amb-glow', look.glow);   // 同系色の重ね（コンボ・ピンチの縁・色の変化）もこの色相へ
+  }
+
+  /** 盤面の土台の、新しい色の層を一番上に重ねて opacity 0 → 1（背景と同じ長さ・同じ動き）。使った層を返す（bindBoard していなければ null） */
+  mountPlate(look, ms, z) {
+    const pool = this.plates;
+    if (!pool?.length) return null;
+    const p = pool.find((q) => !q.on) ?? pool.reduce((a, b) => (a.z <= b.z ? a : b));
+    const { el } = p;
+    p.anim?.cancel();
+    for (const [name, value] of Object.entries(look.board)) el.style.setProperty(name, value);
+    el.style.zIndex = String(p.z = z);
+    el.style.opacity = '0';
+    el.style.display = 'block';
+    p.on = true;
+    p.anim = el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
+    return p;
   }
 
   /** layer が全面を覆い終わった: それより下の層は見えないので外す。ブラウザの上のバーの色も合わせる */
@@ -248,6 +314,12 @@ export class Ambient {
     layer.anim.cancel();
     layer.anim = null;
     for (const l of this.layers) if (l !== layer && l.z < layer.z) { l.anim?.cancel(); l.anim = null; l.on = false; l.el.style.display = 'none'; }
+    const p = layer.plate;                                        // 盤面の土台も、同じ瞬間に覆い終わる
+    if (p && this.plates) {
+      p.el.style.opacity = '1';
+      p.anim?.cancel(); p.anim = null;
+      for (const q of this.plates) if (q !== p && q.z < p.z) { q.anim?.cancel(); q.anim = null; q.on = false; q.el.style.display = 'none'; }
+    }
     try { (this.meta ??= this.doc.querySelector('meta[name="theme-color"]'))?.setAttribute('content', look.lo); } catch {}
   }
 }

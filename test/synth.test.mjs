@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { glassBuffer, shalanBuffer, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_LOW, SHALAN_LENGTH } from '../src/ui/synth.js?v=202610020948';
+import { glassBuffer, shalanBuffer, bellBuffer, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_LOW, SHALAN_LENGTH, BELL_LENGTH } from '../src/ui/synth.js?v=202610021101';
 
 const SR = 48000;
 /** 時刻 t0〜t1（秒）の、周波数 f（Hz）の成分の大きさ（Goertzel 法）。窓は Hann */
@@ -75,6 +75,36 @@ function onset(x, f, t1 = 0.4) {
   for (let t = 0; t < t1; t += 0.002) if (near(x, f, t, t + 0.01) > max * 0.25) return t;
   return Infinity;
 }
+/** 窓（Hann）をかけた n サンプル（x[start〜]）の各周波数のパワー（0〜n/2 番目）。基数 2 の FFT */
+function fftPower(x, start, n) {
+  const re = new Float64Array(n), im = new Float64Array(n);
+  for (let i = 0; i < n; i++) re[i] = (x[start + i] ?? 0) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1)));
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) [re[i], re[j]] = [re[j], re[i]]; }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (-2 * Math.PI) / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let j = 0; j < len / 2; j++) {
+        const a = i + j, b = a + len / 2, tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        const nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+      }
+    }
+  }
+  return Array.from({ length: n / 2 }, (_, k) => re[k] * re[k] + im[k] * im[k]);
+}
+/** 時刻 t（秒）からの約 10ms の窓の、f0 Hz 以上のパワー */
+function bandFrom(x, t, f0) {
+  const n = 512, p = fftPower(x, Math.round(t * SR), n);
+  return p.slice(Math.ceil((f0 * n) / SR)).reduce((s, v) => s + v, 0);
+}
+const dbPower = (a, b) => 10 * Math.log10(a / b);
+/** 先頭 t1 秒の、f0 Hz 以上にあるパワーの割合（4096 点の窓を半分ずつずらして平均） */
+function shareAbove(x, f0, t1) {
+  const n = 4096, total = new Array(n / 2).fill(0);
+  for (let st = 0; st + n <= SR * t1; st += n / 2) fftPower(x, st, n).forEach((v, k) => { total[k] += v; });
+  return total.slice(Math.ceil((f0 * n) / SR)).reduce((a, v) => a + v, 0) / total.reduce((a, v) => a + v, 0);
+}
 
 test('シャラン: 有限で、最後は 0 になり、毎回同じ波形。高さごとに違う。長さ（1.3 秒）は高さによらず同じ', () => {
   const all = TOPS.map((top) => shalanBuffer(SR, top));
@@ -89,27 +119,45 @@ test('シャラン: 有限で、最後は 0 になり、毎回同じ波形。高
   assert.equal(shalanBuffer(SR).length, all[0].length, '既定の高さも同じ長さ');
 });
 
-test('シャラン: 高さによらず同じ大きさ（先頭 0.6 秒の RMS）と、同じ聞こえる長さ（−40dB まで 0.55〜0.95 秒）', () => {
+test('シャラン: 高さによらず同じ大きさ（先頭 1 秒の RMS）と、同じ聞こえる長さ（−40dB まで 0.55〜0.95 秒）', () => {
+  const rms = TOPS.map((top) => rmsOf(shalanBuffer(SR, top), 0, SR));
+  const mean = rms.reduce((s, v) => s + v, 0) / rms.length;
+  assert.ok(mean > 0.068 && mean < 0.082, `平均 ${mean.toFixed(4)}`);
+  rms.forEach((v, i) => assert.ok(Math.abs(v / mean - 1) < 0.06, `${TOPS[i]}Hz: RMS ${v.toFixed(4)}（平均 ${mean.toFixed(4)}）`));
   for (const top of TOPS) {
-    const x = shalanBuffer(SR, top);
-    const rms = rmsOf(x, 0, SR * 0.6);
-    assert.ok(Math.abs(rms / 0.147 - 1) < 0.03, `${top}Hz: RMS ${rms.toFixed(4)}`);
-    const t = fallTime(x, 40);
+    const t = fallTime(shalanBuffer(SR, top), 40);
     assert.ok(t >= 0.55 && t <= 0.95, `${top}Hz: −40dB まで ${t}s`);
   }
 });
 
-test('シャラン: 半音ごとのバーが低い方から約 0.15 秒で順に駆け上がり、最後のバーが主役になる', () => {
+test('シャラン: 半音ごとのバーが低い方から約 0.12 秒で順に駆け上がり（1 回目）、最後のバーが主役になる', () => {
   const top = 2220, steps = 12;                        // 1.1kHz → 2.2kHz は 12 半音
   const bar = (below) => top * Math.pow(2, -below / 12);
   const times = [12, 9, 6, 3].map((b) => onset(shalanBuffer(SR, top), bar(b)));
   for (let i = 1; i < times.length; i++) assert.ok(times[i] > times[i - 1], `低いバーから順に: ${times.map((t) => t.toFixed(3)).join(' < ')}`);
-  assert.ok(times[0] < 0.04 && times[3] < 0.15, '約 0.15 秒で駆け上がる');
+  assert.ok(times[0] < 0.04 && times[3] < 0.11, '約 0.12 秒で駆け上がる');
   const last = onset(shalanBuffer(SR, top), top);
-  assert.ok(Math.abs(last - (0.15 + 0.012)) < 0.012, `最後のバーは駆け上がりの直後: ${last}`);
+  assert.ok(Math.abs(last - (0.115 + 0.008)) < 0.012, `最後のバーは駆け上がりの直後: ${last}`);
   assert.equal(steps, Math.round(12 * Math.log2(top / SHALAN_LOW)));
   const x = shalanBuffer(SR, top);
   assert.ok(near(x, SHALAN_LOW, 0, 0.03) > near(x, SHALAN_LOW * 0.75, 0, 0.03) * 5, '一番低いバーは約 1.1kHz');
+});
+
+test('シャン、シャン: 4kHz 以上が約 0.12 秒と約 0.28 秒の 2 回はじけ、その間（0.16〜0.22 秒）は 12dB 以上静まる（どの高さでも）', () => {
+  for (const top of [2220, 3326, 4440]) {
+    const x = shalanBuffer(SR, top), hi = (t) => bandFrom(x, t, 4000);
+    const grid = (a, b) => { const out = []; for (let t = a; t <= b + 1e-9; t += 0.004) out.push(hi(t)); return out; };
+    const first = Math.max(...grid(0.105, 0.14)), second = Math.max(...grid(0.265, 0.3)), gap = Math.min(...grid(0.16, 0.22));
+    assert.ok(dbPower(first, gap) > 12, `${top}Hz: 1 回目 ${dbPower(first, gap).toFixed(1)}dB`);
+    assert.ok(dbPower(second, gap) > 12, `${top}Hz: 2 回目 ${dbPower(second, gap).toFixed(1)}dB`);
+  }
+});
+
+test('尖った音: 先頭 0.6 秒のパワーの 2 割以上が 4kHz 以上にある（硬く叩いた高い部分音と、擦れ合う「シャッ」の雑音）', () => {
+  for (const top of [2220, 2492, 2797]) {              // 最後のバーの基本が 3kHz より下の高さ。4kHz 以上は、部分音と雑音だけ
+    const hi = shareAbove(shalanBuffer(SR, top), 4000, 0.6);
+    assert.ok(hi > 0.2, `${top}Hz: 4kHz 以上は ${hi.toFixed(2)}`);
+  }
 });
 
 test('シャラン: 最後のバーだけが長く響き、金属のバーの部分音（2.756 倍・5.404 倍）が乗る。整数倍（2 倍・3 倍）は無い', () => {
@@ -126,16 +174,62 @@ test('シャラン: 最後のバーだけが長く響き、金属のバーの部
 
 test('シャラン: ペンタトニックの音のバー（最後のバーの 3・5・8・10・12 半音下）は、隣の半音のバーより大きく長く鳴る（最後に残るのは濁らない音）', () => {
   const top = 2220, steps = 12, x = shalanBuffer(SR, top);
-  // 叩かれた 0.04〜0.1 秒後の大きさ（叩かれる時刻は、駆け上がり 0.15 秒を 12 等分したもの）
-  const level = (below) => { const t = (0.15 * (steps - below)) / steps; return near(x, top * Math.pow(2, -below / 12), t + 0.04, t + 0.1); };
+  // 叩かれた 0.015〜0.075 秒後の大きさ（叩かれる時刻は、駆け上がり 0.115 秒を 12 等分したもの。こだま（83ms 後）は除く）
+  const level = (below) => { const t = (0.115 * (steps - below)) / steps; return near(x, top * Math.pow(2, -below / 12), t + 0.015, t + 0.075); };
   for (const [main, filler] of [[3, 2], [3, 4], [5, 4], [5, 6], [8, 7], [8, 9], [10, 9], [10, 11], [12, 11]]) {
     assert.ok(level(main) > level(filler) * 1.8, `${main} 半音下 ${level(main).toExponential(2)} > ${filler} 半音下 ${level(filler).toExponential(2)}`);
   }
 });
 
+/* ---- 鈴 ---- */
+const BELLS = [440, 554, 740, 932, 1109, 1865];
+
+test('鈴: 有限で、最後は 0 になり、毎回同じ波形。高さごとに違い、高さによらず同じ大きさ（先頭 0.4 秒の RMS）', () => {
+  const all = BELLS.map((f) => bellBuffer(SR, f));
+  for (const x of all) {
+    assert.equal(x.length, Math.round(SR * BELL_LENGTH));
+    assert.ok(x.every(Number.isFinite));
+    assert.ok(peakOf(x) <= 0.98 + 1e-6 && peakOf(x) > 0.3, `ピーク ${peakOf(x)}`);
+    assert.ok(Math.abs(x[x.length - 1]) < 1e-6, '最後はぷつっと鳴らない');
+    assert.ok(Math.abs(rmsOf(x, 0, SR * 0.4) / 0.1 - 1) < 0.05, `RMS ${rmsOf(x, 0, SR * 0.4)}`);
+  }
+  assert.deepEqual(bellBuffer(SR, 554), bellBuffer(SR, 554));
+  for (let i = 1; i < all.length; i++) assert.notDeepEqual(all[0], all[i]);
+});
+
+test('鈴: 正弦波 1 本ではなく、基本・オクターブ・金属の部分音（2.756 倍・5.404 倍）・胴の低い響き（0.5 倍）が重なる。基本が占めるのは 85% 以下', () => {
+  for (const f of BELLS) {
+    const x = bellBuffer(SR, f), early = (r) => near(x, f * r, 0.01, 0.06);
+    assert.ok(db(early(2), early(1)) > -18, `${f}Hz: オクターブ上 ${db(early(2), early(1)).toFixed(1)}dB`);
+    assert.ok(db(early(2.756), early(1)) > -20, `${f}Hz: 2.756 倍 ${db(early(2.756), early(1)).toFixed(1)}dB`);
+    assert.ok(db(early(2.756), early(2.5)) > 12 && db(early(2.756), early(2.9)) > 8, `${f}Hz: 2.756 倍は、近くの整数倍より強い（整数でない金属の比）`);
+    assert.ok(db(early(0.5), early(1)) > -20, `${f}Hz: 胴の低い響き ${db(early(0.5), early(1)).toFixed(1)}dB`);
+    const n = 4096, tot = new Array(n / 2).fill(0);
+    for (let st = 0; st + n <= SR * 0.3; st += n / 2) fftPower(x, st, n).forEach((v, k) => { tot[k] += v; });
+    const k0 = Math.floor((f * 0.97 * n) / SR), k1 = Math.ceil((f * 1.03 * n) / SR);
+    const main = tot.slice(k0, k1 + 1).reduce((a, v) => a + v, 0) / tot.reduce((a, v) => a + v, 0);
+    assert.ok(main < 0.85, `${f}Hz: 基本が占める割合 ${main.toFixed(2)}`);
+  }
+});
+
+test('鈴: 高い部分音ほど速く消え（基本 > オクターブ > 2.756 倍 > 5.404 倍）、高い鈴ほど短く響く（−40dB まで 0.25〜0.7 秒）', () => {
+  for (const f of [440, 554, 932]) {
+    const x = bellBuffer(SR, f), drop = (r) => db(near(x, f * r, 0.12, 0.2), near(x, f * r, 0.01, 0.06));
+    assert.ok(drop(1) > drop(2) && drop(2) > drop(2.756) && drop(2.756) > drop(5.404), `${f}Hz: ${[1, 2, 2.756, 5.404].map((r) => drop(r).toFixed(1)).join(' > ')}`);
+    assert.ok(drop(5.404) < -25, `${f}Hz: 5.404 倍は打った瞬間の「チン」だけ`);
+  }
+  const fall = BELLS.map((f) => fallTime(bellBuffer(SR, f), 40));
+  fall.forEach((t, i) => assert.ok(t >= 0.25 && t <= 0.7, `${BELLS[i]}Hz: −40dB まで ${t}s`));
+  assert.ok(fall[0] > fall[fall.length - 1] + 0.1, '低い鈴ほど長く響く');
+});
+
+test('鈴: スマホの小さなスピーカー（450Hz 以下が出ない）でも、パワーの 8 割以上が 450Hz より上にある（ゴールの音 555Hz〜。前の 277Hz の正弦波は 0）', () => {
+  for (const f of [555, 740, 932, 1865]) assert.ok(shareAbove(bellBuffer(SR, f), 450, 0.4) > 0.8, `${f}Hz: ${shareAbove(bellBuffer(SR, f), 450, 0.4).toFixed(2)}`);
+});
+
 test('44.1kHz でも作れて、ナイキスト周波数を超える部分音は足さない（折り返しの雑音を出さない）', () => {
   for (const sr of [22050, 44100]) {
-    for (const x of [glassBuffer(sr, 1), shalanBuffer(sr, 3326)]) {
+    for (const x of [glassBuffer(sr, 1), shalanBuffer(sr, 3326), bellBuffer(sr, 932)]) {
       assert.ok(x.every(Number.isFinite));
       assert.ok(peakOf(x) > 0.3 && peakOf(x) <= 0.98 + 1e-6);
     }

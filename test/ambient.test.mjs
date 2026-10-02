@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   Ambient, ambientLook, comboLook, nextCalm, skipOlive, hexToOklch, oklchToHex, contrastWithWhite, wrapHue, hueDelta,
-  ORIGIN, BASE_HUE, TONES, MIN_CONTRAST,
-} from '../src/ui/ambient.js?v=202610020948';
+  ORIGIN, BASE_HUE, TONES, MIN_CONTRAST, BOARD, BOARD_VARS, boardLook, PLATE_SETS,
+} from '../src/ui/ambient.js?v=202610021101';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const hue = (hex) => hexToOklch(hex).h;
@@ -198,4 +199,92 @@ test('層の入れ替え: 新しい色は一番上へ opacity だけで重ね、
   for (let i = 0; i < 10; i++) a.show(ambientLook(i * 30, 'base'), 300);       // 層が足りなくなっても、一番古い層を使い回す
   assert.ok(a.layers.every((l) => a.layers.filter((m) => m.z === l.z).length === 1));
   stop(a);
+});
+
+/* ---------------- 盤面の土台（プレート）も背景と一緒に変わる ---------------- */
+
+const css = readFileSync(new URL('../src/ui/styles.css?v=202610021101', import.meta.url), 'utf8');
+/** 'rgba(4, 12, 60, .7)' や '#1A3EAE' を比べられる形（数値の配列・小文字）にそろえる */
+const norm = (c) => (c.startsWith('#') ? c.toLowerCase() : c.match(/[\d.]+/g).map(Number));
+
+test('盤面の土台の最初の色は、styles.css の .well-set の変数と同じ（今の青のまま）', () => {
+  const block = css.match(/\.well-set\{([^}]*)\}/)[1];
+  const base = boardLook(BASE_HUE, 'base');
+  assert.deepEqual(Object.keys(base), Object.keys(BOARD_VARS));
+  for (const name of Object.keys(BOARD_VARS)) {
+    const m = block.match(new RegExp(`${name}:\\s*([^;]+);`));
+    assert.ok(m, `${name} が .well-set に無い`);
+    assert.deepEqual(norm(base[name]), norm(m[1].trim()), name);
+  }
+  assert.equal(css.includes('--plate:#1a3eae; --well:#0b163f'), false, '使われていない古い変数は残さない');
+});
+
+test('土台の色: どの色相・濃さでも、背景と同じ色相で、背景より暗い板と、もっと暗いくぼみ。暗さの差は今の青と同じ', () => {
+  const baseGap = hexToOklch(ambientLook(BASE_HUE, 'base').lo).L - hexToOklch(BOARD.plate).L;
+  for (const tone of Object.keys(TONES)) {
+    for (let h = 0; h < 360; h += 6) {
+      const bg = hexToOklch(ambientLook(h, tone).lo), v = boardLook(h, tone);
+      const plate = hexToOklch(v['--plate']), well = hexToOklch(v['--well']);
+      assert.ok(Math.abs(bg.L - plate.L - baseGap) < 0.02, `${tone} ${h}° 板の暗さの差 ${(bg.L - plate.L).toFixed(3)}`);
+      assert.ok(well.L < plate.L - 0.03, `${tone} ${h}° くぼみは板より暗い ${well.L.toFixed(3)} < ${plate.L.toFixed(3)}`);
+      if (plate.C > 0.04) assert.ok(Math.abs(hueDelta(plate.h, h)) < 6, `${tone} ${h}° 板の色相 ${plate.h.toFixed(1)}`);
+      if (well.C > 0.04) assert.ok(Math.abs(hueDelta(well.h, h)) < 8, `${tone} ${h}° くぼみの色相 ${well.h.toFixed(1)}`);
+    }
+  }
+});
+
+test('土台の縁・光・影も同じ色相へ回る。縁の線はくぼみ・板より明るく、影はくぼみより暗い', () => {
+  for (const h of [0, 40, 100, 150, 200, 250, 300, 340]) {
+    const v = boardLook(h, 'base');
+    const L = (name) => { const [r, g, b] = v[name].match(/[\d.]+/g).map(Number); return hexToOklch('#' + [r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('')); };
+    assert.ok(L('--well-rim').L > hexToOklch(v['--plate']).L + 0.1 && L('--well-hi').L > L('--well-rim').L, `${h}° 縁の線の明るさ`);
+    assert.ok(L('--well-s1').L < hexToOklch(v['--well']).L && L('--plate-shade').L < hexToOklch(v['--well']).L, `${h}° 影の暗さ`);
+    for (const name of ['--well-rim', '--well-hi', '--plate-edge']) assert.ok(Math.abs(hueDelta(L(name).h, h)) < 12 || L(name).C < 0.04, `${h}° ${name} の色相 ${L(name).h.toFixed(1)}`);
+    for (const name of Object.keys(BOARD_VARS)) assert.ok(/^(#[0-9a-f]{6}|rgba\(\d+,\d+,\d+,[\d.]+\))$/.test(v[name]), `${name}: ${v[name]}`);
+  }
+  assert.equal(ambientLook(77, 'deep').board['--plate'], boardLook(77, 'deep')['--plate'], '背景の色と一緒に持つ');
+});
+
+/** 土台の層（最初の 1 枚が見えている）を持つ Ambient */
+const makeBoard = (opts) => {
+  const r = make(opts), el = r.doc.createElement();
+  const sets = Array.from({ length: PLATE_SETS }, () => r.doc.createElement());
+  r.a.bindBoard(sets);
+  return { ...r, sets };
+};
+
+test('土台の層は背景の層と同じ瞬間・同じ長さ・同じ動き（opacity だけ）で重なり、覆い終わったら下の層を外す', () => {
+  const { a, sets } = makeBoard();
+  assert.equal(a.plates.filter((p) => p.on).length, 1, '最初は 0 番だけが見えている');
+  a.go(BASE_HUE + 30, 'base', 500);
+  a.go(BASE_HUE + 60, 'base', 800);
+  const bg = a.layers.filter((l) => l.on), pl = a.plates.filter((p) => p.on);
+  assert.equal(bg.length, 2); assert.equal(pl.length, 3, '背景の 2 枚 + 最初の青');
+  for (const l of bg) {
+    const p = l.plate;
+    assert.deepEqual(p.anim.frames, l.anim.frames); assert.deepEqual(p.anim.frames, [{ opacity: 0 }, { opacity: 1 }]);
+    assert.equal(p.anim.opts.duration, l.anim.opts.duration); assert.equal(p.anim.opts.easing, l.anim.opts.easing);
+    assert.equal(p.z, l.z, '重なる順番も同じ');
+  }
+  const look = ambientLook(BASE_HUE + 60, 'base');
+  for (const [name, v] of Object.entries(look.board)) assert.equal(bg[1].plate.el.style.props[name], v, name);
+  bg[1].anim.onfinish();                                     // 2 枚目が全面を覆った
+  assert.equal(a.plates.filter((p) => p.on).length, 1);
+  assert.equal(bg[1].plate.el.style.opacity, '1'); assert.equal(sets[0].style.display, 'none', '最初の青は外れる');
+  assert.equal(bg[1].plate.el.style.display, 'block');
+  for (let i = 0; i < 14; i++) a.show(ambientLook(i * 25, 'soft'), 300);       // 層が足りなくなっても、一番古い層を使い回して壊れない
+  assert.ok(a.plates.every((p) => a.plates.filter((q) => q.z === p.z && q.on).length <= 1));
+  stop(a);
+});
+
+test('土台の層をつなげていなくても（チュートリアル・テスト）、背景は今までどおり動く。動きを減らす設定でも背景と同じ 1 回の重ね', () => {
+  const { a } = make();
+  a.go(BASE_HUE + 30, 'base', 500);
+  assert.equal(a.layers.filter((l) => l.on).length, 1); assert.equal(a.layers.find((l) => l.on).plate, null);
+  stop(a);
+  const q = makeBoard({ reduced: true });
+  q.a.go(BASE_HUE + 160, 'base', 100);
+  assert.equal(q.a.plates.filter((p) => p.on).length, 2, '最初の青 + 新しい色の 1 枚');
+  assert.ok(q.a.layers.find((l) => l.on).plate.anim.opts.duration >= 700);
+  stop(q.a);
 });

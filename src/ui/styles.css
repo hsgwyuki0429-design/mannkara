@@ -12,7 +12,6 @@
   --cell:35px;
   --bg:#2451c4; --bg-hi:#2e60d6;
   --line:rgba(150,192,255,.78);           /* ピル・丸ボタン・トレイ枠の線 */
-  --plate:#1a3eae; --well:#0b163f; --well-rim:#4b71cf;
   --text:#fff; --dim:rgba(255,255,255,.62);
   --gold:#ffd54a; --goal:#3fd6e0; --goal-text:#8ef1f8;
   --amb-glow:95,155,255;                  /* 背景の色相に合わせた明るい同系色（r,g,b）。ambient.js が背景を変えるたびに書き換える */
@@ -95,16 +94,21 @@ button{font-family:inherit;cursor:pointer;}
 .playfield{position:absolute;transform:rotate(225deg);}   /* 実際の transform は renderer.layout が設定 */
 .upright{display:inline-block;rotate:-225deg;}
 .layer{position:absolute;inset:0;pointer-events:none;}
-#wellLayer{filter:drop-shadow(0 0 1px rgba(80,130,255,.9)) drop-shadow(0 0 5px rgba(0,8,50,.35));}
+/* 盤面の土台（マスの下の土台 + くぼみ + まわりの光と影）。色は .well-set の変数で、ambient.js が背景の色相に合わせて書き換える
+   （背景と同じ重ね方: 色の違う層を重ねて opacity だけで切り替える。0 番だけが最初から見えていて、今の青。動かすのは opacity だけ） */
+.well-set{position:absolute;inset:0;
+  --plate:#1a3eae;--well:#1f3285;--well-s1:rgba(4,12,60,.7);--well-s2:rgba(4,12,60,.45);--well-rim:rgba(96,140,245,.8);--well-hi:rgba(150,186,255,.95);
+  --plate-edge:rgba(80,130,255,.9);--plate-shade:rgba(0,8,50,.35);
+  filter:drop-shadow(0 0 1px var(--plate-edge)) drop-shadow(0 0 5px var(--plate-shade));}
 .cell{position:absolute;left:0;top:0;width:var(--cell);height:var(--cell);}
 .well{background:none;}
 /* 土台（マス同士の継ぎ目が見えないよう、少しだけはみ出させる） */
 .well::before{content:'';position:absolute;inset:-.6px;background:var(--plate);border-radius:inherit;}
 /* 盤面は 225° 回転して表示するので、ローカルの 右・下 = 画面の上側、左・上 = 画面の下側 */
 .well::after{content:'';position:absolute;inset:6%;border-radius:14%;
-  background:#1f3285;
-  box-shadow:inset -3px -3px 7px 1px rgba(4,12,60,.7),inset .8px .8px 0 rgba(4,12,60,.45),
-             0 0 0 .7px rgba(96,140,245,.8),-.9px -.9px 0 .2px rgba(150,186,255,.95);}
+  background:var(--well);
+  box-shadow:inset -3px -3px 7px 1px var(--well-s1),inset .8px .8px 0 var(--well-s2),
+             0 0 0 .7px var(--well-rim),-.9px -.9px 0 .2px var(--well-hi);}
 .well.tl{border-top-left-radius:22%;} .well.tr{border-top-right-radius:22%;}
 .well.bl{border-bottom-left-radius:22%;} .well.edge-r{border-bottom-right-radius:22%;}
 .lane{position:absolute;pointer-events:none;}

@@ -6,7 +6,8 @@
  *  - ガラス: 薄いガラスの曲げ振動は 1 : 2.83 : 5.42 : 8.77 の整数でない比（金属のバーと同じ種類の比）になる。
  *    基本モードは完全には対称でなく、わずかにずれた 2 つに割れてうなる。テーブルに置かれたガラスは、接触で振動が抑えられて短く消える
  *  - バーチャイム（マークツリー）: 金属の細い棒の曲げ振動の部分音は 1 : 2.76 : 5.40 : 8.93（グロッケンのバーと同じ）。
- *    棒の長さ 8〜20cm（直径約 9.5mm のアルミ）で、基本の高さは 1〜7kHz。高い部分音ほど速く消え、ほぼ同じ高さの対がゆっくりうなる
+ *    棒の長さ 8〜20cm（直径約 9.5mm のアルミ）で、基本の高さは 1〜7kHz。高い部分音ほど速く消え、ほぼ同じ高さの対がゆっくりうなる。
+ *    硬く叩くと高い部分音が強く尖った音になり、棒どうしが擦れ合う「シャッ」（4〜9kHz の帯域雑音）が混ざる。指で 2 回なでて「シャン、シャン」
  * 毎回同じ音になるよう乱数は固定シード。鳴らすたびに計算しないよう、AudioBuffer は 1 回だけ作って使い回す。
  */
 
@@ -62,16 +63,48 @@ function finish(out, sr, peak = 0.9) {
   for (let i = 0; i < out.length; i++) { const v = Math.abs(out[i]); if (v > m) m = v; }
   return scaleAndFade(out, sr, m > 0 ? peak / m : 0);
 }
+/** 2 次のローパス（RBJ。q = 1/√2 でバターワース）。x の新しい配列を返す */
+function lowpass(x, sr, f0, q = Math.SQRT1_2) {
+  const w0 = (2 * Math.PI * f0) / sr, cs = Math.cos(w0), al = Math.sin(w0) / (2 * q);
+  const a0 = 1 + al, b0 = (1 - cs) / 2 / a0, b1 = (1 - cs) / a0, c1 = (-2 * cs) / a0, c2 = (1 - al) / a0;
+  const y = new Float32Array(x.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const v = b0 * x[i] + b1 * x1 + b0 * x2 - c1 * y1 - c2 * y2;
+    x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
+  }
+  return y;
+}
 /**
- * 先頭 0.6 秒の RMS（音の大きさの目安）を rms にそろえる。高さやバーの数が違っても同じ大きさに聞こえるように。
+ * 先頭 secs 秒（既定 1 秒）の RMS（音の大きさの目安）を rms にそろえる。高さやバーの数が違っても同じ大きさに聞こえるように。
+ * 大きさは、出口の 9.5kHz のローパス（sfx.js の bright）を通したあとで測る（それより上の部分音は聞こえないので数えない）。
  * ただし最大の振幅は peak まで（超えるときは、そのぶん小さくする）
  */
-function finishLoud(out, sr, rms = 0.2, peak = 0.98) {
+function finishLoud(out, sr, rms = 0.2, peak = 0.98, secs = 1) {
   let m = 0, e = 0;
-  const n = Math.min(out.length, Math.round(sr * 0.6));
-  for (let i = 0; i < out.length; i++) { const v = Math.abs(out[i]); if (v > m) m = v; if (i < n) e += out[i] * out[i]; }
+  const n = Math.min(out.length, Math.round(sr * secs)), heard = lowpass(out.subarray(0, n), sr, Math.min(9500, sr * 0.45));
+  for (let i = 0; i < out.length; i++) { const v = Math.abs(out[i]); if (v > m) m = v; }
+  for (let i = 0; i < n; i++) e += heard[i] * heard[i];
   const r = Math.sqrt(e / n);
   return scaleAndFade(out, sr, r > 0 && m > 0 ? Math.min(rms / r, peak / m) : 0);
+}
+
+/**
+ * 帯域雑音（「シャ」）を out に足す: at 秒から dur 秒、中心 f0 Hz（Q）の帯域だけを通した雑音。0.6ms で立ち上がり、指数で消える。
+ * 音の高さのない、金属が擦れ合う・打ち合う「シャッ」という息の成分
+ */
+function addHiss(out, sr, at, dur, a, rand, f0 = 5200, q = 0.8) {
+  const start = Math.round(at * sr), n = Math.min(out.length - start, Math.ceil(dur * sr));
+  if (n <= 0 || !(a > 0)) return;
+  const w0 = (2 * Math.PI * f0) / sr, al = Math.sin(w0) / (2 * q), a0 = 1 + al, g = al / a0, c1 = (-2 * Math.cos(w0)) / a0, c2 = (1 - al) / a0;
+  const tau = (dur / 4.5) * sr, up = Math.max(1, Math.round(0.0006 * sr));
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < n; i++) {
+    const x = (rand() * 2 - 1) * Math.exp(-i / tau) * (i < up ? (i + 1) / up : 1);
+    const y = g * (x - x2) - c1 * y1 - c2 * y2;
+    x2 = x1; x1 = x; y2 = y1; y1 = y;
+    out[start + i] += a * y;
+  }
 }
 
 /** 少し遅らせた小さなこだまを足す（きらめきの余韻）。delays 秒・gains 倍 */
@@ -119,57 +152,107 @@ export function glassBuffer(sr, variant = 0) {
 }
 
 /* =====================================================================
+ * 鈴（音の高さのある「ピン」の音。ゴール・手駒の補充・コンボ・褒め言葉などの旋律に使う）
+ * ===================================================================== */
+/** 鈴 1 つの長さ（秒）。sfx.js が、鳴らす長さに合わせて途中から小さくして切る */
+export const BELL_LENGTH = 1;
+/** 先頭 0.4 秒の RMS（9.5kHz のローパスを通したあと）。高さによらず同じ大きさ */
+const BELL_RMS = 0.1;
+/**
+ * 鈴の部分音 [周波数の比, 大きさ, 消える速さ（基本に対する倍率）]。
+ *  - 0.5 = 胴の低い響き（ハム）。スマホの小さなスピーカーは低い音が出ないので、これだけに頼らず、上の部分音で厚みを出す
+ *  - 1 = 打った音の高さ / 2 = オクターブ上（鐘の「ノミナル」）/ 3 = その 5 度上
+ *  - 2.756・5.404・8.933 = 金属の曲げ振動の整数でない比（バーチャイムと同じ）。高いほど速く消えて、打った瞬間の「チン」になる
+ * 純粋な正弦波 1 本の「ピン」は、細くて薄っぺらい。いくつもの部分音が違う速さで消えていくと、厚みのある金属の響きになる
+ */
+const BELL_PARTS = [[0.5, 0.3, 1.3], [1, 1, 1], [2, 0.8, 0.7], [2.756, 0.55, 0.45], [3, 0.3, 0.5], [5.404, 0.32, 0.25], [8.933, 0.12, 0.12]];
+/**
+ * 鈴の波形（1 秒）: 基本の高さ f（Hz）。部分音 + わずかにずれた対（ゆっくりしたうなり = 鈴のゆらぎ）+ 打った瞬間の「チッ」+
+ * 短いこだま 2 つ（43ms・97ms。小さな部屋の響き）。響きの長さは高いほど短く（f ≈ 700Hz で基本が 0.62 秒で 60dB 小さくなる）。
+ * 高さが違っても、同じ大きさ。f ごとに乱数を固定
+ */
+export function bellBuffer(sr, f = 700) {
+  const out = new Float32Array(Math.round(sr * BELL_LENGTH));
+  const rand = rng(0x6b1d5eed + Math.round(f) * 31);
+  const sign = () => (rand() < 0.5 ? -1 : 1), t60 = 0.62 * Math.pow(700 / f, 0.35);
+  for (const [ratio, a, d] of BELL_PARTS) addMode(out, sr, 0, f * ratio, a * sign(), t60 * d, 0.0004);
+  addMode(out, sr, 0, f * (1.0028 + rand() * 0.0012), 0.55 * sign(), t60 * 0.92, 0.0004);          // 基本のずれた対
+  addMode(out, sr, 0, f * 2 * (1.0035 + rand() * 0.001), 0.3 * sign(), t60 * 0.6, 0.0004);          // オクターブのずれた対
+  addClick(out, sr, 0, 0.0004, 0.1, rand);
+  addEchoes(out, sr, [0.043, 0.097], [0.16, 0.09]);
+  return finishLoud(out, sr, BELL_RMS, 0.98, 0.4);
+}
+
+/* =====================================================================
  * シャラン（バーチャイム = マークツリーの、高い金属のきらめき）
  * ===================================================================== */
 /** 最後の（一番高い）バーの高さの基準（Hz）。鳴らすときは、連鎖ごとの高さで作り直す（sfx.js の shalanTop）。長さは高さによらず同じ */
 export const SHALAN_TOP = 2217;
 /** 一番低いバーの高さ（Hz）。バーチャイムの長いバー（約 20cm）の基本の高さ */
 export const SHALAN_LOW = 1100;
-/** 全体の長さ（秒。最後のバーは 1 秒で聞こえなくなる）。駆け上がる時間（約 0.15 秒）のあと、最後のバーが 60dB 小さくなるまで SHALAN_RING 秒 */
+/** 全体の長さ（秒）。2 回目のなで上げのあと、最後のバーが 60dB 小さくなるまで SHALAN_RING 秒 */
 export const SHALAN_LENGTH = 1.3;
-const SHALAN_RING = 0.85, SHALAN_SWEEP = 0.15;
-/** 先頭 0.6 秒の RMS。高さによらず同じ大きさ（旧版のシャランと同じ、耳の感度で重み付けした大きさ） */
-const SHALAN_RMS = 0.147;
+const SHALAN_RING = 0.7;
+/** 先頭 1 秒の RMS（9.5kHz のローパスを通したあと）。高さによらず同じ大きさ */
+const SHALAN_RMS = 0.07;
+/**
+ * なで上げ（シャン）: 指でバーをなでる動き。at = 始まる時刻（秒）、dur = 駆け上がる時間（秒）、bars = 何半音ぶんのバーを叩くか
+ * （null = 一番低いバーから）、level = 強さ、tail = 最後のバーの余韻の長さ（60dB・秒）、tailLevel = 最後のバーの強さ
+ */
+const FLICKS = [
+  { at: 0, dur: 0.115, bars: null, level: 1, tail: 0.2, tailLevel: 0.34 },
+  { at: 0.2, dur: 0.07, bars: 7, level: 0.85, tail: SHALAN_RING, tailLevel: 0.5 },
+];
 /**
  * 金属のバー（アルミ・真鍮の細い棒）の部分音 [周波数の比, 大きさ, 消える速さ（基本に対する倍率）]。両端が自由な棒の曲げ振動の
- * 1 : 2.756 : 5.404 : 8.933（グロッケンのバーと同じ）。整数倍でないので、音の高さがはっきりしない「きらきら」になる
+ * 1 : 2.756 : 5.404 : 8.933（グロッケンのバーと同じ）。整数倍でないので、音の高さがはっきりしない「きらきら」になる。
+ * 硬いもの（金属の撥・指先の爪）で叩くと、高い部分音が強く、尖った音になる
  */
-const BAR_PARTS = [[1, 1, 1], [2.756, 0.35, 0.5], [5.404, 0.12, 0.25], [8.933, 0.04, 0.12]];
+const BAR_PARTS = [[1, 1, 1], [2.756, 0.6, 0.55], [5.404, 0.4, 0.4], [8.933, 0.2, 0.25]];
 /** 最後のバーを主音としたとき、ペンタトニックの音になる半音の数（最後のバーから何半音下か、12 で割った余り）。ここは大きく、長く鳴らす */
 const BAR_MAIN = [0, 3, 5, 8, 10];
+/** 叩いた瞬間の雑音（シャッ）の強さ（バーの大きさに対する倍率）と、その長さ（秒） */
+const HISS = 2.4, HISS_LEN = 0.012;
 
 /**
- * バー 1 本を叩く: 部分音 + わずかにずれた対（ゆっくりしたうなり = 金属のきらめき）+ 指がバーに触れた瞬間の「チッ」。
+ * バー 1 本を叩く: 部分音 + わずかにずれた対（ゆっくりしたうなり = 金属のきらめき）+ 叩いた瞬間の「チッ」+ 雑音の「シャッ」。
  * モードごとの向き（符号）は、打った場所での振動の向きがモードごとに違うので、ばらばらにする（そろえると、打った瞬間に全部が重なって
  * 鋭いピークになり、そのぶん全体の音量を上げられない）
  */
-function barNote(out, sr, f, at, gain, t60, rand, click = 0.15) {
+function barNote(out, air, sr, f, at, gain, t60, rand, { click = 0.15, hiss = HISS, hissLen = HISS_LEN } = {}) {
   const sign = () => (rand() < 0.5 ? -1 : 1);
   for (const [ratio, a, d] of BAR_PARTS) addMode(out, sr, at, f * ratio, gain * a * sign(), t60 * d, 0.0004);
   addMode(out, sr, at, f * (1.001 + rand() * 0.0007), gain * 0.55 * sign(), t60 * 0.95, 0.0004);
-  addClick(out, sr, at, 0.0003, gain * click, rand);
+  addClick(air, sr, at, 0.0003, gain * click, rand);
+  addHiss(air, sr, at, hissLen, gain * hiss, rand);
 }
 
 /**
- * シャラン（1.3 秒）: バーチャイム（長さの違う金属のバーを並べて吊るした楽器）を指でなでたときの、高い音が駆け上がる
- * 「シャラーン」。一番低いバー（SHALAN_LOW）から top まで、半音ごとのバーを約 0.15 秒で順に叩き（だんだん強く）、
- * 最後の top のバーだけが長く響く。ペンタトニックの音のバーは大きく長く、間の半音のバーは小さく短く鳴らす
+ * シャラン（1.3 秒）: バーチャイム（長さの違う金属のバーを並べて吊るした楽器）を指で 2 回なでたときの
+ * 「シャン、シャン」。1 回目は一番低いバー（SHALAN_LOW）から top まで、半音ごとのバーを約 0.12 秒で順に叩き（だんだん強く）、
+ * 2 回目は top の 7 半音下から top まで。top のバーは 2 回目のあとで長く響く。各バーの叩く瞬間には金属の「チッ」と、
+ * 擦れ合う「シャッ」（帯域雑音）が付く。ペンタトニックの音のバーは大きく長く、間の半音のバーは小さく短く鳴らす
  * （最後にペンタトニックだけが残るので、ゴールの音と濁らない）。短いこだま 2 つ（83ms・151ms）を足す。
  * 高さが変わっても、長さ・駆け上がる時間・最後のバーの消え方は同じ
  */
 export function shalanBuffer(sr, top = SHALAN_TOP) {
-  const out = new Float32Array(Math.round(sr * SHALAN_LENGTH));
+  const out = new Float32Array(Math.round(sr * SHALAN_LENGTH)), air = new Float32Array(out.length);   // 部分音 / 雑音（「シャッ」「チッ」）
   const steps = Math.max(8, Math.round(12 * Math.log2(top / SHALAN_LOW)));      // 一番低いバーから最後のバーまでの半音の数
-  for (let k = 0; k < steps; k++) {
-    const below = steps - k, u = k / steps;                                       // 最後のバーから何半音下か / 0 → 1
-    const rand = rng(0x2545f491 + below * 7919);                                  // バーごとに固定: 高さが違っても、同じ位置のバーは同じ鳴り方
-    const main = BAR_MAIN.includes(below % 12);
-    const at = SHALAN_SWEEP * u + (rand() - 0.5) * 0.003;
-    const gain = (0.06 + 0.22 * u * u) * (main ? 1 : 0.4) * (0.8 + rand() * 0.4);
-    barNote(out, sr, top * Math.pow(2, -below / 12), Math.max(0, at), gain, main ? 0.34 + 0.12 * u : 0.2 + 0.06 * u, rand);
-  }
-  barNote(out, sr, top, SHALAN_SWEEP + 0.012, 0.5 * Math.sqrt(steps / 12), SHALAN_RING, rng(0x51ed270b), 0.06);   // ラン: 最後のバー（バーが多いほど強く。埋もれずに、同じ長さに聞こえるように）
-  addEchoes(out, sr, [0.083, 0.151], [0.22, 0.12]);
+  FLICKS.forEach((fl, j) => {
+    const n = fl.bars ?? steps;
+    for (let k = 0; k < n; k++) {
+      const below = n - k, u = k / n;                                             // 最後のバーから何半音下か / 0 → 1
+      const rand = rng(0x2545f491 + below * 7919 + j * 104729);                   // バーごとに固定: 高さが違っても、同じ位置のバーは同じ鳴り方
+      const main = BAR_MAIN.includes(below % 12);
+      const at = fl.at + fl.dur * u + (rand() - 0.5) * 0.003;
+      const gain = (0.06 + 0.22 * u * u) * (main ? 1 : 0.34) * (0.8 + rand() * 0.4) * fl.level;
+      barNote(out, air, sr, top * Math.pow(2, -below / 12), Math.max(0, at), gain, main ? 0.2 + 0.18 * u : 0.1 + 0.08 * u, rand);
+    }
+    // top のバー: 1 回目は短い「チン」、2 回目は長く響く「シャーン」（バーが多いほど強く。埋もれないように）
+    barNote(out, air, sr, top, fl.at + fl.dur + 0.008, fl.tailLevel * Math.sqrt(steps / 12), fl.tail, rng(0x51ed270b + j * 7), { click: 0.3, hiss: 2.6, hissLen: 0.04 });
+  });
+  addEchoes(out, sr, [0.083, 0.151], [0.22, 0.12]);                               // 響きだけにこだまを足す（「シャッ」を重ねると、2 回が 5 回に聞こえてしまう）
+  for (let i = 0; i < out.length; i++) out[i] += air[i];
   return finishLoud(out, sr, SHALAN_RMS, 0.98);
 }
 
