@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Sfx, note, voicedFrequency, shalanTop, bellPitch } from '../src/ui/sfx.js?v=202610021128';
 import { Renderer } from '../src/ui/renderer.js?v=202610021128';
+import { RIM_MS } from '../src/ui/rims.js?v=202610021128';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -318,11 +319,12 @@ function fakeDom() {
 function glowRenderer({ reduced = false, frameMs = 16.7, rush = false } = {}) {
   const el = fakeDom();
   globalThis.window = { matchMedia: () => ({ matches: reduced }) };
-  const calls = { stars: [], shalan: [] };
+  const calls = { stars: [], shalan: [], rims: [] };
   const r = Object.assign(Object.create(Renderer.prototype), {
     fxLayer: el('layer'), cell: 35, W: 280, wrapW: 390, topY: 300, frameMs, rush,
     fxTimers: new Set(), pausedAnimations: new Set(), fxPaused: false, gen: 0,
     sparkLayer: { twinkle: (x, y, o) => { calls.stars.push({ x, y, ...o }); return true; }, clear() { calls.cleared = true; } },
+    rims: { flash: (x, y, color, delay) => { calls.rims.push({ x, y, color, delay }); }, clear() { calls.rimsCleared = true; } },
     sfx: { shalan: (...a) => calls.shalan.push(a) },
   });
   r.done = () => { for (const t of [...r.fxTimers]) r.cancelFxTimer(t); };
@@ -370,7 +372,7 @@ test('溜めと発動の始まりで、同じラインに二重に出さない�
 test('早送り中は光も音も出さない。層が無いときは何もしない', () => {
   const { r, calls } = glowRenderer({ rush: true });
   r.lineGlow('col', 3, 'red', 1); r.trail('col', 3, 'red', 540); r.goalSparkle(['red'], 2);
-  assert.equal(r.fxLayer.children.length, 0); assert.equal(calls.shalan.length, 0);
+  assert.equal(r.fxLayer.children.length, 0); assert.equal(calls.shalan.length, 0); assert.equal(calls.rims.length, 0); assert.equal(calls.stars.length, 0);
   const bare = Object.create(Renderer.prototype);
   assert.doesNotThrow(() => { bare.lineGlow('col', 3); bare.trail('col', 3); });
 });
@@ -384,7 +386,7 @@ test('動きを減らす設定では、枠がふわっと光って消えるだ�
   assert.equal(frame.children[0].anims.length, 0);
   assert.equal(calls.stars.length, 0); assert.equal(calls.shalan.length, 1);
   r.trail('col', 3, 'red', 540); r.goalSparkle(['red'], 2);
-  assert.equal(r.fxLayer.children.length, 1); assert.equal(calls.stars.length, 0);
+  assert.equal(r.fxLayer.children.length, 1); assert.equal(calls.stars.length, 0); assert.equal(calls.rims.length, 0);
   r.done();
 });
 
@@ -392,35 +394,33 @@ test('遅い端末では、星（品質 0.6 未満）→ 跡の光（0.5 未満�
   const mid = glowRenderer({ frameMs: 31 });                                  // 品質 ≈ 0.58
   mid.r.lineGlow('col', 3, 'red', 1); mid.r.trail('col', 3, 'red', 540); mid.r.goalSparkle(['red'], 2);
   assert.equal(mid.calls.stars.length, 0, '星は出さない');
-  assert.equal(mid.r.fxLayer.children.length, 1 + 9, '枠 1 + 跡 9');
+  assert.equal(mid.r.fxLayer.children.length, 1, '枠 1（跡は canvas）'); assert.equal(mid.calls.rims.length, 9, '跡 9');
   const slow = glowRenderer({ frameMs: 60 });                                 // 品質 0.25
   slow.r.lineGlow('col', 3, 'red', 1); slow.r.trail('col', 3, 'red', 540);
-  assert.equal(slow.r.fxLayer.children.length, 1, '枠だけ');
+  assert.equal(slow.r.fxLayer.children.length, 1, '枠だけ'); assert.equal(slow.calls.rims.length, 0);
   mid.r.done(); slow.r.done();
 });
 
 test('通過した跡: 列車の後ろが抜けた順に、ラインの外の通路の入り口までの 9 マスが光る。星は交互に白とブロックの色', () => {
   const { r, calls } = glowRenderer();
   r.trail('col', 3, 'green', 540);
-  const flashes = r.fxLayer.children;
+  const flashes = calls.rims;
   assert.equal(flashes.length, 9);
-  assert.ok(flashes.every((f) => f.className === 'rim-flash' && f.anims.length === 1));
-  const delays = flashes.map((f) => f.anims[0].opts.delay);
+  assert.ok(flashes.every((f) => f.color === 'green'), 'ブロックの色で光る');
+  const delays = flashes.map((f) => f.delay);
   assert.ok(delays.every((d, i) => i === 0 || d > delays[i - 1]), '抜けた順に点る');
   assert.ok(delays[0] > 0 && delays[8] <= 540 + 1e-6, '列車が通り終える（9 マス）までに全部点る');
-  assert.ok(flashes.every((f) => f.anims[0].opts.fill === 'backwards' && f.anims[0].opts.duration <= 320), 'ほんの少しだけ光る');
+  assert.ok(RIM_MS <= 320, 'ほんの少しだけ光る');
+  assert.equal(r.fxLayer.children.length, 0, '光は要素ではなく canvas に描く（要素を動かすと毎フレームの仕事が増える）');
   assert.deepEqual(calls.stars.map((s) => s.color), ['white', 'green', 'white', 'green', 'white', 'green', 'white', 'green', 'white']);
-  flashes[0].anims[0].onfinish(); assert.equal(flashes[0].removed, true);
   r.done();
 });
 
 test('横ラインの跡は縦と同じ時刻・左右対称の位置。ゴールでは星がはじける', () => {
   const a = glowRenderer(), b = glowRenderer();
   a.r.trail('col', 4, 'red', 600); b.r.trail('row', 4, 'red', 600);
-  const da = a.r.fxLayer.children.map((f) => f.anims[0].opts.delay), db = b.r.fxLayer.children.map((f) => f.anims[0].opts.delay);
-  assert.deepEqual(da, db);
-  const swap = (s) => s.match(/translate\(([\d.]+)px,([\d.]+)px\)/).slice(1).map(Number);
-  a.r.fxLayer.children.forEach((f, i) => { const [x, y] = swap(f.style.cssText), [x2, y2] = swap(b.r.fxLayer.children[i].style.cssText); assert.ok(Math.abs(x - y2) < 1e-6 && Math.abs(y - x2) < 1e-6, `${i}: (${x},${y}) ↔ (${x2},${y2})`); });
+  assert.deepEqual(a.calls.rims.map((f) => f.delay), b.calls.rims.map((f) => f.delay));
+  a.calls.rims.forEach((f, i) => { const g = b.calls.rims[i]; assert.ok(Math.abs(f.x - g.y) < 1e-6 && Math.abs(f.y - g.x) < 1e-6, `${i}: (${f.x},${f.y}) ↔ (${g.x},${g.y})`); });
   a.r.goalSparkle(['red', 'blue'], 2);
   assert.equal(a.calls.stars.length, 9 + 6);                                  // 跡 9 + ゴール 6
   assert.ok(a.calls.stars.slice(9).every((s) => s.size >= 35 * 0.5 && s.delay <= 6 * 22));
@@ -429,18 +429,23 @@ test('横ラインの跡は縦と同じ時刻・左右対称の位置。ゴー�
 
 test('リセットで星も全部消す', () => {
   const { r, calls } = glowRenderer();
-  Object.assign(r, { gen: 0, sfx: { stop() {} }, clearCelebration() {}, wrap: { getAnimations: () => [] }, waiters: new Set(), shardLayer: { clear() {} }, fx2: { innerHTML: 'x' },
+  const kept = { fx2: [], fxLayer: [] };                                      // 小さな演出の canvas（要素）は、中身を空にしても残す
+  const canvas = (name) => ({ el: { name }, clear() {} });
+  Object.assign(r, { gen: 0, sfx: { stop() {} }, clearCelebration() {}, wrap: { getAnimations: () => [] }, waiters: new Set(), shardLayer: { clear() { calls.shardsCleared = true; } },
+    fxTop: canvas('top'), rimFx: canvas('rim'),
+    fx2: { replaceChildren: (...c) => { kept.fx2 = c; } },
     blockLayer: { innerHTML: 'x' }, hintLayer: { innerHTML: 'x' }, tints: new Map(), clearAnnotations() {}, setFever() {}, setDanger() {}, els: new Map(), manual: new Set(),
     setRush() {}, clearPreview() {} });
-  r.fxLayer.innerHTML = 'x';
+  r.fxLayer.replaceChildren = (...c) => { kept.fxLayer = c; };
   r.reset();
-  assert.equal(calls.cleared, true); assert.equal(r.fxLayer.innerHTML, '');
+  assert.equal(calls.cleared, true); assert.equal(calls.shardsCleared, true); assert.equal(calls.rimsCleared, true, '光の跡も消す');
+  assert.deepEqual(kept.fx2.map((e) => e.name), ['top']); assert.deepEqual(kept.fxLayer.map((e) => e.name), ['rim']);
 });
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const timerRenderer = () => Object.assign(Object.create(Renderer.prototype), {
   fxTimers: new Set(), pausedAnimations: new Set(), fxPaused: false, gen: 0,
-  wrap: { getAnimations: () => [] },
+  wrap: { getAnimations: () => [] }, fxTop: { setPaused() {} }, rimFx: { setPaused() {} },
 });
 
 test('演出を止めている間は遅延音が発火せず、再開時に残りの時間を待つ', async () => {
@@ -449,6 +454,13 @@ test('演出を止めている間は遅延音が発火せず、再開時に残�
   await wait(85); assert.equal(fired, 0);
   r.setPaused(false); await wait(20); assert.equal(fired, 0);
   await wait(65); assert.equal(fired, 1); assert.equal(r.fxTimers.size, 0);
+});
+
+test('一時停止は canvas の演出（星・かけら・光の跡）の時計も止める', () => {
+  const r = timerRenderer(), calls = [];
+  r.fxTop = { setPaused: (on) => calls.push(['top', on]) }; r.rimFx = { setPaused: (on) => calls.push(['rim', on]) };
+  r.setPaused(true); r.setPaused(true); r.setPaused(false);
+  assert.deepEqual(calls, [['top', true], ['rim', true], ['top', false], ['rim', false]]);
 });
 
 test('リスタート前の世代の演出を新しい盤面に出さない', async () => {

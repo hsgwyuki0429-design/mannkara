@@ -477,7 +477,6 @@ function renderDragPiece(fx, fy) {
   // （ドラッグ中のピースは盤面の外の層なので、動かしても盤面の位置は変わらない）
   const local = renderer.clientToLocal(cx, cy);
   if (!layer.childElementCount) {
-    layer.style.transform = renderer.boardTransform();
     for (const cc of piece.cells) {
       const d = document.createElement('div');
       d.className = `drag-cell c-${piece.color}`;
@@ -486,8 +485,8 @@ function renderDragPiece(fx, fy) {
       layer.appendChild(d);
     }
   }
-  layer.style.left = cx + 'px';
-  layer.style.top = cy + 'px';
+  // 動かすのは transform だけ（left / top を書くと、そのたびにレイアウトと描き直しになる。合成だけで動く）
+  layer.style.transform = `translate(${cx}px,${cy}px) ${renderer.boardTransform()}`;
   return local;
 }
 
@@ -1231,10 +1230,10 @@ function nameGate(done) {
 }
 startOrResume();
 if (!world.named) nameGate(() => {});              // 途中の保存があっても、なまえが無ければ先に決めてもらう
-// 宝石のかけらの絵（7色）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
+// 宝石のかけら・星・ラインの光の枠の絵（色ごと）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
 // まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
 {
-  const jobs = [...renderer.shardLayer.warmJobs(), ...renderer.sparkLayer.warmJobs(), ...scenes.warmJobs()];
+  const jobs = [() => renderer.tuneFxDensity(), ...renderer.shardLayer.warmJobs(), ...renderer.sparkLayer.warmJobs(), ...renderer.rims.warmJobs(), ...scenes.warmJobs()];
   const idle = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 2000 }) : (f) => setTimeout(f, 120);
   const next = () => { const job = jobs.shift(); if (!job) return; job(); idle(next); };
   setTimeout(() => idle(next), 300);

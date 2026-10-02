@@ -2,6 +2,8 @@ export const ROTATION = 225; // deg。左上の直角が真下に来る
 import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610021128';
 import { Shards } from './shards.js?v=202610021128';
 import { Sparkles } from './sparkles.js?v=202610021128';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610021128';
+import { Rims } from './rims.js?v=202610021128';
 import { colorOf } from './palette.js?v=202610021128';
 import { PLATE_SETS } from './ambient.js?v=202610021128';
 
@@ -16,6 +18,23 @@ export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
  * （クラスを外して offsetWidth を読む方法は毎回ページ全体の強制レイアウトになり、連鎖中のカクつきの原因になる）
  */
 const fresh = (el) => { const n = el.cloneNode(false); el.replaceWith(n); return n; };
+/**
+ * 画面いっぱいの薄い層（ピンチの縁・コンボの光）の出し入れ。opacity が 0 でも、置いてあるだけで画面1枚ぶんの層が毎フレームの合成に残るので、
+ * 出ていない間は画面から外す（hidden）。出るときは外れていた層をいったん opacity 0 で描かせてから、ふわっと出す。消えるときは薄くなってから外す
+ */
+const FADE_MS = 600;
+function setVeil(el, level) {
+  const on = level > 0;
+  clearTimeout(el.__hide);
+  if (on) {
+    if (el.hidden) { el.hidden = false; void el.offsetWidth; }
+    el.style.opacity = Math.min(1, level);
+  } else {
+    el.style.opacity = 0;
+    if (!el.hidden) el.__hide = setTimeout(() => { el.hidden = true; }, FADE_MS + 100);
+  }
+  el.classList.toggle('off', !on);
+}
 /** Web Animations の keyframes に、CSS の animation-timing-function と同じく区間ごとの easing を付ける */
 const eased = (frames, easing) => frames.map((f, i) => (i < frames.length - 1 ? { easing, ...f } : f));
 const easeInOut = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
@@ -96,10 +115,13 @@ export class Renderer {
     this.fx2 = document.createElement('div');
     this.fx2.className = 'layer fx2';
     this.wrap.appendChild(this.fx2);
-    // ゴールから飛び散る宝石のかけら（色ごとに1回だけ描いた小さな絵を貼って動かす）
-    this.shardLayer = new Shards(this.fx2);
-    // ラインの枠・通り過ぎた跡・ゴールで、またたく星（同じく色ごとに 1 回だけ描いた絵を貼って動かす）
-    this.sparkLayer = new Sparkles(this.fx2);
+    // 小さな演出（星・宝石のかけら・ラインの光の跡）は、粒ごとに要素を作らず、canvas に色ごとに 1 回だけ描いた小さな絵を貼って動かす
+    // （要素を動かすと、ブロックを動かす間は動いている数だけ毎フレームの仕事が増える。fx2d.js）。何も出ていない間は canvas を画面から外す
+    this.fxTop = new FxCanvas(this.fx2);                      // 星・かけら（ブロックの前）
+    this.shardLayer = new Shards(this.fxTop);                 // ゴールから飛び散る宝石のかけら
+    this.sparkLayer = new Sparkles(this.fxTop);               // ラインの枠・通り過ぎた跡・ゴールで、またたく星
+    this.rimFx = new FxCanvas(this.fxLayer);   // ラインの光の跡（盤面の座標。重なりは以前の光る要素と同じ: 動いているブロックの後ろ）
+    this.rims = new Rims(this.rimFx);
     this.comboPop = document.createElement('div');
     this.comboPop.className = 'combo-pop';
     this.wrap.appendChild(this.comboPop);
@@ -110,6 +132,7 @@ export class Renderer {
     if (!this.feverEl.querySelector('.fv')) {
       for (let i = 0; i < FEVER_HUES; i++) this.feverEl.appendChild(Object.assign(document.createElement('i'), { className: `fv fv${i}` }));
     }
+    this.feverEl.hidden = this.dangerEl.hidden = true;        // 使うまでは画面から外しておく（setVeil）
     const goalText = this.goal.querySelector('span');
     if (goalText) goalText.className = 'upright';
     // ゴールの中の面（入ったブロックの色で満ちる）
@@ -170,11 +193,21 @@ export class Renderer {
       left: g.x + (cell - gs) / 2 + 'px', top: g.y + (cell - gs) / 2 + 'px',
       width: gs + 'px', height: gs + 'px',
     });
+    // canvas は覆う面積に比例して重くなる（画面の密度の 2 乗）ので、必要なぶんだけ: かけらは盤面の外（ゴールの上など）へ 1.5 マスほど飛ぶ
+    this.fxTop.fit(-cell * 1.6, -cell * 1.6, wrapW + cell * 3.2, wrapH + cell * 3.2);
+    this.rimFx.fit(-cell * 0.6, -cell * 0.6, cell * (SIZE + 1 + 1.2), cell * (SIZE + 1 + 1.2));   // 盤面 + 通路の 1 マス + 光のにじみの余白
+    this.rims.setCell(cell);
     this.drawStatic();
     if (this.marks.length) this.annotate(this.marks);          // マスの大きさが変わったので置き直す
     // ブロックは今見えている位置のまま大きさだけ合わせる（盤面に合わせると、再生中のブロックが最後の位置へ飛んでしまう）。
     // 位置はどれもマスの大きさに比例するので、比で掛ければよい
     if (k !== 1) for (const el of this.els.values()) if (el.__pos) this.setPos(el, { x: el.__pos.x * k, y: el.__pos.y * k }, 0);
+  }
+
+  /** 小さな演出の canvas の細かさを、描画装置に合わせる（GPU が無い端末では粗くして、毎フレームの仕事を減らす。起動後の空き時間に 1 度） */
+  tuneFxDensity() {
+    if (!softwareRendering()) return;
+    this.fxTop.setDprMax(1); this.rimFx.setDprMax(1);
   }
 
   /** 盤面と同じ見え方にする transform（ドラッグ中のピースにも使う） */
@@ -231,6 +264,7 @@ export class Renderer {
         this.wells.set(`${x},${r}`, d);
         const t = document.createElement('div');
         t.className = 'cell well-tint';
+        t.hidden = true;                                    // 色が満ちている間だけ画面に出す（tintCell）。常に 36 個あると、何も動いていなくても描画の仕事が増える
         t.style.transform = d.style.transform;
         this.tintLayer.appendChild(t);
         this.tints.set(`${x},${r}`, t);
@@ -451,8 +485,7 @@ export class Renderer {
 
   /** 盤面が混んでピンチのときだけ、画面の縁がゆっくり脈打つ（0 = なし … 1 = 最大） */
   setDanger(level) {
-    this.dangerEl.style.opacity = Math.max(0, Math.min(1, level));
-    this.dangerEl.classList.toggle('off', !(level > 0));
+    setVeil(this.dangerEl, level);
   }
 
   /* ---------- ライン発動（マンカラ） ---------- */
@@ -490,6 +523,7 @@ export class Renderer {
       if (on) { clearTimeout(t.id); t.left = Math.max(0, t.left - (performance.now() - t.started)); }
       else this.armFxTimer(t);
     }
+    this.fxTop.setPaused(on); this.rimFx.setPaused(on);
     if (on) {
       for (const a of this.wrap.getAnimations({ subtree: true })) if (a.playState === 'running') {
         a.pause(); this.pausedAnimations.add(a);
@@ -782,20 +816,11 @@ export class Renderer {
   trail(kind, n, color = 'yellow', trainT = 540) {
     if (this.rush || !this.fxLayer || reducedMotion() || this.q < 0.5) return;
     const src = SIZE - n, F = kind === 'col' ? (x, r) => ({ x, r }) : (x, r) => ({ x: r, r: x });
-    const glow = glowOf(color), stars = this.q >= 0.7, c = this.cell;
+    const stars = this.q >= 0.7, c = this.cell;
     for (let p = 0; p <= 8; p++) {
       const cell = F(src, p), pos = this.pos(cell.x, cell.r);
       const at = trainT * easeInOutInv(Math.min(1, (p + 1) / 9));   // 列車の後ろが抜けた時刻（wake と同じ）
-      const el = document.createElement('div');
-      el.className = 'rim-flash';
-      el.style.cssText = `transform:translate(${pos.x}px,${pos.y}px);--g:${glow}`;
-      this.fxLayer.appendChild(el);
-      el.animate(eased([
-        { opacity: 0, scale: '0.8' },
-        { opacity: 1, scale: '1.06', offset: 0.14 },
-        { opacity: 0.55, scale: '1.02', offset: 0.45 },
-        { opacity: 0, scale: '1' },
-      ], 'ease-out'), { duration: 300, delay: at, fill: 'backwards' }).onfinish = () => el.remove();
+      this.rims.flash(pos.x, pos.y, color, at);
       if (stars) {
         const mid = this.cellCenter(pos);
         this.sparkLayer.twinkle(mid.x + (Math.random() - 0.5) * c * 0.5, mid.y + (Math.random() - 0.5) * c * 0.5,
@@ -837,10 +862,12 @@ export class Renderer {
     if (!d) return;
     d.__anim?.cancel();
     this.cancelFxTimer(d.__t);
+    d.hidden = false;
     d.__t = this.later(() => { d.className = `cell well-tint c-${color}`; }, delay);
     // 半透明にすると背景の紺と混ざって濁るので、濃さは変えずにマスの中心から大きさだけで満ちて引く
-    d.__anim = d.animate([{ scale: '0' }, { scale: '1.06', offset: 0.26 }, { scale: '1', offset: 0.4 }, { scale: '1', offset: 0.6 }, { scale: '0' }],
+    const anim = d.__anim = d.animate([{ scale: '0' }, { scale: '1.06', offset: 0.26 }, { scale: '1', offset: 0.4 }, { scale: '1', offset: 0.6 }, { scale: '0' }],
       { duration: life, delay, easing: 'ease-in-out' });
+    anim.onfinish = anim.oncancel = () => { if (d.__anim === anim) d.hidden = true; };      // 終わったら画面から外す（あとから別の色で満ち直しているときは外さない）
   }
 
   /** 盤面がぽんと弾む（[offset, scale] の並び, ms）。クラスの付け外しと強制レイアウトを使わない */
@@ -962,9 +989,8 @@ export class Renderer {
 
   /** コンボが続くほど背景が強く光り、色が入れ替わる（0 = なし … 1 = 最大） */
   setFever(level) {
-    this.feverEl.style.opacity = Math.max(0, Math.min(1, level));
+    setVeil(this.feverEl, level);
     this.feverEl.classList.toggle('max', level >= 1);
-    this.feverEl.classList.toggle('off', !(level > 0));
   }
 
   /** 盤面の上に出る大きな文字（Chain・NEW BEST など）。COMBO と同じ場所なので、出ていたら先に消す */
@@ -999,10 +1025,11 @@ export class Renderer {
     this.pausedAnimations.clear();
     for (const w of [...this.waiters]) w();
     this.blockLayer.innerHTML = '';
-    this.fxLayer.innerHTML = '';
+    this.fxLayer.replaceChildren(this.rimFx.el);
     this.shardLayer.clear();
     this.sparkLayer.clear();
-    this.fx2.innerHTML = '';
+    this.rims.clear();
+    this.fx2.replaceChildren(this.fxTop.el);
     for (const d of this.tints?.values() ?? []) { d.__anim?.cancel(); this.cancelFxTimer(d.__t); }
     this.hintLayer.innerHTML = '';
     this.clearAnnotations();

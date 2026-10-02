@@ -1,11 +1,12 @@
 import { colorOf } from './palette.js?v=202610021128';
+import { easeOut } from './fx2d.js?v=202610021128';
 
 /**
  * キラキラ（四方にとがった星）。ラインが満杯になったときの枠のまたたきと、ブロックが通り過ぎた跡に残る光で使う。
  * ぼんやり丸く光るのではなく、先のとがった星と小さな斜めの星を重ねた、くっきりした形（ふち取りだけ、ごく小さな光のにじみ）。
  *
- * 星の塗りは CSS のグラデーションで毎回描くと重いので、色ごとに 1 回だけ描いた小さな絵（shards.js と同じ方式）を
- * 要素の背景に貼り、scale・rotate・translate だけで動かす。薄くはせず、小さくなって消える。
+ * 星の絵は色ごとに 1 回だけ描いた小さな絵（shards.js と同じ方式）を、盤面の演出用の canvas（fx2d.js）に拡大・回転して貼る。
+ * 薄くはせず、小さくなって消える。星を 1 つずつ要素にして動かすと、動いている星の数だけ毎フレームの仕事が増えるので使わない。
  */
 const SPRITE = 64;
 const MAX = 36;                                           // 同時に出していてよい星の数
@@ -50,19 +51,29 @@ export function sparkSprite(name) {
   return img;
 }
 
+/**
+ * 星の動き（進み具合 k = 0..1 → 大きさ・回転°・上への移動 px）。大きさ 0 からぽんと開いて（1.15）、少し回りながら小さくなって（0.85）消える。
+ * 全体の緩急は ease-out で、4 つの区切り（0 / 0.3 / 0.6 / 1）の間は直線でつなぐ
+ */
+export function sparkPose(k, spin, rise) {
+  const p = easeOut(Math.min(1, Math.max(0, k)));
+  const seg = (a, b, c, d) => (p < 0.3 ? a + (b - a) * (p / 0.3) : p < 0.6 ? b + (c - b) * ((p - 0.3) / 0.3) : c + (d - c) * ((p - 0.6) / 0.4));
+  return { scale: seg(0, 1.15, 0.85, 0), rot: seg(0, spin * 0.45, spin * 0.8, spin), dy: seg(0, -rise * 0.4, -rise * 0.75, -rise) };
+}
+
 export class Sparkles {
-  constructor(parent) {
-    this.parent = parent;
-    this.classes = new Map();         // 色 → 星の絵の CSS クラス名
-    this.alive = new Set();
+  /** fx = 盤面の小さな演出を描く canvas（fx2d.js の FxCanvas） */
+  constructor(fx) {
+    this.fx = fx;
+    this.n = 0;                       // 出ている星の数
   }
 
   clear() {
-    for (const d of this.alive) d.remove();
-    this.alive.clear();
+    this.fx.drop(this);
+    this.n = 0;
   }
 
-  get count() { return this.alive.size; }
+  get count() { return this.n; }
 
   /**
    * (x, y) に星を 1 つ。size = 対角線の長さ px / life = 出ている長さ ms / delay = 何 ms 後か / color = 'white' か色名 /
@@ -70,34 +81,22 @@ export class Sparkles {
    * 出しすぎないよう、同時に MAX 個まで（超えたら出さない）
    */
   twinkle(x, y, { color = 'white', size = 14, life = 440, delay = 0, rise = 6, spin = 50 } = {}) {
-    if (this.alive.size >= MAX) return false;
-    const d = document.createElement('div');
-    d.className = 'spark ' + this.cls(color);
-    d.style.cssText = `width:${size}px;height:${size}px;transform:translate(${x - size / 2}px,${y - size / 2}px)`;
-    this.parent.appendChild(d);
-    this.alive.add(d);
-    const dir = Math.random() < 0.5 ? -1 : 1;
-    d.animate([
-      { scale: '0', rotate: '0deg', translate: '0 0' },
-      { scale: '1.15', rotate: `${dir * spin * 0.45}deg`, translate: `0 ${-rise * 0.4}px`, offset: 0.3 },
-      { scale: '0.85', rotate: `${dir * spin * 0.8}deg`, translate: `0 ${-rise * 0.75}px`, offset: 0.6 },
-      { scale: '0', rotate: `${dir * spin}deg`, translate: `0 ${-rise}px` },
-    ], { duration: life, delay, easing: 'ease-out', fill: 'both' }).onfinish = () => { d.remove(); this.alive.delete(d); };
+    if (this.n >= MAX) return false;
+    const img = sparkSprite(color), dir = Math.random() < 0.5 ? -1 : 1, start = this.fx.now() + delay;
+    this.n++;
+    this.fx.add({
+      owner: this, start, end: start + life, done: () => { this.n--; },
+      draw: (g, now) => {
+        const p = sparkPose((now - start) / life, dir * spin, rise), d = size * p.scale;
+        if (d < 0.5) return;
+        g.translate(x, y + p.dy);
+        g.rotate((p.rot * Math.PI) / 180);
+        g.drawImage(img, -d / 2, -d / 2, d, d);
+      },
+    });
     return true;
   }
 
   /** 星の絵を先に作っておくための仕事（白 + 7色。起動後の空き時間に 1 つずつ） */
-  warmJobs() { return ['white', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'].map((name) => () => this.cls(name)); }
-
-  /** 色ごとの星の絵を背景にする CSS クラス名。絵（data URL）は色ごとに 1 回だけスタイルシートに書く */
-  cls(name) {
-    let c = this.classes.get(name);
-    if (!c) {
-      c = 'spark-' + name;
-      if (!this.sheet) { this.sheet = document.createElement('style'); document.head.appendChild(this.sheet); }
-      this.sheet.appendChild(document.createTextNode(`.spark.${c}{background-image:url(${sparkSprite(name).toDataURL()})}\n`));
-      this.classes.set(name, c);
-    }
-    return c;
-  }
+  warmJobs() { return ['white', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'].map((name) => () => sparkSprite(name)); }
 }

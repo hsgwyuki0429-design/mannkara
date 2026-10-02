@@ -199,13 +199,9 @@ button{font-family:inherit;cursor:pointer;}
   box-shadow:inset 0 0 0 2px rgba(255,255,255,.96),inset 0 0 12px 1px var(--g),0 0 0 1px rgba(255,255,255,.65),0 0 11px 2px var(--g);}
 .lg-shine{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 28%,rgba(255,255,255,.88) 50%,transparent 72%);}
 .line-glow.row .lg-shine{background:linear-gradient(to right,transparent 28%,rgba(255,255,255,.88) 50%,transparent 72%);}
-.rim-flash{position:absolute;left:0;top:0;width:var(--cell);height:var(--cell);pointer-events:none;opacity:0;}
-.rim-flash::after{content:'';position:absolute;inset:5%;border-radius:20%;
-  box-shadow:inset 0 0 0 2.5px #fff,inset 0 0 9px 1px var(--g),0 0 0 1px rgba(255,255,255,.55),0 0 11px 3px var(--g);}
-/* キラキラの星（sparkles.js。星の絵は色ごとに 1 回だけ読み込む。大きさ 0 から開いて、小さくなって消える） */
-.spark{position:absolute;left:0;top:0;pointer-events:none;background:center/100% 100% no-repeat;scale:0;}
-/* ゴールから飛び散る宝石のかけら（shards.js。色ごとに1回だけ描いた絵を貼り、transform だけで動かす） */
-.shard{position:absolute;left:0;top:0;pointer-events:none;background:center/100% 100% no-repeat;}
+/* 小さな演出（星 sparkles.js・宝石のかけら shards.js・ラインの光の跡 rims.js）は、要素を動かさず canvas に描く（fx2d.js）。
+   大きさと位置は fx2d.js が書く。描くものがないときは hidden で画面から外れる */
+.fx-canvas{position:absolute;pointer-events:none;}
 .block.fly::before,.block.fly::after{opacity:1;scale:0;}
 .ghost{opacity:.38;filter:saturate(.8);animation:ghostIn 140ms ease-out;}
 /* 学習モードのおすすめの場所: 白い枠 + 中にピースの色の小さな面（ベタ塗り。半透明にすると背景の紺と混ざって濁るので）。
@@ -279,7 +275,7 @@ button{font-family:inherit;cursor:pointer;}
 @keyframes comboIn{0%{opacity:0;scale:2.2}14%{opacity:1;scale:.9}24%{scale:1.08}34%{scale:1}80%{opacity:1}100%{opacity:0;translate:-50% -14px}}
 
 /* ---- 発動・ゴールの演出 ----
-   盤面の中の演出は、動き（弾む・揺れる・寄る）と宝石のかけら、ラインの光（.line-glow の枠・.rim-flash の跡・星 .spark。
+   盤面の中の演出は、動き（弾む・揺れる・寄る）と宝石のかけら、ラインの光（.line-glow の枠・光の跡と星は canvas。
    くっきりした形で、ほんの短い間だけ）。ぼんやり丸い光の粒・輪・フレアや、画面全体のフラッシュは出さない */
 .fx2{z-index:7;overflow:visible;}
 /* 得点: 白（3連鎖〜 金 / 5連鎖〜 桃）のベタ塗り + 薄い影 */
@@ -331,7 +327,7 @@ button{font-family:inherit;cursor:pointer;}
 .tray-cell::before{inset:3.5%;}
 .tray-cell::before{box-shadow:inset -1px 0 0 rgba(255,255,255,.55),inset 0 -1px 0 rgba(255,255,255,.28),
   inset 1px 0 0 rgba(255,255,255,.12),-4px 0 7px rgba(4,14,64,.3),0 0 1.5px rgba(4,14,64,.4);}
-.drag-layer{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:20;transform:rotate(225deg);}   /* 実際は盤面と同じ transform を main.js が設定 */
+.drag-layer{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:20;transform:rotate(225deg);will-change:transform;}   /* 実際の transform（指の位置 + 盤面と同じ回転）は main.js が設定。動かすのは transform だけ */
 .drag-cell{position:absolute;width:var(--cell);height:var(--cell);animation:pickUp 200ms cubic-bezier(.3,1.6,.5,1);}
 @keyframes pickUp{from{scale:.6}}
 
