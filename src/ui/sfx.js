@@ -1,10 +1,12 @@
-import { glassBuffer, shalanBuffer, GLASS_VARIANTS } from './synth.js?v=202610021033';
+import { glassBuffer, shalanBuffer, bellBuffer, GLASS_VARIANTS } from './synth.js?v=202610021101';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
 const LOWER = Math.pow(2, -3 / 12), MAX_HZ = 1760;
 const VOICE_LIMIT = 40;
 const LEVEL = 0.32;                                    // 全体の音量（ミュートでは 0）
+// 鈴の音量（正弦波・三角波だった前の音と、耳の感度で重み付けした大きさがそろうように測って決めた）
+const BELL = { goal: 0.5, refill: 0.2, fit: 0.33, combo: 0.135, praise: 0.36, shatter: 0.185, fanfare: 0.54, run: 0.32 };
 const SHALAN_GAIN = 0.48;                              // シャランの音量（size 1 のとき）。波形（synth.js）は尖った音のぶん山が高いので、波形の大きさを抑えて、ここで上げる
 // 上限で切りそろえると和音も大連鎖も同じ音になる。上限を超えた音はオクターブ下へ戻す。
 export const voicedFrequency = (hz) => {
@@ -27,7 +29,20 @@ export const shalanTop = (chain) => {
   return Math.round(f);
 };
 /**
- * 作っておく波形（synth.js）。ガラスを置く音（コップの高さ違い 4 つ）と、バーチャイムのシャラン（最後のバーの高さごと）。
+ * 鈴（synth.js の bellBuffer）の高さの決め方。音の高さごとに波形を作ると多すぎるので、短 3 度（3 半音）おきの 11 個（392〜2217Hz）の波形を
+ * 作っておき、いちばん近いものを再生の速さ（±9% 以内）で合わせる（部分音の比は変わらない）。
+ */
+const BELL_BASE = 392, BELL_STEPS = 11;
+const BELL_BOTTOM = BELL_BASE * 2 ** (-1.5 / 12), BELL_TOP = BELL_BASE * 2 ** ((3 * (BELL_STEPS - 1) + 1.5) / 12);      // 359〜2418Hz
+const foldBell = (f) => { while (f >= BELL_TOP) f /= 2; while (f < BELL_BOTTOM) f *= 2; return f; };
+/**
+ * 鈴の音の高さ（Hz）: tone と同じ指定（freq に LOWER を掛けて聴きやすい範囲に収める）から oct 段上げて、鈴の音域（359〜2418Hz）へ折りたたむ。
+ * 正弦波・三角波の「ピン」は 200〜700Hz と低く、スマホの小さなスピーカーでは基本の音がほとんど出なかった。鈴は 1 オクターブ上げて、
+ * 上の部分音（オクターブ上・金属の整数でない比）で厚みを出す
+ */
+export const bellPitch = (freq, oct = 0) => foldBell(voicedFrequency(freq * LOWER) * 2 ** oct);
+/**
+ * 作っておく波形（synth.js）。ガラスを置く音（コップの高さ違い 4 つ）と、バーチャイムのシャラン（最後のバーの高さごと）、鈴（高さ 11 段）。
  * 鳴らすたびに計算せず、AudioBuffer を 1 回だけ作って使い回す（作るのは 1 つ数 ms〜20ms。起動後の空き時間に先に作っておく）。
  * シャランは再生の速さで高さを変えると長さも変わってしまうので、高さごとに合成する（長さはどれも同じ）
  */
@@ -35,6 +50,7 @@ const SHALAN_TOPS = [...new Set(Array.from({ length: 10 }, (_, i) => shalanTop(i
 const WAVES = {
   ...Object.fromEntries(Array.from({ length: GLASS_VARIANTS }, (_, v) => [`glass${v}`, (sr) => glassBuffer(sr, v)])),
   ...Object.fromEntries(SHALAN_TOPS.map((top) => [`shalan:${top}`, (sr) => shalanBuffer(sr, top)])),
+  ...Object.fromEntries(Array.from({ length: BELL_STEPS }, (_, k) => [`bell:${k}`, (sr) => bellBuffer(sr, BELL_BASE * 2 ** (k / 4))])),
 };
 
 export class Sfx {
@@ -196,18 +212,20 @@ export class Sfx {
     o.start(t); o.stop(t + dur + 0.03);
   }
   /**
-   * 作っておいた波形（synth.js の WAVES）を明るい出口から鳴らす。rate = 再生の速さ（1 = そのまま。高さと長さが変わる）。
+   * 作っておいた波形（synth.js の WAVES）を明るい出口から鳴らす。rate = 再生の速さ（1 = そのまま。高さと長さが変わる）、
+   * ring = 波形の自然な減衰に重ねる、さらなる減衰が 60dB になる秒数（短いほど速く消える。0 = 重ねない）。
    * 1 回の発音で 1 ボイス（たくさんの共鳴を足し合わせた音でも、同時発音の枠を使い切らない）
    */
-  playBuffer(key, { gain = 1, rate = 1, at = 0, priority = 1 } = {}) {
+  playBuffer(key, { gain = 1, rate = 1, at = 0, priority = 1, ring = 0 } = {}) {
     if (!this.ready()) return;
     const wave = this.waveOf(key);
     if (!wave) return;
-    const t = this.ctx.currentTime + at, dur = wave.dur / rate;
+    const t = this.ctx.currentTime + at, dur = ring ? Math.min(ring * 0.45 + 0.05, wave.dur / rate) : wave.dur / rate;
     const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
     src.buffer = wave.buf;
     src.playbackRate.value = rate;
     g.gain.value = gain;
+    if (ring) { g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(gain * 0.001, t + ring); }     // 波形の自然な減衰に、さらに ring 秒で 60dB 消える減衰を重ねる（ボイスは聞こえなくなるころに止める）
     src.connect(g); g.connect(this.bright);
     if (!this.track(src, [g], priority)) return;
     src.start(t); src.stop(t + dur + 0.02);
@@ -262,11 +280,22 @@ export class Sfx {
     if (!at && !this.allow('shalan', 0.1)) return;
     this.playBuffer(`shalan:${shalanTop(chain)}`, { gain: SHALAN_GAIN * size, rate: 0.99 + Math.random() * 0.02, at, priority: 1 });
   }
+  /**
+   * 鈴（synth.js の bellBuffer）。freq = tone と同じ高さの指定（bellPitch が、LOWER を掛けて oct 段上げ、鈴の音域へ収める）/
+   * ring = 鈴の自然な減衰（基本が 60dB 消えるまで 0.3〜0.7 秒）に重ねる、さらなる減衰の 60dB の秒数（短いほど速く切れる）/ gain = 大きさ。
+   * 正弦波の「ピン」より厚みがあり、スマホの小さなスピーカーでも基本以外の部分音で聞こえる
+   */
+  bell(freq, { oct = 0, ...opts } = {}) { this.bellAt(bellPitch(freq, oct), opts); }
+  /** 鈴を、鈴の音域に収まった高さ f（Hz）そのままで鳴らす（和音で、根音からの比で重ねるとき） */
+  bellAt(f, { gain = 0.3, ring = 0.5, at = 0, priority = 1 } = {}) {
+    const k = Math.max(0, Math.min(BELL_STEPS - 1, Math.round(4 * Math.log2(f / BELL_BASE))));
+    this.playBuffer(`bell:${k}`, { gain, rate: f / (BELL_BASE * 2 ** (k / 4)), at, ring, priority });
+  }
   /** 穴にぴったりはまる場所に入った（カチッ）・ぴったり置いた（カチッ + 上がる2音） */
   fitHover()    { if (!this.allow('fitHover', 0.08)) return;
                   this.tone(1318.5, { dur: 0.035, type: 'triangle', gain: 0.22 }); this.vibe(8); }
   fit()         { this.tone(1046.5, { dur: 0.04, type: 'triangle', gain: 0.4 });
-                  [0, 4].forEach((k, i) => this.tone(note(k, 1046.5), { dur: 0.09, gain: 0.22, type: 'sine', at: 0.06 + i * 0.07 })); this.vibe(14); }
+                  [0, 4].forEach((k, i) => this.bell(note(k, 1046.5), { gain: BELL.fit, ring: 0.45, at: 0.06 + i * 0.07 })); this.vibe(14); }
   hover()       { if (this.allow('hover', 0.055)) this.tone(1245, { dur: 0.022, gain: 0.035, priority: 0 }); }
   // 消える場所に入った: 連鎖が多いほど高く上がっていくキラッという音（期待）
   anticipate(chain) { if (!this.allow('anticipate', 0.12)) return;
@@ -288,13 +317,14 @@ export class Sfx {
     this.vibe(12 + Math.min(chain, 6) * 2);
   }
   step(i, chain = 1) { if (this.allow('step', 0.038)) this.tone(note(i + (chain - 1) % 3, 220), { dur: 0.04, type: 'triangle', gain: 0.105, priority: 0 }); }
+  // ゴールに入った: 鈴（根音・5 度・（4 連鎖から）3 度。オクターブ上は鈴の部分音に入っている）+ 低い着地音
   goal(chain = 1, count = 1) {
-    const f = note(chain - 1, 330);
-    this.tone(f, { dur: 0.2, gain: 0.43, priority: 2 });
-    this.tone(f * 1.5, { dur: 0.24, gain: 0.18, at: 0.025, priority: 2 });
+    const root = bellPitch(note(chain - 1, 330), 1), up = (r) => (root * r < BELL_TOP ? root * r : root * r / 2);
+    const boost = 0.77 + 0.064 * Math.min(chain - 1, 9);                  // 連鎖が進むほど、少しずつ大きく（前の音もそうだった）
+    this.bellAt(root, { gain: BELL.goal * boost, ring: 1.1, priority: 2 });
+    this.bellAt(up(1.5), { gain: BELL.goal * boost * 0.42, ring: 0.8, at: 0.025, priority: 2 });
     this.tone(190, { dur: 0.075, gain: 0.22, slide: 0.6, priority: 2 });
-    if (chain >= 4 || count > 1) this.tone(f * 1.25, { dur: 0.26, gain: 0.12, at: 0.05 });
-    if (chain >= 8) this.tone(f * 2, { dur: 0.16, gain: 0.075, at: 0.09 });
+    if (chain >= 4 || count > 1) this.bellAt(up(1.25), { gain: BELL.goal * boost * 0.28, ring: 0.45, at: 0.05 });
     this.vibe(count > 1 ? [12, 24, 18] : 14);
   }
   push(chain)   { if (this.allow('push', 0.06)) this.tone(140 + Math.min(chain, 10) * 9, { dur: 0.09, type: 'triangle', gain: 0.24, slide: 1.3 }); }
@@ -302,29 +332,29 @@ export class Sfx {
                   this.vibe([0, 20, 30, 30]); }
   // 連続発動: 上がっていく和音＋キラキラ
   combo(n)      { const f = note(n - 2, 262);
-                  [1, 1.25, 1.5].forEach((m, k) => this.tone(f * m, { dur: 0.16, gain: 0.16, type: 'triangle', at: 0.025 + k * 0.035 }));
+                  [1, 1.25, 1.5].forEach((m, k) => this.bell(f * m, { gain: BELL.combo, ring: 0.6, oct: 1, at: 0.025 + k * 0.035 }));
                   this.vibe([0, 18, 30, 26]); }
   // 褒め言葉: 段階が上がるほど和音が厚く、高く
   praise(tier)  { const base = [262, 294, 330, 392, 440][Math.max(0, Math.min(4, tier - 1))];
                   const chord = [1, 1.25, 1.5, 2, 2.5].slice(0, 2 + tier);
-                  chord.forEach((m, k) => this.tone(base * m, { dur: 0.23 + tier * 0.025, gain: 0.25 / Math.sqrt(chord.length), type: k % 2 ? 'sine' : 'triangle', at: k * 0.035 }));
+                  chord.forEach((m, k) => this.bell(base * m, { gain: BELL.praise * (0.7 + 0.085 * (tier - 1)) / Math.sqrt(chord.length), ring: 0.7 + tier * 0.08, oct: 1, at: k * 0.035 }));
                   if (tier >= 4) this.tone(98, { dur: 0.22, gain: 0.35, slide: 0.65 });
                   this.vibe(tier >= 4 ? [0, 30, 40, 50] : 16); }
   // 新記録: ファンファーレ
-  fanfare()     { [0, 2, 4, 5].forEach((k, i) => this.tone(note(k + 2, 523.25), { dur: i === 3 ? 0.5 : 0.12, gain: 0.3, type: 'triangle', at: i * 0.1 }));
+  fanfare()     { [0, 2, 4, 5].forEach((k, i) => this.bell(note(k + 2, 523.25), { gain: BELL.fanfare, ring: i === 3 ? 1.4 : 0.6, at: i * 0.1 }));
                   this.tone(note(7, 523.25), { dur: 0.6, gain: 0.12, at: 0.3 }); this.shalan(5, { at: 0.08 }); this.vibe([0, 30, 40, 30, 40, 80]); }
   // 全消し専用: 短い立ち上がりと、盤面へ色が広がる間の上昇フレーズ。
   allClear() {
     this.noise({ dur: 0.32, gain: 0.23, from: 600, to: 2400, attack: 0.025, priority: 2 });
     this.tone(130.81, { dur: 0.3, gain: 0.45, slide: 0.6, priority: 2 });
-    [0, 2, 4, 5, 7, 9].forEach((k, i) => this.tone(note(k, 262), { dur: i === 5 ? 0.52 : 0.2, gain: 0.23, type: 'triangle', at: 0.04 + i * 0.065, priority: 2 }));
+    [0, 2, 4, 5, 7, 9].forEach((k, i) => this.bell(note(k, 262), { gain: BELL.run, ring: i === 5 ? 1.4 : 0.5, oct: 1, at: 0.04 + i * 0.065, priority: 2 }));
     [262, 330, 392].forEach((f) => this.tone(f, { dur: 0.65, gain: 0.11, at: 0.4, priority: 2 }));
     this.shalan(1, { at: 0.06 }); this.shalan(4, { size: 0.85, at: 0.5 });          // シャラン、シャラン
     this.vibe([22, 35, 35]);
   }
   shatter() { this.noise({ dur: 0.11, gain: 0.16, from: 2600, to: 1000, attack: 0.002 });
-              [784, 988, 1175].forEach((f, i) => this.tone(f, { dur: 0.17, gain: 0.09, at: i * 0.038, priority: 0 })); }
-  refill()      { [0, 1, 2].forEach((k) => this.tone(note(k, 784), { dur: 0.07, gain: 0.18, at: k * 0.05 })); }
+              [784, 988, 1175].forEach((f, i) => this.bell(f, { gain: BELL.shatter, ring: 0.4, at: i * 0.038, priority: 0 })); }
+  refill()      { [0, 1, 2].forEach((k) => this.bell(note(k, 784), { gain: BELL.refill, ring: 0.45, at: k * 0.05 })); }
   /** 短いざらざらした音（波・しぶき）。ノイズを帯域フィルタに通す */
   noise({ dur = 0.6, gain = 0.3, from = 400, to = 1400, q = 0.8, at = 0, attack = dur * 0.3, priority = 1 } = {}) {
     if (!this.ready()) return;                                  // tone() と同じ

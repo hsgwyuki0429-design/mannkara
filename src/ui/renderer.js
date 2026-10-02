@@ -1,8 +1,9 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610021033';
-import { Shards } from './shards.js?v=202610021033';
-import { Sparkles } from './sparkles.js?v=202610021033';
-import { colorOf } from './palette.js?v=202610021033';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610021101';
+import { Shards } from './shards.js?v=202610021101';
+import { Sparkles } from './sparkles.js?v=202610021101';
+import { colorOf } from './palette.js?v=202610021101';
+import { PLATE_SETS } from './ambient.js?v=202610021101';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -51,6 +52,15 @@ export class Renderer {
     need('lane', 'lane'); need('laneRow', 'lane'); need('goal', 'goal'); need('pop', 'pop');
     this.pf = document.getElementById('playfield');
     this.wellLayer = document.getElementById('wellLayer');
+    // 盤面の土台（マスの下の土台とくぼみ）は、背景の色に合わせて色が変わる。色の違う層を重ねて opacity だけで切り替える（ambient.bindBoard）ので、
+    // 同じ土台の絵の層をいくつか持つ。0 番だけが最初から見えている（今の青）
+    this.plateSets = Array.from({ length: PLATE_SETS }, (_, i) => {
+      const d = document.createElement('div');
+      d.className = 'well-set';
+      d.style.display = i ? 'none' : 'block';
+      this.wellLayer.appendChild(d);
+      return d;
+    });
     this.hiLayer = document.getElementById('hiLayer');
     this.blockLayer = document.getElementById('blockLayer');
     this.ghostLayer = document.getElementById('ghostLayer');
@@ -202,7 +212,7 @@ export class Renderer {
 
   drawStatic() {
     const c = this.cell;
-    this.wellLayer.innerHTML = '';
+    for (const set of this.plateSets) set.replaceChildren();
     this.tintLayer.innerHTML = '';
     this.tints = new Map();    // 'x,r' -> マスの中を色で満たす要素（最初に1回だけ作って使い回す）
     this.lane.innerHTML = '';
@@ -216,7 +226,8 @@ export class Renderer {
           + (x === 0 && r === 0 ? ' tl' : '') + (x === SIZE - 1 ? ' tr' : '')
           + (x === 0 && r === SIZE - 1 ? ' bl' : '') + (x + r === SIZE - 1 ? ' edge-r' : '');
         d.style.transform = `translate(${x * c}px,${r * c}px)`;
-        this.wellLayer.appendChild(d);
+        this.plateSets[0].appendChild(d);
+        for (let i = 1; i < this.plateSets.length; i++) this.plateSets[i].appendChild(d.cloneNode(false));
         this.wells.set(`${x},${r}`, d);
         const t = document.createElement('div');
         t.className = 'cell well-tint';

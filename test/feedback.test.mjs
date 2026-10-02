@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop } from '../src/ui/sfx.js?v=202610021033';
-import { Renderer } from '../src/ui/renderer.js?v=202610021033';
+import { Sfx, note, voicedFrequency, shalanTop, bellPitch } from '../src/ui/sfx.js?v=202610021101';
+import { Renderer } from '../src/ui/renderer.js?v=202610021101';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -22,7 +22,8 @@ class AudioNode {
 }
 class Context {
   state = 'running'; currentTime = 10; sampleRate = 8000; destination = new AudioNode(); sources = [];
-  createGain() { return new AudioNode(); }
+  gains = [];
+  createGain() { const g = new AudioNode(); this.gains.push(g); return g; }
   createBiquadFilter() { return new AudioNode(); }
   createDynamicsCompressor() { return new AudioNode(); }
   createOscillator() { const n = new AudioNode(); this.sources.push(n); return n; }
@@ -200,12 +201,90 @@ test('全消しは「シャラン、シャラン」の 2 回（2 回目は高い
   s.stop();
 });
 
+/** 鳴らした鈴（波形 bell:k を再生の速さで合わせたもの）の高さ（Hz）。鈴でない発音は null */
+function bellHz(s, n) {
+  for (const [key, w] of s.waves) if (key.startsWith('bell:') && w.buf === n.buffer) return 392 * 2 ** (+key.slice(5) / 4) * n.playbackRate.value;
+  return null;
+}
+const bells = (s) => s.ctx.sources.map((n) => bellHz(s, n)).filter((f) => f !== null);
+
+test('鈴の高さ: ゴールの音を 1 オクターブ上げて鈴の音域（359〜2418Hz）へ。連鎖が進むほど高く、10 連鎖までは折り返さない', () => {
+  const goal = Array.from({ length: 10 }, (_, i) => bellPitch(note(i, 330), 1));
+  assert.ok(Math.abs(goal[0] - 330 * Math.pow(2, -3 / 12) * 2) < 1e-9, `連鎖 1: ${goal[0]}`);
+  assert.ok(goal.every((f, i) => i === 0 || f > goal[i - 1]), '連鎖が進むほど高い');
+  for (let i = 0; i < 10; i++) assert.ok(Math.abs(goal[i] - voicedFrequency(note(i, 330) * Math.pow(2, -3 / 12)) * 2) < 1e-6, `連鎖 ${i + 1}: ゴールの音のちょうど 1 オクターブ上`);
+  for (const f of [20, 100, 261.63, 784, 1760, 3000, 9000]) for (const oct of [0, 1, 2]) {
+    const b = bellPitch(f, oct);
+    assert.ok(b >= 392 * 2 ** (-1.5 / 12) - 1e-9 && b < 392 * 2 ** (31.5 / 12), `${f}Hz oct ${oct} → ${b}`);
+    const o = Math.log2(b / (voicedFrequency(f * Math.pow(2, -3 / 12)) * 2 ** oct));
+    assert.ok(Math.abs(o - Math.round(o)) < 1e-9, '折りたたむのはオクターブ単位（音名は変わらない）');
+  }
+});
+
+test('ゴールは鈴の根音 + 5 度（4 連鎖から 3 度も）+ 低い着地音。ゴールの音の高さを再生の速さ ±9% 以内で合わせ、連鎖が進むほど強く、同時の発音は 1 回につき 3〜4 ボイス', () => {
+  const s = audio(); s.goal(1, 1);
+  const f = bells(s);
+  assert.equal(f.length, 2); assert.ok(Math.abs(f[0] - 555) < 1, `根音 ${f[0]}`); assert.ok(Math.abs(f[1] / f[0] - 1.5) < 0.002, `5 度 ${f[1] / f[0]}`);
+  assert.equal(s.voices.size, 3, '根音・5 度・低い着地音');
+  for (const n of s.ctx.sources.filter((x) => x.buffer)) assert.ok(n.playbackRate.value > 0.91 && n.playbackRate.value < 1.092, `速さ ${n.playbackRate.value}`);
+  s.stop();
+  const t = audio(); t.goal(4, 1);
+  const g = bells(t);
+  assert.equal(g.length, 3); assert.ok(Math.abs(g[2] / g[0] - 1.25) < 0.002, '4 連鎖から 3 度');
+  assert.equal(t.voices.size, 4);
+  t.stop();
+  const low = audio(), high = audio(), a = low.ctx.gains.length;
+  low.goal(1, 1); high.goal(10, 1);
+  const level = (x) => Math.max(...x.ctx.gains.slice(a).map((n) => n.gain.value));                    // 鈴の強さは、出口の前のゲインで決まる
+  assert.ok(level(high) > level(low) * 1.5, `連鎖が進むほど大きい ${level(low)} → ${level(high)}`);
+  low.stop(); high.stop();
+});
+
+test('鈴は 1 回の発音で 1 ボイス。響きは重ねた減衰で切り、聞こえなくなるころにボイスを止める（鳴り終わったら接続を切る）', () => {
+  const s = audio(); s.goal(2, 1);
+  const bellSources = s.ctx.sources.filter((n) => n.buffer);
+  assert.equal(bellSources.length, 2);
+  for (const n of bellSources) assert.ok(n.stopAt - n.started > 0.2 && n.stopAt - n.started < 0.75, `${n.stopAt - n.started}`);
+  for (const n of s.ctx.sources) n.onended();
+  assert.equal(s.voices.size, 0);
+  assert.ok(s.ctx.sources.every((n) => n.disconnected));
+});
+
+test('手駒の補充は上がる 3 つの鈴、ぴったりは「カチッ」+ 上がる 2 つの鈴、砕ける音は 3 つの鈴、コンボ・褒め言葉は和音の鈴（段階が進むほど音が増える）', () => {
+  const run = (f) => { const s = audio(); f(s); const out = bells(s); s.stop(); return out; };
+  const refill = run((s) => s.refill());
+  assert.equal(refill.length, 3); assert.ok(refill[0] < refill[1] && refill[1] < refill[2]);
+  assert.equal(run((s) => s.fit()).length, 2);
+  assert.equal(run((s) => s.shatter()).length, 3);
+  assert.equal(run((s) => s.combo(3)).length, 3);
+  assert.deepEqual([1, 2, 3, 4, 5].map((t) => run((s) => s.praise(t)).length), [3, 4, 5, 5, 5], '段階が上がるほど和音が厚い（最大 5 音）');
+  const c = run((s) => s.combo(2));
+  assert.ok(Math.abs(c[1] / c[0] - 1.25) < 0.002 && Math.abs(c[2] / c[0] - 1.5) < 0.002, '根音・3 度・5 度');
+  assert.equal(run((s) => s.fanfare()).length, 4);
+  assert.equal(run((s) => s.allClear()).length, 6);
+});
+
+test('鈴もミュートで止まり（予約した音も残さない）、波形を作れない環境でも入力を壊さない（鈴以外の音は鳴る）', () => {
+  const s = audio(); s.allClear();
+  assert.ok(bells(s).length >= 6);
+  s.enabled = false;
+  assert.equal(s.voices.size, 0);
+  const n = s.ctx.sources.length; s.goal(3); s.refill(); assert.equal(s.ctx.sources.length, n);
+  s.enabled = true; s.ctx.currentTime += 1; s.goal(3); assert.ok(s.voices.size > 0);
+  s.stop();
+  const t = audio(); t.ctx.createBuffer = () => { throw new Error('unavailable'); };
+  assert.doesNotThrow(() => { t.goal(5, 2); t.refill(); t.combo(4); t.praise(5); t.fit(); t.fanfare(); });
+  assert.ok(t.voices.size >= 1, '低い着地音などは鳴る');
+  assert.equal(t.ctx.sources.filter((x) => x.buffer).length, 0);
+  t.stop();
+});
+
 test('波形は 1 回だけ作って使い回し、warm で 1 つずつ先に作れる。AudioContext を作り直したら作り直す', () => {
   const s = audio();
   assert.equal(s.waves.size, 0);
   let more = true, calls = 0;
-  while (more) { more = s.warm(); assert.ok(++calls <= 10); }
-  assert.equal(s.waves.size, 10, 'ガラス 4 種 + シャラン（高さ 6 種）');
+  while (more) { more = s.warm(); assert.ok(++calls <= 21); }
+  assert.equal(s.waves.size, 21, 'ガラス 4 種 + シャラン（高さ 6 種）+ 鈴（高さ 11 段）');
   const glass1 = s.waves.get('glass1');
   s.glass(1); assert.equal(s.waves.get('glass1'), glass1);
   s.ctx = new Context(); s.connect();

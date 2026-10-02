@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { glassBuffer, shalanBuffer, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_LOW, SHALAN_LENGTH } from '../src/ui/synth.js?v=202610021033';
+import { glassBuffer, shalanBuffer, bellBuffer, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_LOW, SHALAN_LENGTH, BELL_LENGTH } from '../src/ui/synth.js?v=202610021101';
 
 const SR = 48000;
 /** 時刻 t0〜t1（秒）の、周波数 f（Hz）の成分の大きさ（Goertzel 法）。窓は Hann */
@@ -99,6 +99,12 @@ function bandFrom(x, t, f0) {
   return p.slice(Math.ceil((f0 * n) / SR)).reduce((s, v) => s + v, 0);
 }
 const dbPower = (a, b) => 10 * Math.log10(a / b);
+/** 先頭 t1 秒の、f0 Hz 以上にあるパワーの割合（4096 点の窓を半分ずつずらして平均） */
+function shareAbove(x, f0, t1) {
+  const n = 4096, total = new Array(n / 2).fill(0);
+  for (let st = 0; st + n <= SR * t1; st += n / 2) fftPower(x, st, n).forEach((v, k) => { total[k] += v; });
+  return total.slice(Math.ceil((f0 * n) / SR)).reduce((a, v) => a + v, 0) / total.reduce((a, v) => a + v, 0);
+}
 
 test('シャラン: 有限で、最後は 0 になり、毎回同じ波形。高さごとに違う。長さ（1.3 秒）は高さによらず同じ', () => {
   const all = TOPS.map((top) => shalanBuffer(SR, top));
@@ -149,10 +155,8 @@ test('シャン、シャン: 4kHz 以上が約 0.12 秒と約 0.28 秒の 2 回�
 
 test('尖った音: 先頭 0.6 秒のパワーの 2 割以上が 4kHz 以上にある（硬く叩いた高い部分音と、擦れ合う「シャッ」の雑音）', () => {
   for (const top of [2220, 2492, 2797]) {              // 最後のバーの基本が 3kHz より下の高さ。4kHz 以上は、部分音と雑音だけ
-    const x = shalanBuffer(SR, top), n = 4096, total = new Array(n / 2).fill(0);
-    for (let s = 0; s + n <= SR * 0.6; s += n / 2) fftPower(x, s, n).forEach((v, k) => { total[k] += v; });
-    const hi = total.slice(Math.ceil((4000 * n) / SR)).reduce((a, v) => a + v, 0), all = total.reduce((a, v) => a + v, 0);
-    assert.ok(hi / all > 0.2, `${top}Hz: 4kHz 以上は ${(hi / all).toFixed(2)}`);
+    const hi = shareAbove(shalanBuffer(SR, top), 4000, 0.6);
+    assert.ok(hi > 0.2, `${top}Hz: 4kHz 以上は ${hi.toFixed(2)}`);
   }
 });
 
@@ -177,9 +181,55 @@ test('シャラン: ペンタトニックの音のバー（最後のバーの 3�
   }
 });
 
+/* ---- 鈴 ---- */
+const BELLS = [440, 554, 740, 932, 1109, 1865];
+
+test('鈴: 有限で、最後は 0 になり、毎回同じ波形。高さごとに違い、高さによらず同じ大きさ（先頭 0.4 秒の RMS）', () => {
+  const all = BELLS.map((f) => bellBuffer(SR, f));
+  for (const x of all) {
+    assert.equal(x.length, Math.round(SR * BELL_LENGTH));
+    assert.ok(x.every(Number.isFinite));
+    assert.ok(peakOf(x) <= 0.98 + 1e-6 && peakOf(x) > 0.3, `ピーク ${peakOf(x)}`);
+    assert.ok(Math.abs(x[x.length - 1]) < 1e-6, '最後はぷつっと鳴らない');
+    assert.ok(Math.abs(rmsOf(x, 0, SR * 0.4) / 0.1 - 1) < 0.05, `RMS ${rmsOf(x, 0, SR * 0.4)}`);
+  }
+  assert.deepEqual(bellBuffer(SR, 554), bellBuffer(SR, 554));
+  for (let i = 1; i < all.length; i++) assert.notDeepEqual(all[0], all[i]);
+});
+
+test('鈴: 正弦波 1 本ではなく、基本・オクターブ・金属の部分音（2.756 倍・5.404 倍）・胴の低い響き（0.5 倍）が重なる。基本が占めるのは 85% 以下', () => {
+  for (const f of BELLS) {
+    const x = bellBuffer(SR, f), early = (r) => near(x, f * r, 0.01, 0.06);
+    assert.ok(db(early(2), early(1)) > -18, `${f}Hz: オクターブ上 ${db(early(2), early(1)).toFixed(1)}dB`);
+    assert.ok(db(early(2.756), early(1)) > -20, `${f}Hz: 2.756 倍 ${db(early(2.756), early(1)).toFixed(1)}dB`);
+    assert.ok(db(early(2.756), early(2.5)) > 12 && db(early(2.756), early(2.9)) > 8, `${f}Hz: 2.756 倍は、近くの整数倍より強い（整数でない金属の比）`);
+    assert.ok(db(early(0.5), early(1)) > -20, `${f}Hz: 胴の低い響き ${db(early(0.5), early(1)).toFixed(1)}dB`);
+    const n = 4096, tot = new Array(n / 2).fill(0);
+    for (let st = 0; st + n <= SR * 0.3; st += n / 2) fftPower(x, st, n).forEach((v, k) => { tot[k] += v; });
+    const k0 = Math.floor((f * 0.97 * n) / SR), k1 = Math.ceil((f * 1.03 * n) / SR);
+    const main = tot.slice(k0, k1 + 1).reduce((a, v) => a + v, 0) / tot.reduce((a, v) => a + v, 0);
+    assert.ok(main < 0.85, `${f}Hz: 基本が占める割合 ${main.toFixed(2)}`);
+  }
+});
+
+test('鈴: 高い部分音ほど速く消え（基本 > オクターブ > 2.756 倍 > 5.404 倍）、高い鈴ほど短く響く（−40dB まで 0.25〜0.7 秒）', () => {
+  for (const f of [440, 554, 932]) {
+    const x = bellBuffer(SR, f), drop = (r) => db(near(x, f * r, 0.12, 0.2), near(x, f * r, 0.01, 0.06));
+    assert.ok(drop(1) > drop(2) && drop(2) > drop(2.756) && drop(2.756) > drop(5.404), `${f}Hz: ${[1, 2, 2.756, 5.404].map((r) => drop(r).toFixed(1)).join(' > ')}`);
+    assert.ok(drop(5.404) < -25, `${f}Hz: 5.404 倍は打った瞬間の「チン」だけ`);
+  }
+  const fall = BELLS.map((f) => fallTime(bellBuffer(SR, f), 40));
+  fall.forEach((t, i) => assert.ok(t >= 0.25 && t <= 0.7, `${BELLS[i]}Hz: −40dB まで ${t}s`));
+  assert.ok(fall[0] > fall[fall.length - 1] + 0.1, '低い鈴ほど長く響く');
+});
+
+test('鈴: スマホの小さなスピーカー（450Hz 以下が出ない）でも、パワーの 8 割以上が 450Hz より上にある（ゴールの音 555Hz〜。前の 277Hz の正弦波は 0）', () => {
+  for (const f of [555, 740, 932, 1865]) assert.ok(shareAbove(bellBuffer(SR, f), 450, 0.4) > 0.8, `${f}Hz: ${shareAbove(bellBuffer(SR, f), 450, 0.4).toFixed(2)}`);
+});
+
 test('44.1kHz でも作れて、ナイキスト周波数を超える部分音は足さない（折り返しの雑音を出さない）', () => {
   for (const sr of [22050, 44100]) {
-    for (const x of [glassBuffer(sr, 1), shalanBuffer(sr, 3326)]) {
+    for (const x of [glassBuffer(sr, 1), shalanBuffer(sr, 3326), bellBuffer(sr, 932)]) {
       assert.ok(x.every(Number.isFinite));
       assert.ok(peakOf(x) > 0.3 && peakOf(x) <= 0.98 + 1e-6);
     }

@@ -76,13 +76,13 @@ function lowpass(x, sr, f0, q = Math.SQRT1_2) {
   return y;
 }
 /**
- * 先頭 1 秒の RMS（音の大きさの目安）を rms にそろえる。高さやバーの数が違っても同じ大きさに聞こえるように。
+ * 先頭 secs 秒（既定 1 秒）の RMS（音の大きさの目安）を rms にそろえる。高さやバーの数が違っても同じ大きさに聞こえるように。
  * 大きさは、出口の 9.5kHz のローパス（sfx.js の bright）を通したあとで測る（それより上の部分音は聞こえないので数えない）。
  * ただし最大の振幅は peak まで（超えるときは、そのぶん小さくする）
  */
-function finishLoud(out, sr, rms = 0.2, peak = 0.98) {
+function finishLoud(out, sr, rms = 0.2, peak = 0.98, secs = 1) {
   let m = 0, e = 0;
-  const n = Math.min(out.length, Math.round(sr * 1)), heard = lowpass(out.subarray(0, n), sr, Math.min(9500, sr * 0.45));
+  const n = Math.min(out.length, Math.round(sr * secs)), heard = lowpass(out.subarray(0, n), sr, Math.min(9500, sr * 0.45));
   for (let i = 0; i < out.length; i++) { const v = Math.abs(out[i]); if (v > m) m = v; }
   for (let i = 0; i < n; i++) e += heard[i] * heard[i];
   const r = Math.sqrt(e / n);
@@ -149,6 +149,38 @@ export function glassBuffer(sr, variant = 0) {
   addMode(out, sr, 0, 185 + rand() * 25, 0.34, 0.055);             // 底がテーブルに当たる「コツ」
   strike(0.021 + rand() * 0.006, 0.3, 1.011);                       // 置いたあと、小さく再接触
   return finish(out, sr, 0.9);
+}
+
+/* =====================================================================
+ * 鈴（音の高さのある「ピン」の音。ゴール・手駒の補充・コンボ・褒め言葉などの旋律に使う）
+ * ===================================================================== */
+/** 鈴 1 つの長さ（秒）。sfx.js が、鳴らす長さに合わせて途中から小さくして切る */
+export const BELL_LENGTH = 1;
+/** 先頭 0.4 秒の RMS（9.5kHz のローパスを通したあと）。高さによらず同じ大きさ */
+const BELL_RMS = 0.1;
+/**
+ * 鈴の部分音 [周波数の比, 大きさ, 消える速さ（基本に対する倍率）]。
+ *  - 0.5 = 胴の低い響き（ハム）。スマホの小さなスピーカーは低い音が出ないので、これだけに頼らず、上の部分音で厚みを出す
+ *  - 1 = 打った音の高さ / 2 = オクターブ上（鐘の「ノミナル」）/ 3 = その 5 度上
+ *  - 2.756・5.404・8.933 = 金属の曲げ振動の整数でない比（バーチャイムと同じ）。高いほど速く消えて、打った瞬間の「チン」になる
+ * 純粋な正弦波 1 本の「ピン」は、細くて薄っぺらい。いくつもの部分音が違う速さで消えていくと、厚みのある金属の響きになる
+ */
+const BELL_PARTS = [[0.5, 0.3, 1.3], [1, 1, 1], [2, 0.8, 0.7], [2.756, 0.55, 0.45], [3, 0.3, 0.5], [5.404, 0.32, 0.25], [8.933, 0.12, 0.12]];
+/**
+ * 鈴の波形（1 秒）: 基本の高さ f（Hz）。部分音 + わずかにずれた対（ゆっくりしたうなり = 鈴のゆらぎ）+ 打った瞬間の「チッ」+
+ * 短いこだま 2 つ（43ms・97ms。小さな部屋の響き）。響きの長さは高いほど短く（f ≈ 700Hz で基本が 0.62 秒で 60dB 小さくなる）。
+ * 高さが違っても、同じ大きさ。f ごとに乱数を固定
+ */
+export function bellBuffer(sr, f = 700) {
+  const out = new Float32Array(Math.round(sr * BELL_LENGTH));
+  const rand = rng(0x6b1d5eed + Math.round(f) * 31);
+  const sign = () => (rand() < 0.5 ? -1 : 1), t60 = 0.62 * Math.pow(700 / f, 0.35);
+  for (const [ratio, a, d] of BELL_PARTS) addMode(out, sr, 0, f * ratio, a * sign(), t60 * d, 0.0004);
+  addMode(out, sr, 0, f * (1.0028 + rand() * 0.0012), 0.55 * sign(), t60 * 0.92, 0.0004);          // 基本のずれた対
+  addMode(out, sr, 0, f * 2 * (1.0035 + rand() * 0.001), 0.3 * sign(), t60 * 0.6, 0.0004);          // オクターブのずれた対
+  addClick(out, sr, 0, 0.0004, 0.1, rand);
+  addEchoes(out, sr, [0.043, 0.097], [0.16, 0.09]);
+  return finishLoud(out, sr, BELL_RMS, 0.98, 0.4);
 }
 
 /* =====================================================================
