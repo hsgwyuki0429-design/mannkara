@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency } from '../src/ui/sfx.js?v=202610020948';
+import { Sfx, note, voicedFrequency, shalanTop } from '../src/ui/sfx.js?v=202610020948';
 import { Renderer } from '../src/ui/renderer.js?v=202610020948';
-import { SHALAN_TOP } from '../src/ui/synth.js?v=202610020948';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -159,27 +158,42 @@ test('ミュートは明るい出口も止める（ガラス・シャランが�
   s.stop();
 });
 
-test('シャランはゴールの音と同じ音階の高さで、連鎖が進むほど高い。同時の連打は 1 つにまとめる', () => {
-  const s = audio(), rates = [];
-  for (let c = 1; c <= 8; c++) { s.shalan(c); s.ctx.currentTime += 0.2; rates.push(s.ctx.sources.at(-1).playbackRate.value); }
-  assert.equal(new Set(rates.map((r) => r.toFixed(4))).size, 8, '8 連鎖までは別の高さ');
-  for (let c = 1; c <= 8; c++) {
-    const top = rates[c - 1] * SHALAN_TOP, goal = note(c - 1, 330) * Math.pow(2, -3 / 12);   // ゴールの音（tone は 3 半音下げて鳴らす）
+test('シャランの最後のバーは、ゴールの音と同じ音階の高さ（バーチャイムの 2〜4.5kHz）で、連鎖が進むほど高い', () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6].map(shalanTop), [2220, 2492, 2797, 3326, 3734, 4440]);
+  for (let c = 1; c <= 12; c++) {
+    const top = shalanTop(c), goal = note(c - 1, 330) * Math.pow(2, -3 / 12);        // ゴールの音（tone は 3 半音下げて鳴らす）
+    assert.ok(top >= 2000 && top < 4500, `連鎖 ${c}: ${top}Hz`);
     const octaves = Math.log2(top / goal);
-    assert.ok(Math.abs(octaves - Math.round(octaves)) < 1e-9, `連鎖 ${c}: ゴールの音のオクターブ違いの高さ`);
+    assert.ok(Math.abs(octaves - Math.round(octaves)) < 2e-3, `連鎖 ${c}: ゴールの音のオクターブ違いの高さ`);
   }
-  assert.ok(rates.every((r) => r > 0.7 && r < 2.0));
+  const ups = [1, 2, 3, 4, 5, 6].map(shalanTop);
+  assert.ok(ups.every((f, i) => i === 0 || f > ups[i - 1]), '6 連鎖までは、連鎖が進むほど高い');
+  assert.equal(shalanTop(7), shalanTop(2), '7 連鎖目からは 2 連鎖目と同じ高さに戻る（上限を超えるので 1 オクターブ下げる）');
+});
+
+test('シャランは連鎖ごとの高さの波形（長さは同じ）を、再生の速さをほぼ変えずに鳴らす。同時の連打は 1 つにまとめる', () => {
+  const s = audio();
+  for (let c = 1; c <= 8; c++) { s.shalan(c); s.ctx.currentTime += 0.2; }
+  const used = s.ctx.sources.filter((n) => n.buffer);
+  assert.equal(used.length, 8);
+  assert.equal(new Set(used.slice(0, 6).map((n) => n.buffer)).size, 6, '6 連鎖までは別の波形（別の高さ）');
+  assert.equal(used[6].buffer, used[1].buffer, '7 連鎖目は 2 連鎖目と同じ');
+  for (let c = 1; c <= 8; c++) assert.ok(s.waves.has(`shalan:${shalanTop(c)}`));
+  assert.ok(used.every((n) => Math.abs(n.playbackRate.value - 1) <= 0.011), '高さは再生の速さでなく、波形で変える（速さを変えると長さも変わる）');
+  assert.ok(used.every((n) => n.stopAt - n.started < 1.4), '長さは約 1.3 秒');
   const n = s.ctx.sources.length; s.shalan(1); s.shalan(1);
   assert.equal(s.ctx.sources.length, n + 1);
   s.stop();
 });
 
-test('全消しは「シャラン、シャラン」の 2 回、新記録のファンファーレは 1 回', () => {
+test('全消しは「シャラン、シャラン」の 2 回（2 回目は高い）、新記録のファンファーレは 1 回', () => {
+  const shalans = (x) => x.ctx.sources.filter((n) => n.buffer && [...x.waves].some(([k, w]) => k.startsWith('shalan:') && w.buf === n.buffer));
   let s = audio(); s.allClear();
-  const shalans = (x) => x.ctx.sources.filter((n) => n.buffer && n.buffer === x.waves.get('shalan')?.buf);
   const two = shalans(s);
   assert.equal(two.length, 2);
   assert.ok(two[1].started - two[0].started > 0.3);
+  assert.notEqual(two[0].buffer, two[1].buffer);
+  assert.ok(s.waves.has(`shalan:${shalanTop(1)}`) && s.waves.has(`shalan:${shalanTop(4)}`), '1 回目は 1 連鎖の高さ、2 回目は 4 連鎖の高さ');
   s.stop();
   s = audio(); s.fanfare();
   assert.equal(shalans(s).length, 1);
@@ -190,8 +204,8 @@ test('波形は 1 回だけ作って使い回し、warm で 1 つずつ先に作
   const s = audio();
   assert.equal(s.waves.size, 0);
   let more = true, calls = 0;
-  while (more) { more = s.warm(); assert.ok(++calls <= 5); }
-  assert.equal(s.waves.size, 5, 'ガラス 4 種 + シャラン');
+  while (more) { more = s.warm(); assert.ok(++calls <= 10); }
+  assert.equal(s.waves.size, 10, 'ガラス 4 種 + シャラン（高さ 6 種）');
   const glass1 = s.waves.get('glass1');
   s.glass(1); assert.equal(s.waves.get('glass1'), glass1);
   s.ctx = new Context(); s.connect();

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { glassBuffer, shalanBuffer, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_TOP } from '../src/ui/synth.js?v=202610020948';
+import { glassBuffer, shalanBuffer, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_LOW, SHALAN_LENGTH } from '../src/ui/synth.js?v=202610020948';
 
 const SR = 48000;
 /** 時刻 t0〜t1（秒）の、周波数 f（Hz）の成分の大きさ（Goertzel 法）。窓は Hann */
@@ -59,36 +59,85 @@ test('ガラスを置く音: 底がテーブルに当たる低い「コツ」（
   assert.ok(db(tok(0, 0.04), tok(0.1, 0.14)) > 20);
 });
 
-test('シャラン: 有限で、音量がそろい、最後は 0 になり、毎回同じ波形', () => {
-  const x = shalanBuffer(SR);
-  assert.equal(x.length, Math.round(SR * 1.7));
-  assert.ok(x.every(Number.isFinite));
-  assert.ok(Math.abs(peakOf(x) - 0.9) < 1e-6);
-  assert.ok(Math.abs(x[x.length - 1]) < 1e-6);
-  assert.deepEqual(x, shalanBuffer(SR));
+/** 高さ（最後のバーの Hz）。sfx.js の shalanTop が返す、連鎖 1〜6 の高さ */
+const TOPS = [2220, 2492, 2797, 3326, 3734, 4440];
+/** 20ms ごとの RMS の包絡で、最大から db 下がった最初の時刻（秒。最大より後） */
+function fallTime(x, db) {
+  const w = Math.round(SR * 0.02), env = [];
+  for (let i = 0; i + w <= x.length; i += w) env.push(rmsOf(x, i, i + w));
+  const pk = Math.max(...env), th = pk * Math.pow(10, -db / 20);
+  for (let i = env.indexOf(pk); i < env.length; i++) if (env[i] < th) return (i * w) / SR;
+  return Infinity;
+}
+/** バー（基本の高さ f）が鳴り始める時刻（秒）: f の成分が、そのあとの最大の 25% を初めて超える 10ms の窓 */
+function onset(x, f, t1 = 0.4) {
+  const max = Math.max(...Array.from({ length: 80 }, (_, i) => near(x, f, i * 0.005, i * 0.005 + 0.01)));
+  for (let t = 0; t < t1; t += 0.002) if (near(x, f, t, t + 0.01) > max * 0.25) return t;
+  return Infinity;
+}
+
+test('シャラン: 有限で、最後は 0 になり、毎回同じ波形。高さごとに違う。長さ（1.3 秒）は高さによらず同じ', () => {
+  const all = TOPS.map((top) => shalanBuffer(SR, top));
+  for (const x of all) {
+    assert.equal(x.length, Math.round(SR * SHALAN_LENGTH));
+    assert.ok(x.every(Number.isFinite));
+    assert.ok(peakOf(x) <= 0.98 + 1e-6 && peakOf(x) > 0.3, `ピーク ${peakOf(x)}`);
+    assert.ok(Math.abs(x[x.length - 1]) < 1e-6, '最後はぷつっと鳴らない');
+  }
+  assert.deepEqual(shalanBuffer(SR, 3326), shalanBuffer(SR, 3326));
+  for (let i = 1; i < all.length; i++) assert.notDeepEqual(all[0], all[i]);
+  assert.equal(shalanBuffer(SR).length, all[0].length, '既定の高さも同じ長さ');
 });
 
-test('シャラン: 最初に鈴の高い粒（2.5〜6.5kHz）、次にベルの音階、最後の音（SHALAN_TOP）が長く響く', () => {
-  const x = shalanBuffer(SR);
-  const jingle = (t0, t1) => [2480, 3410, 4130, 5330, 6450].reduce((s, f) => s + near(x, f, t0, t1), 0);
-  assert.ok(db(jingle(0.0, 0.1), jingle(0.6, 0.7)) > 20, '鈴のシャは最初だけ');
-  const top = (t0, t1) => near(x, SHALAN_TOP, t0, t1);
-  assert.ok(db(top(0.2, 0.3), near(x, SHALAN_TOP * 1.19, 0.2, 0.3)) > 12, '最後の音がはっきり主役');
-  assert.ok(db(top(0.9, 1.0), near(x, SHALAN_TOP * 1.19, 0.9, 1.0)) > 40, '1 秒たっても、最後の音だけがはっきり響いている');
-  const fall = db(top(0.2, 0.3), top(0.9, 1.0));
-  assert.ok(fall > 20 && fall < 55, `0.7 秒で ${fall.toFixed(1)}dB ほどなだらかに消える`);
-  assert.ok(rmsOf(x, SR * 1.55, SR * 1.7) < rmsOf(x, SR * 0.2, SR * 0.4) * 0.01, '最後は消えている');
-  // ベルの部分音（2.756 倍）が最後の音の上に鳴る
-  assert.ok(near(x, SHALAN_TOP * 2.756, 0.2, 0.3) > near(x, SHALAN_TOP * 2.4, 0.2, 0.3) * 2);
-  // 駆け上がり: 最後の音より低いペンタトニックの音（-12 半音 = 1 オクターブ下）が、最後の音より前に鳴る
-  assert.ok(near(x, SHALAN_TOP / 2, 0.03, 0.12) > near(x, SHALAN_TOP / 2 * 1.06, 0.03, 0.12) * 1.5);
+test('シャラン: 高さによらず同じ大きさ（先頭 0.6 秒の RMS）と、同じ聞こえる長さ（−40dB まで 0.55〜0.95 秒）', () => {
+  for (const top of TOPS) {
+    const x = shalanBuffer(SR, top);
+    const rms = rmsOf(x, 0, SR * 0.6);
+    assert.ok(Math.abs(rms / 0.147 - 1) < 0.03, `${top}Hz: RMS ${rms.toFixed(4)}`);
+    const t = fallTime(x, 40);
+    assert.ok(t >= 0.55 && t <= 0.95, `${top}Hz: −40dB まで ${t}s`);
+  }
+});
+
+test('シャラン: 半音ごとのバーが低い方から約 0.15 秒で順に駆け上がり、最後のバーが主役になる', () => {
+  const top = 2220, steps = 12;                        // 1.1kHz → 2.2kHz は 12 半音
+  const bar = (below) => top * Math.pow(2, -below / 12);
+  const times = [12, 9, 6, 3].map((b) => onset(shalanBuffer(SR, top), bar(b)));
+  for (let i = 1; i < times.length; i++) assert.ok(times[i] > times[i - 1], `低いバーから順に: ${times.map((t) => t.toFixed(3)).join(' < ')}`);
+  assert.ok(times[0] < 0.04 && times[3] < 0.15, '約 0.15 秒で駆け上がる');
+  const last = onset(shalanBuffer(SR, top), top);
+  assert.ok(Math.abs(last - (0.15 + 0.012)) < 0.012, `最後のバーは駆け上がりの直後: ${last}`);
+  assert.equal(steps, Math.round(12 * Math.log2(top / SHALAN_LOW)));
+  const x = shalanBuffer(SR, top);
+  assert.ok(near(x, SHALAN_LOW, 0, 0.03) > near(x, SHALAN_LOW * 0.75, 0, 0.03) * 5, '一番低いバーは約 1.1kHz');
+});
+
+test('シャラン: 最後のバーだけが長く響き、金属のバーの部分音（2.756 倍・5.404 倍）が乗る。整数倍（2 倍・3 倍）は無い', () => {
+  for (const top of [2220, 3326]) {
+    const x = shalanBuffer(SR, top);
+    const late = (f) => near(x, f, 0.35, 0.5);
+    assert.ok(db(late(top), late(top * 1.19)) > 30, `${top}Hz: 最後のバーがはっきり主役`);
+    assert.ok(late(top * 2.756) > late(top * 2) * 5 && late(top * 2.756) > late(top * 3) * 5, '2.756 倍は 2 倍・3 倍より強い');
+    assert.ok(near(x, top * 5.404, 0.2, 0.3) > near(x, top * 5, 0.2, 0.3) * 2 || top * 5.404 > SR * 0.45);
+    assert.ok(db(late(top), near(x, top, 0.8, 0.95)) > 15, '0.4 秒後から消えていく');
+    assert.ok(rmsOf(x, Math.round(SR * 1.15), x.length) < rmsOf(x, Math.round(SR * 0.2), Math.round(SR * 0.4)) * 0.01, '最後は消えている');
+  }
+});
+
+test('シャラン: ペンタトニックの音のバー（最後のバーの 3・5・8・10・12 半音下）は、隣の半音のバーより大きく長く鳴る（最後に残るのは濁らない音）', () => {
+  const top = 2220, steps = 12, x = shalanBuffer(SR, top);
+  // 叩かれた 0.04〜0.1 秒後の大きさ（叩かれる時刻は、駆け上がり 0.15 秒を 12 等分したもの）
+  const level = (below) => { const t = (0.15 * (steps - below)) / steps; return near(x, top * Math.pow(2, -below / 12), t + 0.04, t + 0.1); };
+  for (const [main, filler] of [[3, 2], [3, 4], [5, 4], [5, 6], [8, 7], [8, 9], [10, 9], [10, 11], [12, 11]]) {
+    assert.ok(level(main) > level(filler) * 1.8, `${main} 半音下 ${level(main).toExponential(2)} > ${filler} 半音下 ${level(filler).toExponential(2)}`);
+  }
 });
 
 test('44.1kHz でも作れて、ナイキスト周波数を超える部分音は足さない（折り返しの雑音を出さない）', () => {
   for (const sr of [22050, 44100]) {
-    for (const x of [glassBuffer(sr, 1), shalanBuffer(sr)]) {
+    for (const x of [glassBuffer(sr, 1), shalanBuffer(sr, 3326)]) {
       assert.ok(x.every(Number.isFinite));
-      assert.ok(Math.abs(peakOf(x) - 0.9) < 1e-6);
+      assert.ok(peakOf(x) > 0.3 && peakOf(x) <= 0.98 + 1e-6);
     }
   }
 });

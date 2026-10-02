@@ -1,18 +1,11 @@
-import { glassBuffer, shalanBuffer, GLASS_VARIANTS, SHALAN_TOP } from './synth.js?v=202610020948';
+import { glassBuffer, shalanBuffer, GLASS_VARIANTS } from './synth.js?v=202610020948';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
 const LOWER = Math.pow(2, -3 / 12), MAX_HZ = 1760;
 const VOICE_LIMIT = 40;
 const LEVEL = 0.32;                                    // 全体の音量（ミュートでは 0）
-/**
- * 作っておく波形（synth.js）。ガラスを置く音（コップの高さ違い 4 つ）と、ベルのシャラン。
- * 鳴らすたびに計算せず、AudioBuffer を 1 回だけ作って使い回す（作るのは数 ms。起動後の空き時間に先に作っておく）
- */
-const WAVES = {
-  ...Object.fromEntries(Array.from({ length: GLASS_VARIANTS }, (_, v) => [`glass${v}`, (sr) => glassBuffer(sr, v)])),
-  shalan: shalanBuffer,
-};
+const SHALAN_GAIN = 0.3;                               // シャランの音量（size 1 のとき）
 // 上限で切りそろえると和音も大連鎖も同じ音になる。上限を超えた音はオクターブ下へ戻す。
 export const voicedFrequency = (hz) => {
   hz = Math.max(45, Number.isFinite(hz) ? hz : 220);
@@ -23,6 +16,25 @@ export const voicedFrequency = (hz) => {
 export const note = (i, base = 261.63) => {
   const k = Math.max(0, Math.floor(i)) % 10;
   return base * 2 ** ((PENTA[k % 5] + Math.floor(k / 5) * 12) / 12);
+};
+/**
+ * シャランの最後のバー（「ラン」）の高さ（Hz）: ゴールの音（note(chain - 1, 330)）と同じ音階の 3 オクターブ上を、
+ * 2〜4.5kHz に折りたたんだもの（バーチャイムの高さ）。連鎖が進むほど高くなり、6 連鎖までは別の高さ（7 連鎖目から 2 連鎖目と同じ高さに戻る）
+ */
+export const shalanTop = (chain) => {
+  let f = note(chain - 1, 330) * LOWER * 8;
+  while (f >= 4500) f /= 2;
+  return Math.round(f);
+};
+/**
+ * 作っておく波形（synth.js）。ガラスを置く音（コップの高さ違い 4 つ）と、バーチャイムのシャラン（最後のバーの高さごと）。
+ * 鳴らすたびに計算せず、AudioBuffer を 1 回だけ作って使い回す（作るのは 1 つ数 ms〜20ms。起動後の空き時間に先に作っておく）。
+ * シャランは再生の速さで高さを変えると長さも変わってしまうので、高さごとに合成する（長さはどれも同じ）
+ */
+const SHALAN_TOPS = [...new Set(Array.from({ length: 10 }, (_, i) => shalanTop(i + 1)))];
+const WAVES = {
+  ...Object.fromEntries(Array.from({ length: GLASS_VARIANTS }, (_, v) => [`glass${v}`, (sr) => glassBuffer(sr, v)])),
+  ...Object.fromEntries(SHALAN_TOPS.map((top) => [`shalan:${top}`, (sr) => shalanBuffer(sr, top)])),
 };
 
 export class Sfx {
@@ -128,7 +140,7 @@ export class Sfx {
     const comp = this.ctx.createDynamicsCompressor();
     comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
     this.master.connect(this.soft); this.soft.connect(comp); comp.connect(this.ctx.destination);
-    // 明るい出口: ガラスやベルの高い響き（〜9kHz）は、上の 3.8kHz のローパスで丸めずに通す。音量・ミュートは master と同じ
+    // 明るい出口: ガラスやバーチャイムの高い響き（〜9kHz）は、上の 3.8kHz のローパスで丸めずに通す。音量・ミュートは master と同じ
     this.bright = this.ctx.createGain();
     this.bright.gain.value = this.enabled ? LEVEL : 0;
     this.air = this.ctx.createBiquadFilter();
@@ -241,14 +253,13 @@ export class Sfx {
     this.playBuffer(`glass${variant % GLASS_VARIANTS}`, { gain: 0.58, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
   }
   /**
-   * シャラン: クリスマスのベルのように、鈴のきらめきから音階が駆け上がり、最後の音が長く響く。
-   * ゴールの音（note(chain - 1, 330)）と同じ音階の、2 オクターブ上。連鎖が進むほど高くなる（8 連鎖までは、1 連鎖ごとに別の高さ）。size = 大きさ（1 = 全消し・新記録の見せ場、ふだんのラインは 0.65 ほど）、at = 何秒後か
+   * シャラン: バーチャイム（マークツリー）をなでたような、高い金属の音が駆け上がって、最後のバーが長く響く音。
+   * 最後のバーの高さは shalanTop（ゴールの音と同じ音階。連鎖が進むほど高い）。size = 大きさ（1 = 全消し・新記録の見せ場、
+   * ふだんのラインは 0.65 ほど）、at = 何秒後か
    */
   shalan(chain = 1, { size = 1, at = 0 } = {}) {
     if (!at && !this.allow('shalan', 0.1)) return;
-    let top = note(chain - 1, 330) * LOWER * 4;
-    while (top >= 2800) top /= 2;
-    this.playBuffer('shalan', { gain: 0.3 * size, rate: top / SHALAN_TOP, at, priority: 1 });
+    this.playBuffer(`shalan:${shalanTop(chain)}`, { gain: SHALAN_GAIN * size, rate: 0.99 + Math.random() * 0.02, at, priority: 1 });
   }
   /** 穴にぴったりはまる場所に入った（カチッ）・ぴったり置いた（カチッ + 上がる2音） */
   fitHover()    { if (!this.allow('fitHover', 0.08)) return;
