@@ -1,17 +1,16 @@
-import { Board, createBlock } from './board.js?v=202610030217';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610030217';
-import { ScoreManager } from './score.js?v=202610030217';
-import { nextActivation, lineMoves } from './mancala.js?v=202610030217';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610030217';
-import * as Sim from './sim.js?v=202610030217';
-import { ALL_CLEAR_PLANS } from './allclear-library.js?v=202610030217';
-import { bestMove } from './advisor.js?v=202610030217';
+import { Board, createBlock } from './board.js?v=202610030735';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610030735';
+import { ScoreManager } from './score.js?v=202610030735';
+import { nextActivation, lineMoves } from './mancala.js?v=202610030735';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610030735';
+import * as Sim from './sim.js?v=202610030735';
+import { bestMove } from './advisor.js?v=202610030735';
 import {
-  SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
+  SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
-  ALL_CLEAR_RATE, ALL_CLEAR_PIECES, EMPTY_ALL_CLEAR_RATE, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202610030217';
+  ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
+} from './constants.js?v=202610030735';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -66,6 +65,7 @@ export class Game {
   resetDealing() {
     this.planTray = null;         // 今のトレイで、全消しの手順どおりにまだ置いていない手 [{ name, ox, oy }]
     this.plan = null;             // 全消しの計画の続き { key: ここまで手順どおりに置いた盤面, rest: 残りの手順 }
+    this.stats = { refills: 0, allClearRolled: 0, allClearSearches: 0, allClearFound: 0 };   // 手駒の決め方の集計（確率が狙いどおりか調べる用）
     this.wantAllClear = false;    // 全消しのチャンスを引いたが、まだ手順が見つかっていない
     this.wantTight = false;       // 置き方の少ない組み合わせのチャンスを引いたが、まだ見つかっていない
     this.history = new Set();     // これまでに手駒を配った時の盤面（ループの判定用）
@@ -221,6 +221,7 @@ export class Game {
    */
   spawnTray() {
     const fill = this.board.fillRate();
+    this.stats.refills++;
     const start = Sim.fromBoard(this.board);
     this.history.add(Sim.keyOf(start));
     const planned = this.allClearTray(fill);
@@ -341,9 +342,8 @@ export class Game {
 
   /**
    * 全消しのチャンス（手順どおりに置いた時だけ全消しになる手駒）:
-   *  - 盤面が空: EMPTY_ALL_CLEAR_RATE の確率で、手順集（allclear-library.js）から1本選ぶ
-   *  - ブロックが残っている: ALL_CLEAR_RATE の確率で、今の盤面から ALL_CLEAR_PIECES 個の手順を計算する
-   *    （見つからなければ次の補充でもう一度）
+   *  - 盤面が空でも残っていても同じ: 補充のたびに ALL_CLEAR_RATE の確率で、今の盤面から ALL_CLEAR_PIECES 個の手順を計算する
+   *    （見つからなければ次の補充でもう一度。回数は this.stats.allClear に数える）
    * どちらも最初の3個を配り、残りは計画として持つ。次に配る時、ここまで手順どおりの盤面なら続きを配り、
    * 違っていたら計画はおしまい。該当しない・手順が見つからないときは null（普通の手駒にする）。
    */
@@ -352,16 +352,15 @@ export class Game {
     const plan = this.plan;
     this.plan = null;
     if (plan && Sim.keyOf(Sim.fromBoard(this.board)) === plan.key) return this.dealPlan(plan.rest);
-    if (this.board.totalBlocks() === 0) {
-      this.wantAllClear = false;
-      if (random() >= EMPTY_ALL_CLEAR_RATE) return null;
-      return this.dealPlan(decodePlan(ALL_CLEAR_PLANS[Math.floor(random() * ALL_CLEAR_PLANS.length)]));
-    }
     if (plan) return null;                                     // 手順から外れた直後は、ふつうの手駒にする
-    this.wantAllClear ||= random() < ALL_CLEAR_RATE;
+    const rolled = !this.wantAllClear && random() < ALL_CLEAR_RATE;
+    this.wantAllClear ||= rolled;
     if (!this.wantAllClear) return null;
+    if (rolled) this.stats.allClearRolled++;
+    this.stats.allClearSearches++;
     const seq = planAllClear(this.board, { depths: ALL_CLEAR_PIECES, random, budgetMs: ALL_CLEAR_BUDGET_MS });
     if (!seq) return null;                                     // 見つからなければ次の補充でもう一度
+    this.stats.allClearFound++;
     this.wantAllClear = false;
     return this.dealPlan(seq);
   }
@@ -384,16 +383,15 @@ export class Game {
     return tray;
   }
 
-  /** 条件なしの1回分の抽選（各枠 CHAIN_PIECE_RATE で連鎖ピース、それ以外の枠は FIT_PIECE_RATE で穴・凹みにはまる形） */
+  /**
+   * 条件なしの1回分の抽選。各枠、CHAIN_PIECE_RATE（20%）で置けば発動が起きる形（連鎖ピース）、残り（80%）で穴・凹みに気持ちよくはまる形。
+   * 選んだ種類の形が今の盤面に1つも無いときは、もう一方の種類、それも無ければ重みどおりのランダム
+   */
   drawTray() {
     return Array.from({ length: TRAY_SIZE }, () => {
-      const r = this.generator.random();
-      if (r < CHAIN_PIECE_RATE) {
-        const chainers = this.chainPieces();
-        if (chainers.length) return new Piece(this.generator.pick(chainers).name);
-      } else if (r < CHAIN_PIECE_RATE + FIT_PIECE_RATE) {
-        const fitters = this.fitPieces();
-        if (fitters.length) return new Piece(this.generator.pick(fitters).name);
+      const chainFirst = this.generator.random() < CHAIN_PIECE_RATE;
+      for (const list of chainFirst ? [this.chainPieces(), this.fitPieces()] : [this.fitPieces(), this.chainPieces()]) {
+        if (list.length) return new Piece(this.generator.pick(list).name);
       }
       return this.generator.next();
     });

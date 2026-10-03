@@ -39,15 +39,17 @@ export const KIND_PRIORITY = { col: 0, row: 1 };
 
 // ===== トレイ =====
 export const TRAY_SIZE = 3;
-/** 手駒1つごとに「置けば発動が起きる形」を選ぶ確率 */
-export const CHAIN_PIECE_RATE = 0.1;
 /**
- * 手駒1つごとに「今の盤面の穴・凹みに気持ちよくはまる形」を選ぶ確率（連鎖ピースに選ばれなかった枠で）。
+ * ふつうの抽選（条件なしの1回分）で、手駒1つごとに「置けば発動が起きる形」を選ぶ確率。残り（80%）は、下の「穴・凹みに気持ちよくはまる形」。
+ * どちらの形も今の盤面に1つも無いときだけ、形の重みどおりのランダム
+ */
+export const CHAIN_PIECE_RATE = 0.2;
+/**
+ * 「今の盤面の穴・凹みに気持ちよくはまる形」を選ぶ（連鎖ピースに選ばれなかった枠 = 80%）。
  * 列を消すのとは別に「空いている所にぴったり入れたい・凹みを埋めて四角くそろえたい」気持ちに応えるための形。
  * はまり方（Sim.fitOf）ごとの選びやすさ（× 形のマス数。大きい形ほど選びやすい）:
  *   perfect = 囲まれた穴をちょうど埋める / rect = 凹みを埋めて長方形ができる / dent = 凹みにはまる
  */
-export const FIT_PIECE_RATE = 0.3;
 export const FIT_WEIGHTS = { perfect: 8, rect: 6, dent: 1 };
 /** ボーナス: 穴にぴったり = 置いたマス1つあたり / 長方形ができた = 長方形のマス1つあたり（両方なら足す） */
 export const SCORE_PER_PERFECT_FIT_CELL = 25;
@@ -67,7 +69,7 @@ export const SCORE_PER_RECT_CELL = 10;
 export const WAYS_MAX = 300;
 /** 目標の何倍以内なら、その候補で決める */
 export const WAYS_TOLERANCE = 2;
-export const TIGHT_RATE = 0.1;
+export const TIGHT_RATE = 0.2;
 export const TIGHT_MAX_FILL = 0.6;         // ブロック 16 個まで
 export const TIGHT_MIN_SPOTS = 4;
 export const TIGHT_MAX_WAYS = 2;
@@ -81,20 +83,13 @@ export const LINEUP_BUDGET_MS = 25;
 /** 埋まり具合 f のときの置き方の数の目標 */
 export const targetWays = (f) => Math.max(1, Math.round(Math.pow(WAYS_MAX, 1 - Math.min(1, Math.max(0, f)))));
 /**
- * 全消しのチャンス: ブロックが残っている盤面（埋まり具合は問わない）で、補充のたびに ALL_CLEAR_RATE の確率で
+ * 全消しのチャンス: 盤面が空でもブロックが残っていても同じ。補充のたびに ALL_CLEAR_RATE の確率で
  * 「ALL_CLEAR_PIECES のどれかの個数（3個ずつ配るので3の倍数）を、この順番・この場所に置くと最後の1個でちょうど全消し」の
  * 手順を今の盤面から計算し、3個ずつ配る。手順どおりの盤面にならなかったら、そこで計画はおしまい。
- * 手順が見つからなかったときは、次の補充でもう一度探す
+ * 手順が見つからなかったときは、次の補充でもう一度探す（Game.stats に、引いた回数・探した回数・見つかった回数を数える）
  */
 export const ALL_CLEAR_RATE = 0.2;
 export const ALL_CLEAR_PIECES = [6, 9, 12];
-/**
- * 盤面が空のとき（ゲーム開始・全消しの直後）は EMPTY_ALL_CLEAR_RATE の確率で、手順集（allclear-library.js）から
- * 「6個以上（主に9個）をこの順番・この場所に置くと、最後の1個でちょうど全消し」の手順を選び、3個ずつ配る。
- * 手順どおりの盤面になっていないと（違う置き方をしたら）そこで計画はおしまい（探し直さない）。
- * （空の盤面では上の計算はしない）
- */
-export const EMPTY_ALL_CLEAR_RATE = 0.6;
 /** 全消しの手順探しにかける時間の上限（ms）。見つからなければ普通の手駒にする */
 export const ALL_CLEAR_BUDGET_MS = 40;
 /** 条件を満たすトレイを探す抽選回数の上限 */

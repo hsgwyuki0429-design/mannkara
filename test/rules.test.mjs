@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202610030217';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610030217';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610030217';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610030217';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610030217';
-import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610030217';
-import * as Sim from '../src/core/sim.js?v=202610030217';
-import { DealerCore } from '../src/core/dealer.js?v=202610030217';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610030217';
-import { ScoreManager } from '../src/core/score.js?v=202610030217';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610030217';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610030217';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610030217';
+import { Board, createBlock } from '../src/core/board.js?v=202610030735';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610030735';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610030735';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610030735';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610030735';
+import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610030735';
+import * as Sim from '../src/core/sim.js?v=202610030735';
+import { DealerCore } from '../src/core/dealer.js?v=202610030735';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610030735';
+import { ScoreManager } from '../src/core/score.js?v=202610030735';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610030735';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610030735';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610030735';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610030217';
+  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610030735';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -364,16 +364,24 @@ console.log('連鎖ピース: 約10% の確率で、置けば発動が起きる�
     return false;
   });
   eq(ok, true, '選ばれる向きは必ず発動を起こせる');
-  // 確率: 1回の抽選(drawTray)で通常抽選(next)を通らなかった枠 = 連鎖ピースとして選ばれた枠
-  let total = 0;
+  // 確率: 連鎖ピース（置けば発動が起きる形）と、はまる形が両方ある盤面では、各枠 20% が連鎖ピース・80% がはまる形・ランダムは 0%
   const g3 = new Game({ random: rnd }); g3.board = g.board.clone();
-  g3.fitPieces = () => [];                                         // 穴にはまる形の枠は数えない（別のテスト）
-  const origNext = g3.generator.next.bind(g3.generator);
-  let naturalCount = 0;
-  g3.generator.next = () => { naturalCount++; return origNext(); };
-  for (let i = 0; i < 4000; i++) { g3.drawTray(); total += 3; }
-  const rate = (total - naturalCount) / total;
-  eq(rate > 0.085 && rate < 0.115, true, `連鎖ピースの割合 ${(rate * 100).toFixed(1)}%`);
+  g3.chainPieces = () => [{ name: 'I0', weight: 1 }];
+  g3.fitPieces = () => [{ name: 'O0', weight: 1 }];
+  let nChain = 0, nFit = 0, nOther = 0;
+  for (let i = 0; i < 4000; i++) for (const p of g3.drawTray()) { if (p.name === 'I0') nChain++; else if (p.name === 'O0') nFit++; else nOther++; }
+  const rate = nChain / 12000;
+  eq([rate > 0.18 && rate < 0.22, nFit / 12000 > 0.78 && nFit / 12000 < 0.82, nOther], [true, true, 0], `連鎖ピース ${(rate * 100).toFixed(1)}%・はまる形 ${(nFit / 120).toFixed(1)}%・ランダム ${nOther} 枠`);
+  // どちらかの形が盤面に無いときは、もう一方。両方無いときだけ、形の重みどおりのランダム
+  g3.fitPieces = () => [];
+  eq(g3.drawTray().every((p) => p.name === 'I0'), true, 'はまる形が無ければ、連鎖ピース');
+  g3.fitPieces = () => [{ name: 'O0', weight: 1 }]; g3.chainPieces = () => [];
+  eq(g3.drawTray().every((p) => p.name === 'O0'), true, '連鎖ピースが無ければ、はまる形');
+  g3.fitPieces = () => [];
+  let natural = 0; const origNext = g3.generator.next.bind(g3.generator);
+  g3.generator.next = () => { natural++; return origNext(); };
+  g3.drawTray();
+  eq(natural, 3, '両方無ければ、重みどおりのランダム');
 }
 
 console.log('トレイ保証: 埋まり具合に関係なく必ず詰まない置き方がある / 置き方の数は埋まるほど減る');
@@ -490,7 +498,7 @@ console.log('ときどき「1つずつなら置けるのに、3つとも置け�
   eq(ok && found > 0, true, `置き方は1〜2通り・どの形も1つずつなら ${TIGHT_MIN_SPOTS} か所以上に置ける (${found}/${tries} 盤面で見つかった)`);
 }
 {
-  // 補充のたびに約10%（見つからなければ次の補充で探し直すので、出る割合もおよそ10%）
+  // 補充のたびに約20%（見つからなければ次の補充で探し直すので、出る割合もおよそ20%）
   let seed = 31, tight = 0, n = 0;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd });
@@ -500,7 +508,7 @@ console.log('ときどき「1つずつなら置けるのに、3つとも置け�
     g.spawnTray(); n++;
     if (g.lastLineup.kind === 'tight') tight++;
   }
-  eq(tight / n > 0.04 && tight / n < 0.16, true, `置き方の少ない組み合わせの割合 ${(tight / n * 100).toFixed(0)}%`);
+  eq(tight / n > 0.12 && tight / n < 0.30, true, `置き方の少ない組み合わせの割合 ${(tight / n * 100).toFixed(0)}%`);
   let high = 0;
   for (let i = 0; i < 60; i++) { g.board = boardWithBlocks(rnd, 17, 27); g.spawnTray(); if (g.lastLineup.kind === 'tight') high++; }
   eq(high, 0, '6割以上埋まっているときは出さない（ふつうの目標がもともと少ない）');
@@ -686,7 +694,7 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
     hits++;
     if (!g.plan || g.plan.rest.length < 3) strict = false;
   }
-  eq(hits / N > 0.52 && hits / N < 0.68, true, `空の盤面で全消しの手順になる割合 ${(hits / N * 100).toFixed(0)}%`);
+  eq(hits / N > 0.13 && hits / N < 0.28, true, `空の盤面でも、ほかの盤面と同じ約20%で全消しの手順になる割合 ${(hits / N * 100).toFixed(0)}%`);
   eq(strict, true, '1回目の3個を配り、残り（3個以上）は計画として持つ');
 }
 {
@@ -811,14 +819,15 @@ console.log('穴・凹みにはまる形: はまり方の判定・約30% の確�
   const st = Sim.fromBoard(g.board);
   eq(fitters.every(({ name, fit }) => Sim.placements(st, new Piece(name).cells)
     .some(([ox, oy]) => Sim.fitOf(st, new Piece(name).cells, ox, oy).kind === fit)), true, '選ばれる形は実際にそのはまり方をする場所がある');
-  // 確率: 連鎖ピースを無くして、通常抽選(next)を通らなかった枠を数える
+  // 確率: 連鎖ピースを無くすと、はまる形だけから選ぶ（この盤面にははまる形がある）。ランダムの枠は 0
   g.chainPieces = () => [];
   const orig = g.generator.next.bind(g.generator);
   let natural = 0, total = 0;
   g.generator.next = () => { natural++; return orig(); };
-  for (let i = 0; i < 4000; i++) { g.drawTray(); total += 3; }
-  const rate = (total - natural) / total;
-  eq(rate > 0.27 && rate < 0.33, true, `穴・凹みにはまる形の割合 ${(rate * 100).toFixed(1)}%`);
+  const names = new Set(fitters.map((x) => x.name));
+  let inFit = 0;
+  for (let i = 0; i < 400; i++) for (const p of g.drawTray()) { total++; if (names.has(p.name)) inFit++; }
+  eq([natural, inFit === total], [0, true], `穴・凹みにはまる形だけが出る（ランダム ${natural} 枠・${total} 枠中 ${inFit}）`);
   // 置いたらボーナス: ぴったり 2マス×25
   g.generator.next = orig;
   g.tray = [new Piece('I20'), new Piece('Dot0'), new Piece('Dot0')];
@@ -1007,7 +1016,7 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202610030217');
+  const api = await import('../functions/api/ranking.js?v=202610030735');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');
@@ -1048,7 +1057,7 @@ console.log('世界ランキングの API（functions/api/ranking.js）');
     eq((await api.ranking(d1, C, 0, 9999)).top.length, api.PAGE_MAX, '1回に読めるのは PAGE_MAX 人まで');
     eq([...p1.top, ...p2.top].map((x) => x.rank), Array.from({ length: 100 }, (_, i) => i + 1), 'ページをつなげても順位が飛ばない');
     // 不適切な名前を隠す（作成者だけ。書き換えはできない）
-    const admin = await import('../functions/api/admin.js?v=202610030217');
+    const admin = await import('../functions/api/admin.js?v=202610030735');
     const P = '5'.repeat(32), Q = '6'.repeat(32);
     await api.submit(d1, { id: P, name: 'わるい名前', score: 700 }, 1000);
     await api.submit(d1, { id: Q, name: 'ふつう', score: 650 }, 1001);
