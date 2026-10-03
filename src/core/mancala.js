@@ -1,5 +1,5 @@
-import { Board } from './board.js?v=202610032224';
-import * as Sim from './sim.js?v=202610032224';
+import { Board } from './board.js?v=202610032323';
+import * as Sim from './sim.js?v=202610032323';
 
 /**
  * ライン(kind, n) の発動を1move ずつ進めるジェネレータ。縦列・横列で完全に同じ処理。
