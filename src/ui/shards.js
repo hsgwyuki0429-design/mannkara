@@ -1,10 +1,10 @@
-import { colorOf } from './palette.js?v=202610021128';
+import { colorOf } from './palette.js?v=202610030127';
 
 /**
  * ゴールから飛び散る宝石のかけら。
  * かけらの塗りを CSS のグラデーション（ブロックと同じ数枚重ね）で作ると、かけらを出すたびに描き直しになって重い。
- * 盤面を覆う大きな canvas に描くのも、それだけで重ね合わせが重くなる（空でも）。
- * そこで、色ごとに1回だけ描いた小さな絵をかけら（小さな要素）の背景に貼り、transform だけで動かす。
+ * そこで、色ごとに1回だけ描いた小さな絵を、盤面の演出用の canvas（fx2d.js。何も描いていない間は画面から外す）に貼って動かす。
+ * かけらを 1 つずつ要素にして動かすと、動いている数だけ毎フレームの仕事が増えるので使わない（ブロックを動かす requestAnimationFrame が回っている間は特に）。
  *
  * かけらの見た目は盤面のブロックと同じ: ひし形の4つのふちの面（光源は左上）とテーブル面。
  * 光の向きがそろうよう、かけらは回さない。薄くすると背景の青と混ざって濁るので、消えるときは小さくなるだけ。
@@ -52,59 +52,51 @@ export function gemSprite(name) {
   return img;
 }
 
+/**
+ * かけらの位置と大きさ（経過 t 秒 / 全体の長さ T 秒 / 初速 vx, vy px/秒 / 重力 g px/秒²）。放物線で飛び、後半 45% で小さくなって消える
+ */
+export function shardPose(t, T, vx, vy, g) {
+  const u = t / T;
+  return { dx: vx * t, dy: vy * t + 0.5 * g * t * t, scale: u < 0.55 ? 1 : Math.max(0, 1 - (u - 0.55) / 0.45) };
+}
+
 export class Shards {
-  constructor(parent) {
-    this.parent = parent;
-    this.sprites = new Map();         // 色 → かけらの絵の CSS クラス名
-    this.alive = new Set();
+  /** fx = 盤面の小さな演出を描く canvas（fx2d.js の FxCanvas） */
+  constructor(fx) {
+    this.fx = fx;
+    this.n = 0;                       // 出ているかけらの数
   }
 
   clear() {
-    for (const d of this.alive) d.remove();
-    this.alive.clear();
+    this.fx.drop(this);
+    this.n = 0;
   }
 
-  get count() { return this.alive.size; }
+  get count() { return this.n; }
 
   /**
    * (x, y) から色 colors[i] のかけらを n 個、上向きの扇形に散らす。size = かけらの対角線の長さ px, speed = 初速 px/秒。
    * spread = 扇の開き（ラジアン）、cap = 同時に出していてよい数（全消しのような見せ場だけ増やす）
    */
   burst(x, y, colors, n, size, speed, { spread = 2.4, cap = MAX, life = 0.72 } = {}) {
-    n = Math.min(n, cap - this.alive.size);
+    n = Math.min(n, cap - this.n);
     for (let i = 0; i < n; i++) {
       const a = -Math.PI / 2 + ((i + 0.5) / n - 0.5) * spread + (Math.random() - 0.5) * 0.4;
       const v = speed * (1 + Math.random() * 0.55), vx = Math.cos(a) * v, vy = Math.sin(a) * v, g = speed * 3;
       const T = life + Math.random() * 0.14, sz = size * (0.8 + Math.random() * 0.45);
-      const d = document.createElement('div');
-      d.className = 'shard ' + this.cls(colors[i % colors.length]);
-      d.style.cssText = `width:${sz}px;height:${sz}px`;
-      this.parent.appendChild(d);
-      this.alive.add(d);
-      const frames = [];
-      for (let k = 0; k <= 8; k++) {
-        const t = (T * k) / 8, u = k / 8;
-        frames.push({ transform: `translate(${x - sz / 2 + vx * t}px,${y - sz / 2 + vy * t + 0.5 * g * t * t}px) scale(${u < 0.55 ? 1 : 1 - (u - 0.55) / 0.45})` });
-      }
-      d.animate(frames, { duration: T * 1000, easing: 'linear' }).onfinish = () => { d.remove(); this.alive.delete(d); };
+      const img = gemSprite(colors[i % colors.length]), start = this.fx.now();
+      this.n++;
+      this.fx.add({
+        owner: this, start, end: start + T * 1000, done: () => { this.n--; },
+        draw: (g2, now) => {
+          const p = shardPose((now - start) / 1000, T, vx, vy, g), d = sz * p.scale;
+          if (d < 0.5) return;
+          g2.drawImage(img, x + p.dx - d / 2, y + p.dy - d / 2, d, d);
+        },
+      });
     }
   }
 
-  /** 7色ぶんの絵とクラスを先に作っておくための仕事（1色ずつ） */
-  warmJobs() { return ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'].map((name) => () => this.cls(name)); }
-
-  /**
-   * 色ごとのかけらの絵を背景にする CSS クラス名。絵（data URL）は色ごとに1回だけスタイルシートに書く
-   * （かけら1個ずつの style に長い data URL を書くと、出すたびにその文字列の読み取りと画像の照合が走る）
-   */
-  cls(name) {
-    let c = this.sprites.get(name);
-    if (!c) {
-      c = 'shard-' + name;
-      if (!this.sheet) { this.sheet = document.createElement('style'); document.head.appendChild(this.sheet); }
-      this.sheet.appendChild(document.createTextNode(`.shard.${c}{background-image:url(${gemSprite(name).toDataURL()})}\n`));
-      this.sprites.set(name, c);
-    }
-    return c;
-  }
+  /** 7色ぶんの絵を先に作っておくための仕事（1色ずつ） */
+  warmJobs() { return ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'].map((name) => () => gemSprite(name)); }
 }

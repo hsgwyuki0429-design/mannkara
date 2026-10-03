@@ -1,4 +1,4 @@
-import { gemSprite } from './shards.js?v=202610021128';
+import { gemSprite } from './shards.js?v=202610030127';
 
 /**
  * 画面全体の演出（シーン）。盤面の外側まで使う、大きな色の変化のための層。
@@ -35,6 +35,7 @@ export class Scenes {
     this.tint = mk('div', 'sceneTint', app);
     // 盤面の前: 新記録の風船と、はじけた粒
     this.front = mk('canvas', 'sceneFront');
+    this.front.hidden = true;                       // 何も描いていない間は画面から外す（画面いっぱいの canvas があるだけで、毎フレームの合成が重くなる）
     this.fctx = this.front.getContext('2d');
     this.actors = [];        // 毎フレーム描くもの。draw(now) が false を返したら消える
     this.bits = [];          // はじけた粒（丸）
@@ -63,6 +64,7 @@ export class Scenes {
     this.actors.length = this.bits.length = 0;
     this.fctx.setTransform(1, 0, 0, 1, 0, 0);
     this.fctx.clearRect(0, 0, this.front.width, this.front.height);
+    this.front.hidden = true;
     this._tintAnim?.cancel();
   }
 
@@ -150,7 +152,10 @@ export class Scenes {
   /* =====================================================================
    * 描画ループ
    * ===================================================================== */
-  kick() { if (!this.raf) this.raf = requestAnimationFrame((t) => this.frame(t)); }
+  kick() {
+    this.front.hidden = false;
+    if (!this.raf) this.raf = requestAnimationFrame((t) => this.frame(t));
+  }
 
   frame(now) {
     this.raf = 0;
@@ -171,7 +176,7 @@ export class Scenes {
     f.globalCompositeOperation = 'source-over';
     this.dirty = alive > 0 || bits;
     if (this.dirty) this.raf = requestAnimationFrame((t) => this.frame(t));
-    else this.lastNow = 0;
+    else { this.lastNow = 0; this.front.hidden = true; }      // このフレームの頭で消してあるので、絵は残っていない
   }
 
   drawBits(now) {

@@ -9,6 +9,9 @@
  *    棒の長さ 8〜20cm（直径約 9.5mm のアルミ）で、基本の高さは 1〜7kHz。高い部分音ほど速く消え、ほぼ同じ高さの対がゆっくりうなる。
  *    硬く叩くと高い部分音が強く尖った音になり、棒どうしが擦れ合う「シャッ」（4〜9kHz の帯域雑音）が混ざる。指で 2 回なでて「シャン、シャン」
  * 毎回同じ音になるよう乱数は固定シード。鳴らすたびに計算しないよう、AudioBuffer は 1 回だけ作って使い回す。
+ *
+ * 音のセット（KITS）: ガラス（上の 3 つ）/ 木琴 / オルゴール。置く音・シャラン・鈴の 3 種類を、セットごとの楽器で作る
+ * （スコアが一定ごとにセットが替わる。sfx.js）。木琴とオルゴールは、同じ「モーダル合成」で、その楽器の部分音の比と減衰を使う。
  */
 
 /** 固定シードの乱数（xorshift32）。0〜1 */
@@ -254,6 +257,141 @@ export function shalanBuffer(sr, top = SHALAN_TOP) {
   addEchoes(out, sr, [0.083, 0.151], [0.22, 0.12]);                               // 響きだけにこだまを足す（「シャッ」を重ねると、2 回が 5 回に聞こえてしまう）
   for (let i = 0; i < out.length; i++) out[i] += air[i];
   return finishLoud(out, sr, SHALAN_RMS, 0.98);
+}
+
+/* =====================================================================
+ * 音のセット: 置く音（place）・シャラン（chime）・鈴（note）を、セットごとの楽器で
+ * ===================================================================== */
+/** セット 0 = ガラスのコップ + バーチャイム + 鈴（上の 3 つ）/ 1 = 木琴 / 2 = オルゴール */
+export const KITS = ['glass', 'marimba', 'musicbox'];
+export const PLACE_VARIANTS = GLASS_VARIANTS;
+/** 置く音の大きさ: 先頭 0.25 秒の RMS（9.5kHz のローパスを通したあと）。ガラスと同じ耳への大きさになるよう、セットごとに耳の感度（A 特性）で合わせた */
+const PLACE_RMS = { 1: [0.12, 0.111, 0.129, 0.105], 2: [0.099, 0.096, 0.106, 0.093] };
+
+/* ---------------------------------------------------------------------
+ * 木琴（マリンバ）: ローズウッドの棒をゴムや毛糸の撥で叩く。棒は中央を削って調律してあり、部分音が基本の 4 倍・10 倍付近になる
+ * （普通の金属の棒の 2.756・5.404 倍ではなく、整数に近い比 → 音の高さがはっきりして、丸く温かい）。高い部分音ほど速く消え、
+ * 共鳴管が基本をふくらませる。撥が木に当たる「コッ」が立ち上がりに付く
+ * --------------------------------------------------------------------- */
+const WOOD_PARTS = [[3.97, 0.34, 0.3], [9.8, 0.1, 0.1]];             // 基本のほかの部分音 [周波数の比, 大きさ, 消える速さ（基本に対する倍率）]
+const WOOD_PITCH = [659.26, 783.99, 587.33, 880];                     // 置く音の高さ（ミ・ソ・レ・ラ。ペンタトニック）
+/**
+ * 木の棒 1 本を叩く: out に at 秒から、基本 f Hz・大きさ gain・基本が 60dB 小さくなるまで t60 秒。hard = 撥の硬さ（0〜1。硬いほど高い部分音が強い）
+ */
+function woodNote(out, sr, f, at, gain, t60, rand, hard = 0.5) {
+  const sign = () => (rand() < 0.5 ? -1 : 1);
+  addMode(out, sr, at, f, gain * sign(), t60, 0.0005);
+  for (const [ratio, a, d] of WOOD_PARTS) addMode(out, sr, at, f * ratio, gain * a * (0.4 + hard) * sign(), t60 * d, 0.0005);
+  addMode(out, sr, at, f * 1.0016, gain * 0.22 * sign(), t60 * 1.1, 0.0006);       // わずかにずれた対（木のゆらぎ）
+  addMode(out, sr, at, f * 0.5, gain * 0.1, t60 * 0.7, 0.002);                     // 共鳴管の低い響き
+  addHiss(out, sr, at, 0.007, gain * 0.9, rand, Math.min(3200, f * 2.4), 1.2);     // 撥が木に当たる「コッ」
+}
+/** 木琴の高さ f の基本が 60dB 消えるまでの秒数（低い棒ほど長く響く） */
+const woodRing = (f) => Math.min(1.4, Math.max(0.25, 0.9 * Math.pow(523 / f, 0.55)));
+
+/** 木琴を置く音（0.45 秒）: 棒を硬い撥で叩く「ポコッ」+ 底がテーブルに当たる低い「コツ」+ 小さな再接触 */
+function marimbaPlace(sr, variant) {
+  const rand = rng(0x3c6ef372 + variant * 7919), out = new Float32Array(Math.round(sr * 0.45));
+  const f1 = WOOD_PITCH[variant % WOOD_PITCH.length];
+  woodNote(out, sr, f1, 0, 1, 0.3, rand, 0.9);
+  addMode(out, sr, 0, 175 + rand() * 25, 0.3, 0.05);
+  woodNote(out, sr, f1 * 1.011, 0.024 + rand() * 0.006, 0.28, 0.12, rand, 1);
+  return finishLoud(out, sr, PLACE_RMS[1][variant % PLACE_RMS[1].length], 0.98, 0.25);
+}
+/** 下から数えた半音の数（最後の棒が 0）。ペンタトニックの音だけを並べる（最後に鳴る音が、ゴールの音と濁らない） */
+const RUN_BELOW = [22, 20, 17, 15, 12, 10, 8, 5, 3, 0];
+/**
+ * 木琴のなで上げ（1.3 秒）: 棒の並びを撥で「コロロン、コロン」と駆け上がる。1 回目は低い棒から top の棒まで約 0.15 秒で（だんだん強く）、
+ * 2 回目は top の 1 オクターブ下から。top の棒は 2 回目のあとで長く響く。top は、バーチャイムの高さの 1 オクターブ下（木琴の音域）
+ */
+function marimbaRun(sr, top) {
+  const out = new Float32Array(Math.round(sr * SHALAN_LENGTH)), top1 = top / 2;
+  const flicks = [{ at: 0, dur: 0.15, seq: RUN_BELOW, level: 0.8, tail: 0.3 }, { at: 0.22, dur: 0.085, seq: RUN_BELOW.slice(5), level: 0.9, tail: 0.75 }];
+  flicks.forEach((fl, j) => {
+    fl.seq.forEach((below, k) => {
+      const rand = rng(0x2f6b7a11 + below * 7919 + j * 104729), u = k / fl.seq.length;
+      const f = top1 * Math.pow(2, -below / 12), last = below === 0;
+      const at = Math.max(0, fl.at + (fl.dur * k) / (fl.seq.length - 1) + (rand() - 0.5) * 0.003);
+      const gain = last ? 0.55 * fl.level : (0.12 + 0.3 * u * u) * (0.85 + rand() * 0.3) * fl.level;
+      woodNote(out, sr, f, at, gain, last ? fl.tail : 0.1 + 0.18 * u, rand, 0.7);
+    });
+  });
+  addEchoes(out, sr, [0.061, 0.137], [0.14, 0.08]);
+  return finishLoud(out, sr, SHALAN_RMS, 0.98);
+}
+/** 木琴の 1 音（1 秒）: 毛糸の撥でやわらかく叩く。f = 基本の高さ（Hz）。高さが違っても同じ大きさ */
+function marimbaNote(sr, f) {
+  const out = new Float32Array(Math.round(sr * BELL_LENGTH)), rand = rng(0x1d872b41 + Math.round(f) * 31);
+  woodNote(out, sr, f, 0, 1, woodRing(f), rand, 0.3);
+  addEchoes(out, sr, [0.05, 0.11], [0.12, 0.07]);
+  return finishLoud(out, sr, BELL_RMS, 0.98, 0.4);
+}
+
+/* ---------------------------------------------------------------------
+ * オルゴール: 鋼のくしの歯（片持ち梁）を、回る円筒のピンが弾く。片持ち梁の曲げ振動の部分音は 1 : 6.27 : 17.55 : 34.4
+ * （金属の棒の 2.756・5.404 倍より、上の部分音がずっと高く離れる）→ 基本が澄んで、ごく速く消える高い「チリン」が混ざる細い音。
+ * ピンが歯を弾く「ぴっ」が立ち上がりに付き、木の箱が低い胴鳴りをつける
+ * --------------------------------------------------------------------- */
+const TINE_PARTS = [[6.267, 0.42, 0.22], [17.55, 0.14, 0.08], [34.4, 0.05, 0.04]];
+const TINE_PITCH = [1046.5, 1174.7, 880, 1318.5];                     // 置く音の高さ（ド・レ・ラ・ミ。ペンタトニック）。2 番目の部分音（6.27 倍）が聞こえる帯域に入る高さ
+/** 歯 1 本を弾く: out に at 秒から、基本 f Hz・大きさ gain・基本が 60dB 小さくなるまで t60 秒 */
+function tineNote(out, sr, f, at, gain, t60, rand) {
+  const sign = () => (rand() < 0.5 ? -1 : 1);
+  addMode(out, sr, at, f, gain * sign(), t60, 0.0003);
+  for (const [ratio, a, d] of TINE_PARTS) addMode(out, sr, at, f * ratio, gain * a * sign(), t60 * d, 0.0003);
+  addMode(out, sr, at, f * (1.0021 + rand() * 0.0008), gain * 0.45 * sign(), t60 * 0.9, 0.0003);     // うなり
+  addClick(out, sr, at, 0.0004, gain * 0.12, rand);                                                   // ピンが歯を弾く「ぴっ」
+}
+/** オルゴールの高さ f の基本が 60dB 消えるまでの秒数 */
+const tineRing = (f) => Math.min(1.5, Math.max(0.35, 1.0 * Math.pow(700 / f, 0.4)));
+
+/** オルゴールの置く音（0.5 秒）: 歯を 1 本弾く「ポロン」+ 箱が受け止める低い胴鳴り */
+function musicBoxPlace(sr, variant) {
+  const rand = rng(0x4a7c15f9 + variant * 7919), out = new Float32Array(Math.round(sr * 0.5));
+  tineNote(out, sr, TINE_PITCH[variant % TINE_PITCH.length], 0, 1, 0.45, rand);
+  addMode(out, sr, 0, 205 + rand() * 25, 0.4, 0.05);                  // 箱が受け止める低い胴鳴り
+  addMode(out, sr, 0, 430 + rand() * 40, 0.16, 0.06);                 // 木の箱の胴の響き（広い共鳴）
+  addMode(out, sr, 0, 790 + rand() * 60, 0.1, 0.045);
+  return finishLoud(out, sr, PLACE_RMS[2][variant % PLACE_RMS[2].length], 0.98, 0.25);
+}
+/**
+ * オルゴールのなで上げ（1.3 秒）: 円筒がくしの歯を駆け上がる「ティロリン、ティロリン」。1 回目は低い歯から top まで約 0.1 秒、2 回目は top の 1 オクターブ下から。
+ * top の歯は 2 回目のあとで長く響く。top はバーチャイムと同じ高さ（2〜4.5kHz。連鎖が進むほど高い）。高い歯の上の部分音は、聞こえる帯域の外へ出る
+ */
+function musicBoxRun(sr, top) {
+  const out = new Float32Array(Math.round(sr * SHALAN_LENGTH));
+  const flicks = [{ at: 0, dur: 0.11, seq: RUN_BELOW, level: 0.8, tail: 0.35 }, { at: 0.2, dur: 0.065, seq: RUN_BELOW.slice(5), level: 0.9, tail: 0.8 }];
+  flicks.forEach((fl, j) => {
+    fl.seq.forEach((below, k) => {
+      const rand = rng(0x6c2f8a35 + below * 7919 + j * 104729), u = k / fl.seq.length;
+      const f = top * Math.pow(2, -below / 12), last = below === 0;
+      const at = Math.max(0, fl.at + (fl.dur * k) / (fl.seq.length - 1) + (rand() - 0.5) * 0.002);
+      const gain = last ? 0.5 * fl.level : (0.1 + 0.28 * u * u) * (0.85 + rand() * 0.3) * fl.level;
+      tineNote(out, sr, f, at, gain, last ? fl.tail : 0.12 + 0.12 * u, rand);
+    });
+  });
+  addEchoes(out, sr, [0.047, 0.109], [0.16, 0.09]);
+  return finishLoud(out, sr, SHALAN_RMS, 0.98);
+}
+/** オルゴールの 1 音（1 秒）: 歯を 1 本弾く。f = 基本の高さ（Hz）。高さが違っても同じ大きさ */
+function musicBoxNote(sr, f) {
+  const out = new Float32Array(Math.round(sr * BELL_LENGTH)), rand = rng(0x5d3b9e27 + Math.round(f) * 31);
+  tineNote(out, sr, f, 0, 1, tineRing(f), rand);
+  addEchoes(out, sr, [0.047, 0.101], [0.14, 0.08]);
+  return finishLoud(out, sr, BELL_RMS, 0.98, 0.4);
+}
+
+/** 置く音（kit: 0 = ガラスのコップ / 1 = 木琴 / 2 = オルゴール）。variant = 高さ違い（0〜3） */
+export function placeBuffer(sr, variant = 0, kit = 0) {
+  return kit === 1 ? marimbaPlace(sr, variant) : kit === 2 ? musicBoxPlace(sr, variant) : glassBuffer(sr, variant);
+}
+/** シャラン（kit 0 = バーチャイム / 1 = 木琴のなで上げ / 2 = オルゴールのなで上げ）。top = 最後の音の高さ（Hz） */
+export function chimeBuffer(sr, top = SHALAN_TOP, kit = 0) {
+  return kit === 1 ? marimbaRun(sr, top) : kit === 2 ? musicBoxRun(sr, top) : shalanBuffer(sr, top);
+}
+/** 旋律の 1 音（kit 0 = 鈴 / 1 = 木琴 / 2 = オルゴール）。f = 基本の高さ（Hz） */
+export function noteBuffer(sr, f = 700, kit = 0) {
+  return kit === 1 ? marimbaNote(sr, f) : kit === 2 ? musicBoxNote(sr, f) : bellBuffer(sr, f);
 }
 
 /** 最大の振幅（テスト・音量合わせ用） */

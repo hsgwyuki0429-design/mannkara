@@ -1,19 +1,19 @@
-import { Game } from '../core/game.js?v=202610021128';
-import { Board, createBlock } from '../core/board.js?v=202610021128';
-import { Piece } from '../core/pieces.js?v=202610021128';
-import * as Sim from '../core/sim.js?v=202610021128';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610021128';
-import { Renderer, delay } from './renderer.js?v=202610021128';
-import { Sfx } from './sfx.js?v=202610021128';
-import { Scenes } from './scenes.js?v=202610021128';
-import { Ambient } from './ambient.js?v=202610021128';
-import { colorOf } from './palette.js?v=202610021128';
-import { TrayDealer } from './tray-dealer.js?v=202610021128';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610021128';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610021128';
-import { drawResultCard, cardBlob } from './share-card.js?v=202610021128';
-import { World } from './world.js?v=202610021128';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610021128';
+import { Game } from '../core/game.js?v=202610030127';
+import { Board, createBlock } from '../core/board.js?v=202610030127';
+import { Piece } from '../core/pieces.js?v=202610030127';
+import * as Sim from '../core/sim.js?v=202610030127';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610030127';
+import { Renderer, delay } from './renderer.js?v=202610030127';
+import { Sfx, kitForScore } from './sfx.js?v=202610030127';
+import { Scenes } from './scenes.js?v=202610030127';
+import { Ambient } from './ambient.js?v=202610030127';
+import { colorOf } from './palette.js?v=202610030127';
+import { TrayDealer } from './tray-dealer.js?v=202610030127';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610030127';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610030127';
+import { drawResultCard, cardBlob } from './share-card.js?v=202610030127';
+import { World } from './world.js?v=202610030127';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610030127';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -181,9 +181,10 @@ function playTick(now) {
 function startPlayTick() { if (!playRaf) { playLast = 0; playRaf = requestAnimationFrame(playTick); } }
 let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
+let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610021128', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610030127', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -195,9 +196,13 @@ const game = new Game({
       else sfx.refill();
     },
     onTurn(turn) {
+      // 音のセット: ターンの始まりのスコアで決める（連鎖の途中で楽器が替わらない）。スコアが KIT_EVERY 点進むごとに次のセットへ。チュートリアルは常にガラス
+      turn.kit = tutorial ? 0 : kitForScore(kitScore);
+      kitScore = turn.score;
+      if (!pending) sfx.setKit(turn.kit);                    // 前のターンの再生が残っていれば、このターンの再生の始まり（playTurn）で替える
       // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように。補充の手駒は届いたら onTray で出す）
       if (pending > 0) sfx.stop();
-      sfx.place(turn.placed.length);
+      sfx.place(turn.placed.length, turn.kit);
       turn.seq = ++turnSeq;
       // 穴にぴったり・凹みを埋めて長方形: 置いた瞬間に手応え（連鎖の文字が出ればそちらで上書き）
       if (turn.fit === 'perfect' || turn.rect) {
@@ -233,6 +238,7 @@ async function playTurn(turn) {
   // 途中でリスタート（モードの切り替えなど）したら、古いゲームの続き（点数・ゲームオーバー）は出さない
   const gen = generation, stale = () => gen !== generation;
   const rush = turn.seq < rushBefore;
+  sfx.setKit(turn.kit ?? 0);                             // このターンの音のセット（前のターンの再生が終わってから替わる）
   renderer.setRush(rush);
   showScore(turn.scoreAfterPlace);
   if (!tutorial) ambient.turn(turn);                     // 背景の色（コンボが続くと色相が進む。早送りでも色は合わせる）
@@ -477,7 +483,6 @@ function renderDragPiece(fx, fy) {
   // （ドラッグ中のピースは盤面の外の層なので、動かしても盤面の位置は変わらない）
   const local = renderer.clientToLocal(cx, cy);
   if (!layer.childElementCount) {
-    layer.style.transform = renderer.boardTransform();
     for (const cc of piece.cells) {
       const d = document.createElement('div');
       d.className = `drag-cell c-${piece.color}`;
@@ -486,8 +491,8 @@ function renderDragPiece(fx, fy) {
       layer.appendChild(d);
     }
   }
-  layer.style.left = cx + 'px';
-  layer.style.top = cy + 'px';
+  // 動かすのは transform だけ（left / top を書くと、そのたびにレイアウトと描き直しになる。合成だけで動く）
+  layer.style.transform = `translate(${cx}px,${cy}px) ${renderer.boardTransform()}`;
   return local;
 }
 
@@ -891,6 +896,7 @@ function showState(st) {
   generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   endDrag();
   game.importState(st);
+  kitScore = game.score.score || 0; sfx.setKit(tutorial ? 0 : kitForScore(kitScore));      // 途中から続けるときは、そのスコアの音のセットから
   renderer.reset();
   scenes.clear();
   ambient.reset();
@@ -914,6 +920,7 @@ function restart() {
   bestCelebrated = false;
   runRecorded = false;
   clearSave();
+  kitScore = 0; sfx.setKit(0);
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
   endDrag();
@@ -1231,10 +1238,10 @@ function nameGate(done) {
 }
 startOrResume();
 if (!world.named) nameGate(() => {});              // 途中の保存があっても、なまえが無ければ先に決めてもらう
-// 宝石のかけらの絵（7色）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
+// 宝石のかけら・星・ラインの光の枠の絵（色ごと）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
 // まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
 {
-  const jobs = [...renderer.shardLayer.warmJobs(), ...renderer.sparkLayer.warmJobs(), ...scenes.warmJobs()];
+  const jobs = [() => renderer.tuneFxDensity(), ...renderer.shardLayer.warmJobs(), ...renderer.sparkLayer.warmJobs(), ...renderer.rims.warmJobs(), ...scenes.warmJobs()];
   const idle = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 2000 }) : (f) => setTimeout(f, 120);
   const next = () => { const job = jobs.shift(); if (!job) return; job(); idle(next); };
   setTimeout(() => idle(next), 300);
@@ -1242,6 +1249,7 @@ if (!world.named) nameGate(() => {});              // 途中の保存があっ�
 window.__booted = true;
 window.__game = game;
 window.__renderer = renderer;
+window.__sfx = sfx;
 window.__scenes = scenes;
 window.__ambient = ambient;
 window.__ui = { showScore, renderTray, setBest(v) { best = v; }, pending: () => pending };

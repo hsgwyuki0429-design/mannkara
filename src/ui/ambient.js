@@ -8,6 +8,10 @@
  * 動かすのは opacity だけ: 色ごとに全面のグラデーションの層を1枚作り、新しい色の層を上に重ねて opacity 0 → 1
  * （合成だけで済み、毎フレームの描き直しは起きない）。遠い色へのグラデーションは、近い色どうしの小さな重ねを続けて行う
  * （遠い色を一度に混ぜると、間の色が灰色に濁るので）。「一気に変わる」ときは、短い重ね 1 回。
+ * 色が落ち着いている間は層を使わず、背景は body に直接描く（全面の層が 1 枚あるだけで、操作中の毎フレームの合成が重くなるので）。
+ *
+ * 変わる速さはゆっくりで、色の並びは毎回ちがう（決まった順に回り続けない）: ふだんの色は発動しない手が 8 回続くたびに 5 秒かけて、
+ * 向きと幅をばらして選んだ次の色へ。コンボは、コンボが始まるたびに色の進み方を引き直す。
  *
  * 盤面の土台（プレート・マスのくぼみ・縁の光）も、背景と同じ色相・同じ濃さ・同じ瞬間・同じ長さで変わる（bindBoard）。
  * 土台の色は、今の青の土台（BOARD）の明るさ・鮮やかさ・色相のずれをそのまま保って、背景と同じ角度だけ色相を回したもの。
@@ -138,35 +142,75 @@ export function ambientLook(hue, tone = 'base') {
 /** 黄〜黄緑のあたりは同じ明るさだとオリーブ色に濁るので、色が落ち着く先にはしない（途中を通り過ぎるだけ） */
 export const skipOlive = (h) => (h > 80 && h < 138 ? 142 : h);
 
-const CALM_EVERY = 5, CALM_STEP = 27;                  // 発動しない手が 5 回続くたびに、色相を 27° 進める
-const CALM_TONES = ['base', 'soft', 'base', 'deep'];
-const COMBO_STEP = 34;                                 // コンボが 1 つ増えるたびに、色相を 34° 進める（5 の倍数ではさらに 60°）
+/**
+ * 色の変わる速さと並び方。ゆっくり、毎回ちがう並びで:
+ *  - ふだんの色は、発動しない手が CALM_EVERY 回続くたびに、CALM_MS かけて次の色へ。次の色は決まった順ではなく、向きと幅（STEP_MIN〜STEP_MAX °）を
+ *    毎回ばらして選び、最近の色（RECENT 個）の近くには戻らない（nextHue）。濃さ（base / soft / deep）も毎回選ぶ（nextTone）
+ *  - コンボは、コンボが始まるたびに「向き・1 つ増えるごとの幅・5 の倍数での大きな幅・濃さの回り方」を引き直す（comboStyle）
+ */
+export const CALM_EVERY = 8;                            // 発動しない手が 8 回続くたびに、ふだんの色を進める
+const STEP_MIN = 45, STEP_MAX = 110;                    // ふだんの色が 1 回で動く色相の幅（°）
+const AVOID = 40, RECENT = 4;                           // 最近の RECENT 個の色の、AVOID° 以内には落ち着かない
+const TONE_WEIGHTS = [['base', 0.45], ['soft', 0.3], ['deep', 0.25]];
+const COMBO_STEP = 34;                                  // コンボが 1 つ増えるたびに動かす色相（°。既定。コンボごとに 22〜38° で引き直す）
+const COMBO_JUMP = 60;                                  // 5 の倍数でさらに動かす色相（°。既定。コンボごとに 48〜88° で引き直す）
 const COMBO_TONES = ['soft', 'deep', 'base'];
-const HOP = 40;                                        // 1 回の重ねで動かす色相の上限（°）
-const MIN_FADE = 90;                                   // 「一気に」でも、これだけは重ねる（下の層を外した瞬間に下地がのぞかないように）
+const HOP = 40;                                         // 1 回の重ねで動かす色相の上限（°）
+const MIN_FADE = 90;                                    // 「一気に」でも、これだけは重ねる（下の層を外した瞬間に下地がのぞかないように）
 const LAYERS = 4;
 /** 盤面の土台の層の数: 背景の層 + 最初から見えている今の青の 1 枚（renderer が作る） */
 export const PLATE_SETS = LAYERS + 1;
-const CALM_MS = 3000, COMBO_MS = 1400, SNAP_MS = 160;
+export const CALM_MS = 5000, COMBO_MS = 2200, SNAP_MS = 450;
+/** 同系色の重ね（--amb-glow）を使う要素。色はルート(:root)ではなくこの要素だけに書く（ルートに書くと、色が変わるたびに画面の全要素のスタイルを計算し直して引っかかる） */
+const GLOW_IDS = ['fever', 'danger', 'sceneTint'];
 
-/** コンボ streak のときの色（calm = ふだんの色） */
-export function comboLook(calm, streak) {
+/** 既定のコンボの色の進み方（コンボごとに comboStyle で引き直す） */
+export const COMBO_STYLE = { dir: 1, step: COMBO_STEP, jump: COMBO_JUMP, tone: 0 };
+/** コンボが始まったときに、このコンボの色の進み方を引く: 向き（±）・1 つ増えるごとの幅・5 の倍数での幅・濃さの回り始め */
+export function comboStyle(rand = Math.random) {
+  return { dir: rand() < 0.5 ? -1 : 1, step: 22 + rand() * 16, jump: 48 + rand() * 40, tone: Math.floor(rand() * COMBO_TONES.length) };
+}
+/** コンボ streak のときの色（calm = ふだんの色, style = このコンボの進み方） */
+export function comboLook(calm, streak, style = COMBO_STYLE) {
   return {
-    hue: skipOlive(wrapHue(calm.hue + COMBO_STEP * (streak - 1) + 60 * Math.floor(streak / 5))),
-    tone: COMBO_TONES[(streak - 2) % COMBO_TONES.length],
+    hue: skipOlive(wrapHue(calm.hue + style.dir * (style.step * (streak - 1) + style.jump * Math.floor(streak / 5)))),
+    tone: COMBO_TONES[(streak - 2 + style.tone) % COMBO_TONES.length],
   };
 }
-/** ふだんの色を進める（発動しない手が続いたとき） */
-export function nextCalm(calm, count) {
-  return { hue: skipOlive(wrapHue(calm.hue + CALM_STEP)), tone: CALM_TONES[count % CALM_TONES.length] };
+
+/**
+ * ふだんの色相の次: from から、向きと幅をばらして進む（向きは 65% そのまま、35% 反対）。recent（最近の色相）の近くへは戻らず、オリーブ色は避ける。
+ * 返り値 { hue, dir }（dir = 次に使う向き）
+ */
+export function nextHue(from, { recent = [], dir = 1, rand = Math.random } = {}) {
+  let best = null, bestGap = -1;
+  for (let i = 0; i < 16; i++) {
+    const d = rand() < 0.35 ? -dir : dir, step = STEP_MIN + rand() * ((i < 8 ? STEP_MAX : STEP_MAX + 60) - STEP_MIN);   // 決まらないときは幅を広げる
+    const hue = skipOlive(wrapHue(from + d * step));
+    const gap = recent.length ? Math.min(...recent.map((r) => Math.abs(hueDelta(r, hue)))) : 180;
+    if (gap >= AVOID) return { hue, dir: d };
+    if (gap > bestGap) { best = { hue, dir: d }; bestGap = gap; }
+  }
+  return best;                                           // 全部だめなら、最近の色からいちばん離れた候補（ほぼ起きない）
+}
+/** 濃さの次: 重みをつけて引く。base 以外が続けて同じにならないようにする */
+export function nextTone(prev = 'base', rand = Math.random) {
+  for (let i = 0; i < 4; i++) {
+    let r = rand() * TONE_WEIGHTS.reduce((a, [, w]) => a + w, 0), tone = TONE_WEIGHTS[0][0];
+    for (const [t, w] of TONE_WEIGHTS) { if ((r -= w) < 0) { tone = t; break; } }
+    if (tone !== prev || tone === 'base') return tone;
+  }
+  return 'base';
 }
 
 export class Ambient {
-  constructor({ doc = document, win = window } = {}) {
+  constructor({ doc = document, win = window, rand = Math.random } = {}) {
     this.doc = doc;
+    this.rand = rand;
     this.reducedQuery = win.matchMedia?.('(prefers-reduced-motion: reduce)');
     this.root = doc.createElement('div');
     this.root.id = 'ambient';
+    this.root.hidden = true;                                    // 色が落ち着いている間は層を使わない（背景は body に直接描く。lift / settleOn）
     this.root.setAttribute('aria-hidden', 'true');
     this.layers = Array.from({ length: LAYERS }, () => {
       const el = doc.createElement('i');
@@ -182,9 +226,22 @@ export class Ambient {
     this.hue = BASE_HUE; this.tone = 'base';                    // いま向かっている（または着いた）色
     this.calm = { hue: BASE_HUE, tone: 'base' };                // ふだんの色。ゆっくり進む
     this.rest = this.calm;                                      // この場面で落ち着く先（コンボ中ならコンボの色）
+    this.recent = [BASE_HUE];                                   // 最近の、ふだんの色相（近くへは戻らない）
+    this.dir = this.rand() < 0.5 ? -1 : 1;                      // ふだんの色が進む向き（ときどき反対になる）
+    this.combo = null;                                          // いまのコンボの色の進み方（comboStyle）。コンボが途切れたら捨てる
+    this.settled = ambientLook(BASE_HUE, 'base');               // いま body に描いてある色（styles.css の body の背景 = 今の青）
     this.moves = 0;
     this.holdUntil = 0;
     this.plates = null;                                         // 盤面の土台の層（bindBoard）
+  }
+
+  /** ふだんの色を次へ進める（向きと幅・濃さを毎回ばらす。決まった順では回らない） */
+  advanceCalm() {
+    const { hue, dir } = nextHue(this.calm.hue, { recent: this.recent, dir: this.dir, rand: this.rand });
+    this.dir = dir;
+    this.calm = { hue, tone: nextTone(this.calm.tone, this.rand) };
+    this.recent = [...this.recent, hue].slice(-RECENT);
+    return this.calm;
   }
 
   reduced() { return !!this.reducedQuery?.matches; }
@@ -201,8 +258,10 @@ export class Ambient {
   turn(turn) {
     this.moves++;
     const streak = turn.steps?.length ? turn.streak : 0;
-    if (streak < 2 && this.moves % CALM_EVERY === 0) this.calm = nextCalm(this.calm, this.moves / CALM_EVERY);
-    this.rest = streak >= 2 ? comboLook(this.calm, streak) : this.calm;
+    if (streak < 2) this.combo = null;
+    else this.combo ??= comboStyle(this.rand);                  // コンボが始まるたびに、色の進み方を引き直す
+    if (streak < 2 && this.moves % CALM_EVERY === 0) this.advanceCalm();
+    this.rest = streak >= 2 ? comboLook(this.calm, streak, this.combo) : this.calm;
     if (this.now() < this.holdUntil) return;                  // お祝いの色を見せている間は、そのあとに落ち着く先だけ覚えておく
     const snap = streak >= 2 && streak % 5 === 0;
     this.go(this.rest.hue, this.rest.tone, snap ? SNAP_MS : streak >= 2 ? COMBO_MS : CALM_MS, { snap });
@@ -211,28 +270,31 @@ export class Ambient {
   /** 大きな連鎖（Amazing 以上）: 一気に明るい別の色へ。少ししたら落ち着く先へ戻る */
   chain(tier) {
     if (tier < 4 || this.now() < this.holdUntil) return;
-    this.hold(1500);
-    this.go(this.hue + (tier >= 5 ? 180 : 110), 'soft', SNAP_MS, { snap: true });
+    this.hold(2200);
+    const jump = tier >= 5 ? 150 + this.rand() * 60 : 90 + this.rand() * 40;           // 一気に別の明るい色へ（向きと幅は毎回ばらす。オリーブ色は避ける）
+    this.go(skipOlive(wrapHue(this.hue + (this.rand() < 0.5 ? -jump : jump))), 'soft', SNAP_MS, { snap: true });
   }
 
   /** 全消し（色相をぐるりと 1 周して、少し先の色へ）/ 新記録（一気に別の明るい色へ） */
   celebrate(kind) {
     if (kind === 'best' && this.now() < this.holdUntil) return;
     if (kind === 'clear') {
-      this.calm = nextCalm(this.calm, this.moves);
+      this.advanceCalm();
       this.rest = this.calm;
-      this.hold(2600);
-      this.go(this.calm.hue, 'soft', 1900, { spin: 360 + hueDelta(this.hue, this.calm.hue) });
+      this.hold(3800);
+      const way = this.dir;                                    // ぐるりと 1 周する向きも、ふだんの色が進む向きに合わせてばらす
+      this.go(this.calm.hue, 'soft', 3200, { spin: way * 360 + hueDelta(this.hue, this.calm.hue) });
     } else {
-      this.hold(1700);
-      this.go(this.hue + 120, 'soft', SNAP_MS, { snap: true });
+      this.hold(2400);
+      const jump = 100 + this.rand() * 40;
+      this.go(skipOlive(wrapHue(this.hue + (this.rand() < 0.5 ? -jump : jump))), 'soft', SNAP_MS, { snap: true });
     }
   }
 
   /** 見せている色から、落ち着く先へゆっくり戻る（ゲームオーバーなど） */
   settle() {
     this.clearHold();
-    this.go(this.rest.hue, this.rest.tone, 1800);
+    this.go(this.rest.hue, this.rest.tone, 2600);
   }
 
   /** 新しいゲーム: 今の青へ戻す */
@@ -240,6 +302,9 @@ export class Ambient {
     this.moves = 0;
     this.calm = { hue: BASE_HUE, tone: 'base' };
     this.rest = this.calm;
+    this.recent = [BASE_HUE];
+    this.dir = this.rand() < 0.5 ? -1 : 1;
+    this.combo = null;
     this.clearHold();
     this.go(BASE_HUE, 'base', 900);
   }
@@ -248,7 +313,7 @@ export class Ambient {
   hold(ms) {
     this.clearHold();
     this.holdUntil = this.now() + ms;
-    this.holdTimer = setTimeout(() => { this.holdTimer = 0; this.holdUntil = 0; this.go(this.rest.hue, this.rest.tone, 2000); }, ms);
+    this.holdTimer = setTimeout(() => { this.holdTimer = 0; this.holdUntil = 0; this.go(this.rest.hue, this.rest.tone, 3000); }, ms);
   }
   clearHold() { clearTimeout(this.holdTimer); this.holdTimer = 0; this.holdUntil = 0; }
 
@@ -275,8 +340,35 @@ export class Ambient {
     this.hue = hue; this.tone = tone;
   }
 
+  /**
+   * 色が落ち着いている間の背景は、全面の層ではなく body に直接描いている（全面の層が 1 枚あるだけで、操作中の毎フレームの合成が重くなる）。
+   * 色が変わり始めるときだけ、今の色の層を下に敷いて（lift）、その上に新しい色を重ね、覆い終わったら body に描き直して層を片づける（settleOn）
+   */
+  lift() {
+    this.root.hidden = false;
+    const layer = this.layers.find((l) => !l.on) ?? this.layers[0], { el } = layer;
+    layer.anim?.cancel(); layer.anim = null;
+    el.style.setProperty('--lo', this.settled.lo);
+    el.style.setProperty('--hi', this.settled.hi);
+    el.style.zIndex = String(layer.z = ++this.z);
+    el.style.opacity = '1';
+    el.style.display = 'block';
+    layer.on = true;
+    layer.plate = null;
+  }
+
+  /** look が全面を覆って落ち着いた: body に描いて、層を片づける */
+  settleOn(look) {
+    const b = this.doc.body?.style;
+    if (b) b.background = `${look.lo} radial-gradient(90% 55% at 50% 30%, ${look.hi}, ${look.lo} 75%)`;
+    this.root.hidden = true;
+    for (const l of this.layers) { l.anim?.cancel(); l.anim = null; l.on = false; l.el.style.display = 'none'; }
+    this.settled = look;
+  }
+
   /** 新しい色の層を一番上に重ねて、ms かけて opacity 0 → 1。重なり終わったら、下の層は外す */
   show(look, ms) {
+    if (this.root.hidden) this.lift();
     const layer = this.layers.find((l) => !l.on) ?? this.layers.reduce((a, b) => (a.z <= b.z ? a : b));
     const { el } = layer;
     layer.anim?.cancel();
@@ -289,7 +381,7 @@ export class Ambient {
     layer.plate = this.mountPlate(look, ms, layer.z);
     const anim = layer.anim = el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
     anim.onfinish = () => { if (layer.anim === anim) this.cover(layer, look); };
-    this.doc.documentElement.style.setProperty('--amb-glow', look.glow);   // 同系色の重ね（コンボ・ピンチの縁・色の変化）もこの色相へ
+    for (const id of GLOW_IDS) this.doc.getElementById?.(id)?.style.setProperty('--amb-glow', look.glow);   // 同系色の重ね（コンボ・ピンチの縁・色の変化）もこの色相へ
   }
 
   /** 盤面の土台の、新しい色の層を一番上に重ねて opacity 0 → 1（背景と同じ長さ・同じ動き）。使った層を返す（bindBoard していなければ null） */
@@ -314,6 +406,7 @@ export class Ambient {
     layer.anim.cancel();
     layer.anim = null;
     for (const l of this.layers) if (l !== layer && l.z < layer.z) { l.anim?.cancel(); l.anim = null; l.on = false; l.el.style.display = 'none'; }
+    if (this.layers.every((l) => l === layer || !l.on)) this.settleOn(look);       // ほかに重ねている途中の層が無ければ、ここで落ち着く
     const p = layer.plate;                                        // 盤面の土台も、同じ瞬間に覆い終わる
     if (p && this.plates) {
       p.el.style.opacity = '1';

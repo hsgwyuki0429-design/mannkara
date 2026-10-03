@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  Ambient, ambientLook, comboLook, nextCalm, skipOlive, hexToOklch, oklchToHex, contrastWithWhite, wrapHue, hueDelta,
-  ORIGIN, BASE_HUE, TONES, MIN_CONTRAST, BOARD, BOARD_VARS, boardLook, PLATE_SETS,
-} from '../src/ui/ambient.js?v=202610021128';
+  Ambient, ambientLook, comboLook, comboStyle, COMBO_STYLE, nextHue, nextTone, skipOlive, hexToOklch, oklchToHex, contrastWithWhite, wrapHue, hueDelta,
+  ORIGIN, BASE_HUE, TONES, MIN_CONTRAST, BOARD, BOARD_VARS, boardLook, PLATE_SETS, CALM_EVERY, CALM_MS, COMBO_MS, SNAP_MS,
+} from '../src/ui/ambient.js?v=202610030127';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const hue = (hex) => hexToOklch(hex).h;
@@ -22,11 +22,14 @@ function fakeDoc() {
     return e;
   };
   const meta = el();
-  return { createElement: () => el(), body: { prepend(c) { this.child = c; } }, documentElement: { style: style() }, querySelector: (s) => (s.includes('theme-color') ? meta : null), meta };
+  const byId = { fever: el(), danger: el(), sceneTint: el() };            // 同系色の重ね（--amb-glow）を使う要素
+  return { createElement: () => el(), body: { style: { background: '' }, prepend(c) { this.child = c; } }, documentElement: { style: style() }, getElementById: (id) => byId[id] ?? null, byId, querySelector: (s) => (s.includes('theme-color') ? meta : null), meta };
 }
-const make = ({ reduced = false } = {}) => {
+/** 種を決めた乱数（0〜1）。同じ種なら同じ並びになる */
+const rng = (seed) => () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const make = ({ reduced = false, rand = () => 0.5 } = {}) => {
   const doc = fakeDoc();
-  const a = new Ambient({ doc, win: { matchMedia: () => ({ matches: reduced }) } });
+  const a = new Ambient({ doc, rand, win: { matchMedia: () => ({ matches: reduced }) } });
   a.shown = [];
   const real = a.show.bind(a);
   a.show = (look, ms) => { a.shown.push({ hue: look.hue, tone: look.tone, ms }); real(look, ms); };
@@ -94,33 +97,97 @@ test('コンボの色: 1コンボごとに色相が進み、5 の倍数で大き
     assert.ok(!(l.hue > 80 && l.hue < 138), `calm ${h} streak ${s} → ${l.hue}`);
   }
   assert.equal(skipOlive(100), 142); assert.equal(skipOlive(60), 60); assert.equal(skipOlive(200), 200);
-  assert.equal(nextCalm({ hue: 60, tone: 'base' }, 1).hue, 142, '60° + 27° = 87° はオリーブ域なので越える');
-  assert.equal(nextCalm({ hue: 200, tone: 'base' }, 1).hue, 227);
 });
 
-test('ふだんの色は、発動しない手が5回続くたびに進む（それまでは動かない）', async () => {
-  const { a } = make();
-  for (let i = 0; i < 4; i++) a.turn({ steps: [], streak: 0 });
+test('コンボの色の進み方はコンボごとに引き直す（向き・幅・濃さの回り始めがばらつく）。向きが逆なら逆に進む', () => {
+  const r = rng(7), styles = Array.from({ length: 200 }, () => comboStyle(r));
+  assert.ok(styles.some((s) => s.dir > 0) && styles.some((s) => s.dir < 0), '向きは両方ある');
+  assert.ok(styles.every((s) => s.step >= 22 && s.step <= 38 && s.jump >= 48 && s.jump <= 88), '幅は決めた範囲');
+  assert.ok(new Set(styles.map((s) => Math.round(s.step))).size > 8, '幅はばらつく');
+  assert.deepEqual([...new Set(styles.map((s) => s.tone))].sort(), [0, 1, 2]);
+  const calm = { hue: 200, tone: 'base' };
+  const up = comboLook(calm, 3, { dir: 1, step: 30, jump: 60, tone: 0 }), down = comboLook(calm, 3, { dir: -1, step: 30, jump: 60, tone: 0 });
+  assert.ok(Math.abs(hueDelta(200, up.hue) - 60) < 1e-6 && Math.abs(hueDelta(200, down.hue) + 60) < 1e-6);
+  assert.equal(comboLook(calm, 2, { ...COMBO_STYLE, tone: 1 }).tone, 'deep', '濃さの回り始めもずれる');
+  for (let h = 0; h < 360; h += 9) for (let k = 0; k < 20; k++) {
+    for (let st = 2; st <= 30; st++) { const l = comboLook({ hue: h, tone: 'base' }, st, comboStyle(r)); assert.ok(!(l.hue > 80 && l.hue < 138), `${h} ${st} → ${l.hue}`); }
+  }
+});
+
+test('ふだんの色の並びは毎回ちがう: 幅と向きがばらつき、最近の色の近くには戻らず、オリーブ色にならない', () => {
+  const seqs = []; let tight = 0;
+  for (const seed of [1, 2, 3, 4, 5, 6]) {
+    const r = rng(seed);
+    let hue = BASE_HUE, dir = 1, recent = [BASE_HUE];
+    const seq = [], steps = [];
+    for (let i = 0; i < 60; i++) {
+      const n = nextHue(hue, { recent, dir, rand: r });
+      assert.ok(!(n.hue > 80 && n.hue < 138), `オリーブ域 ${n.hue}`);
+      const gap = Math.min(...recent.map((q) => Math.abs(hueDelta(q, n.hue))));
+      if (gap < 40) tight++;
+      assert.ok(gap >= 12, `${i}: ${n.hue} は最近の色 ${recent.map(Math.round)} に近すぎる（${gap}°）`);
+      steps.push(hueDelta(hue, n.hue));
+      hue = n.hue; dir = n.dir; recent = [...recent, hue].slice(-4); seq.push(Math.round(hue));
+    }
+    assert.ok(steps.some((d) => d > 0) && steps.some((d) => d < 0), `向きが入れ替わる（種 ${seed}）`);
+    assert.ok(new Set(steps.map((d) => Math.round(Math.abs(d) / 10))).size >= 5, '幅がばらつく');
+    assert.ok(Math.max(...steps.map(Math.abs)) <= 180 && Math.min(...steps.map(Math.abs)) >= 40, '前の色の近くへも、反対側の極端な所へも行かない');
+    seqs.push(seq.join(','));
+  }
+  assert.ok(tight <= 360 * 0.05, `最近の色の 40° 以内に落ち着いたのは ${tight} / 360 回（ほとんど起きない）`);
+  assert.equal(new Set(seqs).size, seqs.length, '種ごとに並びがちがう');
+  const covered = new Set(); for (const q of seqs) for (const h of q.split(',')) covered.add(Math.floor(h / 30));
+  assert.ok(covered.size >= 8, '色相の輪のあちこちを通る');
+});
+
+test('濃さも毎回選ぶ（3 種類とも出る。淡い・濃いが同じ濃さで続かない）', () => {
+  const r = rng(11);
+  let prev = 'base'; const seen = new Set();
+  for (let i = 0; i < 300; i++) { const t = nextTone(prev, r); seen.add(t); if (prev !== 'base') assert.notEqual(t, prev, `${i}: ${prev} が続いた`); prev = t; }
+  assert.deepEqual([...seen].sort(), ['base', 'deep', 'soft']);
+});
+
+test('色の変わり方はゆっくり（ふだんは 8 手に 1 回・5 秒かけて、コンボは 2 秒以上、一気にでも 0.4 秒以上）', () => {
+  assert.ok(CALM_EVERY >= 8 && CALM_MS >= 5000 && COMBO_MS >= 2000 && SNAP_MS >= 400, `${CALM_EVERY} ${CALM_MS} ${COMBO_MS} ${SNAP_MS}`);
+});
+
+test('ふだんの色は、発動しない手が 8 回続くたびに、5 秒かけて進む（それまでは動かない）。コンボ中は数えない', async () => {
+  const { a } = make({ rand: rng(3) });
+  for (let i = 0; i < CALM_EVERY - 1; i++) a.turn({ steps: [], streak: 0 });
   assert.equal(a.shown.length, 0); assert.equal(a.layers.filter((l) => l.on).length, 0);
   a.turn({ steps: [], streak: 0 });
   assert.equal(a.shown.length, 1);
-  assert.ok(Math.abs(hueDelta(BASE_HUE, a.shown[0].hue) - 27) < 1e-6);
-  assert.equal(a.shown[0].tone, 'soft');
+  const d = Math.abs(hueDelta(BASE_HUE, a.calm.hue)), n = Math.max(1, Math.min(10, Math.ceil(d / 40)));
+  assert.ok(Math.abs(a.shown[0].ms - (n === 1 ? CALM_MS : (CALM_MS / n) * 1.5)) < 1e-6, `重ね 1 回の長さ ${a.shown[0].ms}（全体 ${CALM_MS}ms を ${n} 回に分ける）`);
+  assert.ok(d >= 40 && d <= 176, `進む幅 ${d}`);
+  assert.deepEqual(a.recent.map(Math.round), [Math.round(BASE_HUE), Math.round(a.calm.hue)]);
   stop(a);
+  const b = make({ rand: rng(3) }).a;                                    // コンボで進んだ手は、発動しない手に数えない
+  for (let i = 0; i < CALM_EVERY - 1; i++) b.turn({ steps: [], streak: 0 });
+  b.turn({ steps: [1], streak: 2 });
+  assert.equal(b.calm.hue, BASE_HUE, '8 手目がコンボなら、ふだんの色は動かない');
+  stop(b);
 });
 
-test('コンボはグラデーション、5 の倍数は一気に（短い重ね）。コンボが途切れたらふだんの色へ戻る', async () => {
-  const { a } = make();
+test('コンボはグラデーション、5 の倍数は一気に（短い重ね）。コンボが途切れたらふだんの色へ戻る。次のコンボは進み方を引き直す', async () => {
+  const { a } = make({ rand: rng(5) });
   a.turn({ steps: [1], streak: 2 });
-  assert.equal(a.shown.at(-1).ms, 1400);
-  assert.ok(Math.abs(hueDelta(BASE_HUE, a.shown.at(-1).hue) - 34) < 1e-6);
+  assert.equal(a.shown.at(-1).ms, Math.round(a.shown.at(-1).ms) && a.shown.at(-1).ms, 'ms');
+  assert.ok(a.combo, 'コンボが始まったら進み方を引く');
+  const style = a.combo, first = a.shown.at(-1).hue;
+  assert.ok(Math.abs(hueDelta(BASE_HUE, first) - style.dir * style.step) < 1e-6 || skipOlive(wrapHue(BASE_HUE + style.dir * style.step)) === first);
+  a.turn({ steps: [1], streak: 3 });
+  assert.equal(a.combo, style, '同じコンボの間は、進み方を変えない');
   a.turn({ steps: [1], streak: 5 });
-  assert.ok(a.shown.at(-1).ms >= 90 && a.shown.at(-1).ms <= 200, '一気に変わる');
+  assert.ok(a.shown.at(-1).ms >= 90 && a.shown.at(-1).ms <= SNAP_MS + 1, '一気に変わる（それでも 0.4 秒かけて）');
   const before = a.shown.length;
   a.turn({ steps: [], streak: 0 });                        // コンボ終了 → ふだんの色（最初は元の青）へ
   stop(a);                                                 // 遠い色からは、続きの小さな重ねを予約する
   assert.ok(a.shown.length > before);
-  assert.equal(a.rest.hue, BASE_HUE);
+  assert.equal(a.rest.hue, BASE_HUE); assert.equal(a.combo, null, 'コンボが途切れたら捨てる');
+  a.turn({ steps: [1], streak: 2 });
+  assert.notEqual(a.combo, style, '次のコンボは引き直す');
+  stop(a);
 });
 
 test('遠い色へのグラデーションは、40° 以内の小さな重ねを続ける。一気に変わるときは 1 回', async () => {
@@ -137,17 +204,20 @@ test('遠い色へのグラデーションは、40° 以内の小さな重ねを
   stop(a);
 });
 
-test('全消しは色相を 1 周して、少し先の色で止まる', () => {
-  const { a } = make();
-  a.celebrate('clear');
-  assert.equal(a.shown.length, 1, '最初の重ね。続きは時間をおいて予約される');
-  assert.equal(a.hops.size, 9, '1 周を 10 回の小さな重ねに分ける');
-  const total = 360 + hueDelta(BASE_HUE, a.calm.hue);
-  assert.ok(Math.abs(hueDelta(BASE_HUE, a.shown[0].hue) - total / 10) < 1e-6);
-  assert.ok(total / 10 <= 40, '1 回の重ねは 40° 以内');
-  assert.equal(a.shown[0].tone, 'soft');
-  assert.ok(Math.abs(hueDelta(a.hue, a.calm.hue)) < 1e-6, '行き先はふだんの色の少し先');
-  stop(a);
+test('全消しは色相をぐるりと 1 周して（向きはばらす）、次のふだんの色で止まる', () => {
+  const ways = new Set();
+  for (const seed of [2, 9, 4, 6, 12, 15]) {
+    const { a } = make({ rand: rng(seed) });
+    a.celebrate('clear'); ways.add(a.dir);
+    assert.equal(a.shown.length, 1, '最初の重ね。続きは時間をおいて予約される');
+    assert.equal(a.hops.size, 9, '1 周を 10 回の小さな重ねに分ける');
+    assert.equal(Math.sign(hueDelta(BASE_HUE, a.shown[0].hue)), a.dir, '1 周する向きは、ふだんの色が進む向き（毎回ばらける）');
+    assert.equal(a.shown[0].tone, 'soft');
+    assert.ok(Math.abs(hueDelta(a.hue, a.calm.hue)) < 1e-6, '行き先は次のふだんの色');
+    assert.ok(Math.abs(hueDelta(BASE_HUE, a.calm.hue)) >= 40, '前の色の近くには止まらない');
+    stop(a);
+  }
+  assert.equal(ways.size, 2, '1 周する向きは両方ある');
 });
 
 test('お祝いの色を見せている間は、手が置かれても色を上書きしない（落ち着く先だけ覚える）', () => {
@@ -156,7 +226,7 @@ test('お祝いの色を見せている間は、手が置かれても色を上�
   const n = a.shown.length;
   a.turn({ steps: [1], streak: 3 });
   assert.equal(a.shown.length, n);
-  assert.ok(Math.abs(hueDelta(BASE_HUE, a.rest.hue) - 68) < 1e-6);
+  assert.deepEqual(a.rest, comboLook(a.calm, 3, a.combo), '落ち着く先（コンボの色）だけ覚える');
   a.celebrate('best');                                     // 続けて来ても重ねない
   assert.equal(a.shown.length, n);
   a.reset();                                               // リスタートでお祝いは打ち切り、元の青へ
@@ -170,8 +240,26 @@ test('Amazing 以上の連鎖は一気に明るい別の色へ（それ未満で
   a.chain(3); assert.equal(a.shown.length, 0);
   a.chain(4);
   assert.equal(a.shown.length, 1); assert.equal(a.shown[0].tone, 'soft');
-  assert.ok(Math.abs(hueDelta(BASE_HUE, a.shown[0].hue)) > 100);
+  assert.ok(Math.abs(hueDelta(BASE_HUE, a.shown[0].hue)) > 85);
+  assert.equal(a.shown[0].ms, SNAP_MS);
   stop(a);
+});
+
+test('Amazing 以上の連鎖・新記録の別の色への跳びは、向きと幅がばらつき、オリーブ色にはならない', () => {
+  const r = rng(21), dirs = new Set(), hues = [];
+  for (let i = 0; i < 80; i++) {
+    const { a } = make({ rand: r });
+    a.hue = (i * 37) % 360;                                  // 色相をばらして始める
+    const from = a.hue;
+    if (i % 2) a.chain(i % 4 ? 4 : 5); else a.celebrate('best');
+    const to = a.shown.at(-1).hue;
+    assert.ok(!(to > 80 && to < 138), `${from}° → ${to}°（オリーブ域）`);
+    dirs.add(Math.sign(hueDelta(from, to)));
+    hues.push(Math.round(Math.abs(hueDelta(from, to))));
+    stop(a);
+  }
+  assert.deepEqual([...dirs].sort(), [-1, 1], '向きは両方ある');
+  assert.ok(new Set(hues).size > 15, '幅もばらつく');
 });
 
 test('動きを減らす設定では、遠い色へも小さな重ね 1 回を、ゆっくり（急な点滅にしない）', () => {
@@ -188,22 +276,57 @@ test('層の入れ替え: 新しい色は一番上へ opacity だけで重ね、
   a.go(BASE_HUE + 30, 'base', 500);
   a.go(BASE_HUE + 60, 'base', 500);
   const on = a.layers.filter((l) => l.on);
-  assert.equal(on.length, 2);
-  assert.ok(on[1].z > on[0].z);
-  assert.deepEqual(on[1].anim.frames, [{ opacity: 0 }, { opacity: 1 }]);
-  on[1].anim.onfinish();                                   // 上の層が全面を覆った
-  assert.equal(a.layers.filter((l) => l.on).length, 1);
-  assert.equal(on[0].el.style.display, 'none'); assert.equal(on[1].el.style.opacity, '1');
+  assert.equal(on.length, 3, '今の色の層（下敷き）+ 重ねた 2 枚');
+  assert.ok(on[1].z > on[0].z && on[2].z > on[1].z);
+  assert.deepEqual(on[2].anim.frames, [{ opacity: 0 }, { opacity: 1 }]);
+  on[1].anim.onfinish();                                   // 途中の層が覆い終わっても、上にまだ重ねている層があるうちは落ち着かない
+  assert.equal(a.root.hidden, false); assert.equal(on[0].el.style.display, 'none', '覆われた下敷きは外れる');
+  assert.equal(a.layers.filter((l) => l.on).length, 2);
+  on[2].anim.onfinish();                                   // 一番上の層が全面を覆った
+  assert.equal(a.layers.filter((l) => l.on).length, 0, '落ち着いたら層は全部片づく');
   assert.equal(doc.meta.attrs.content, ambientLook(BASE_HUE + 60, 'base').lo);
-  assert.equal(doc.documentElement.style.props['--amb-glow'], ambientLook(BASE_HUE + 60, 'base').glow);
+  const glow = ambientLook(BASE_HUE + 60, 'base').glow;
+  for (const id of ['fever', 'danger', 'sceneTint']) assert.equal(doc.byId[id].style.props['--amb-glow'], glow, `${id} へ同系色`);
+  assert.equal(doc.documentElement.style.props['--amb-glow'], undefined, 'ルートには書かない（書くと全要素のスタイルを計算し直す）');
   for (let i = 0; i < 10; i++) a.show(ambientLook(i * 30, 'base'), 300);       // 層が足りなくなっても、一番古い層を使い回す
   assert.ok(a.layers.every((l) => a.layers.filter((m) => m.z === l.z).length === 1));
   stop(a);
 });
 
+test('色が落ち着いている間は全面の層を使わない: 変わり始めに今の色の層を下に敷き、覆い終わったら body に描いて層を片づける', () => {
+  const { a, doc } = make();
+  assert.equal(a.root.hidden, true, '最初は層なし（body の今の青）');
+  assert.equal(a.layers.filter((l) => l.on).length, 0);
+  a.go(BASE_HUE + 30, 'base', 500);
+  assert.equal(a.root.hidden, false);
+  const on = a.layers.filter((l) => l.on);
+  assert.equal(on.length, 2, '今の色の層 + 新しい色の層');
+  assert.equal(on[0].el.style.opacity, '1'); assert.equal(on[0].el.style.props['--lo'], ORIGIN.lo); assert.equal(on[0].el.style.props['--hi'], ORIGIN.hi);
+  assert.equal(on[1].el.style.opacity, '0', '新しい色は 0 から重ねる');
+  on[1].anim.onfinish();
+  assert.equal(a.root.hidden, true);
+  assert.ok(a.layers.every((l) => !l.on && l.el.style.display === 'none' && !l.anim));
+  const look = ambientLook(BASE_HUE + 30, 'base');
+  assert.ok(doc.body.style.background.includes(look.lo) && doc.body.style.background.includes(look.hi) && doc.body.style.background.includes('radial-gradient(90% 55% at 50% 30%'), doc.body.style.background);
+  assert.equal(a.settled, look);
+  a.go(BASE_HUE + 60, 'base', 500);                        // 次の変化は、body に描いてある色（さっきの色）の層から始まる
+  const base = a.layers.find((l) => l.on && l.el.style.opacity === '1');
+  assert.equal(base.el.style.props['--lo'], look.lo);
+  stop(a);
+  // 重ねている途中の層が残っているうちは落ち着かない（遠い色へ小さな重ねを続けるとき）
+  const b = make().a;
+  b.show(ambientLook(BASE_HUE + 20, 'base'), 400); b.show(ambientLook(BASE_HUE + 40, 'base'), 400);
+  const [, first, second] = b.layers.filter((l) => l.on);
+  first.anim.onfinish();
+  assert.equal(b.root.hidden, false, '2 枚目がまだ重なっている');
+  second.anim.onfinish();
+  assert.equal(b.root.hidden, true);
+  stop(b);
+});
+
 /* ---------------- 盤面の土台（プレート）も背景と一緒に変わる ---------------- */
 
-const css = readFileSync(new URL('../src/ui/styles.css?v=202610021128', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../src/ui/styles.css?v=202610030127', import.meta.url), 'utf8');
 /** 'rgba(4, 12, 60, .7)' や '#1A3EAE' を比べられる形（数値の配列・小文字）にそろえる */
 const norm = (c) => (c.startsWith('#') ? c.toLowerCase() : c.match(/[\d.]+/g).map(Number));
 
@@ -258,8 +381,8 @@ test('土台の層は背景の層と同じ瞬間・同じ長さ・同じ動き�
   assert.equal(a.plates.filter((p) => p.on).length, 1, '最初は 0 番だけが見えている');
   a.go(BASE_HUE + 30, 'base', 500);
   a.go(BASE_HUE + 60, 'base', 800);
-  const bg = a.layers.filter((l) => l.on), pl = a.plates.filter((p) => p.on);
-  assert.equal(bg.length, 2); assert.equal(pl.length, 3, '背景の 2 枚 + 最初の青');
+  const bg = a.layers.filter((l) => l.on && l.plate), pl = a.plates.filter((p) => p.on);
+  assert.equal(bg.length, 2); assert.equal(pl.length, 3, '重ねた背景の 2 枚 + 最初の青');
   for (const l of bg) {
     const p = l.plate;
     assert.deepEqual(p.anim.frames, l.anim.frames); assert.deepEqual(p.anim.frames, [{ opacity: 0 }, { opacity: 1 }]);
@@ -280,12 +403,12 @@ test('土台の層は背景の層と同じ瞬間・同じ長さ・同じ動き�
 test('土台の層をつなげていなくても（チュートリアル・テスト）、背景は今までどおり動く。動きを減らす設定でも背景と同じ 1 回の重ね', () => {
   const { a } = make();
   a.go(BASE_HUE + 30, 'base', 500);
-  assert.equal(a.layers.filter((l) => l.on).length, 1); assert.equal(a.layers.find((l) => l.on).plate, null);
+  assert.equal(a.layers.filter((l) => l.on).length, 2, '今の色の下敷き + 新しい色'); assert.ok(a.layers.every((l) => !l.plate));
   stop(a);
   const q = makeBoard({ reduced: true });
   q.a.go(BASE_HUE + 160, 'base', 100);
   assert.equal(q.a.plates.filter((p) => p.on).length, 2, '最初の青 + 新しい色の 1 枚');
-  assert.ok(q.a.layers.find((l) => l.on).plate.anim.opts.duration >= 700);
+  assert.ok(q.a.layers.find((l) => l.on && l.plate).plate.anim.opts.duration >= 700);
   stop(q.a);
 });
 
@@ -293,9 +416,9 @@ test('土台の層の z-index（色が変わるたびに増える）は #wellLay
   const rule = css.match(/#wellLayer\{([^}]*)\}/);
   assert.ok(rule, '#wellLayer の規則が要る');
   assert.match(rule[1], /isolation:\s*isolate/, '重ね合わせの文脈を閉じる（以前は filter が閉じていた）');
-  const renderer = readFileSync(new URL('../src/ui/renderer.js?v=202610021128', import.meta.url), 'utf8');
+  const renderer = readFileSync(new URL('../src/ui/renderer.js?v=202610030127', import.meta.url), 'utf8');
   assert.match(renderer, /className = 'well-set';[^}]*this\.wellLayer\.appendChild\(d\)/s, '土台の層は #wellLayer の中に作る');
-  const ambient = readFileSync(new URL('../src/ui/ambient.js?v=202610021128', import.meta.url), 'utf8');
+  const ambient = readFileSync(new URL('../src/ui/ambient.js?v=202610030127', import.meta.url), 'utf8');
   assert.match(ambient, /el\.style\.zIndex = String\(p\.z = z\)/, '層の前後は z-index で決める（だから外へ漏らさない）');
   // 土台の層に z-index を付けても、盤面の中の他の層（ブロック・プレビュー・ヒント）には付かない
   const { a, sets } = makeBoard();
