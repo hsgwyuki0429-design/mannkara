@@ -1,6 +1,7 @@
-import { SIZE, isInside } from '../core/constants.js?v=202610030735';
-import { gemSprite } from './shards.js?v=202610030735';
-import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610030735';
+import { SIZE, isInside } from '../core/constants.js?v=202610031708';
+import { gemSprite } from './shards.js?v=202610031708';
+import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610031708';
+import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './glass.js?v=202610031708';
 
 /**
  * 結果カード（シェア用の1枚の画像）: ロゴ・スコア・最大連鎖・最大コンボ・最後の盤面・遊べる URL。
@@ -27,11 +28,12 @@ export async function drawResultCard(data) {
   const cv = document.createElement('canvas');
   cv.width = CARD_W; cv.height = CARD_H;
   const g = cv.getContext('2d');
+  const glass = data.theme === 'glass';
   // 背景: ゲームと同じ青（まん中が少し明るい）
-  g.fillStyle = '#3a6adf';
+  g.fillStyle = glass ? GLASS_BACKGROUND : '#3a6adf';
   g.fillRect(0, 0, CARD_W, CARD_H);
   const bg = g.createRadialGradient(CARD_W / 2, CARD_H * 0.36, 0, CARD_W / 2, CARD_H * 0.36, CARD_H * 0.62);
-  bg.addColorStop(0, '#4479f2'); bg.addColorStop(1, 'rgba(58,106,223,0)');
+  bg.addColorStop(0, glass ? GLASS_HIGHLIGHT : '#4479f2'); bg.addColorStop(1, glass ? 'rgba(92,67,194,0)' : 'rgba(58,106,223,0)');
   g.fillStyle = bg;
   g.fillRect(0, 0, CARD_W, CARD_H);
   g.textAlign = 'center';
@@ -59,7 +61,8 @@ export async function drawResultCard(data) {
     label(name, x, 530, 32);
     shadow(g, () => { g.font = `900 92px ${FONT}`; g.fillStyle = '#fff'; g.fillText(String(v), x, 626); });
   }
-  drawBoard(g, data.board, CARD_W / 2, 742, 60);
+  if (glass) await drawGlassBoard(g, data.board, CARD_W / 2, 742, 60);
+  else drawBoard(g, data.board, CARD_W / 2, 742, 60);
   // 遊べる場所
   label('ブラウザで すぐ遊べる', CARD_W / 2, 1222, 32);
   shadow(g, () => {
@@ -142,4 +145,28 @@ function drawBoard(g, board, cx, top, c) {
   // ブロック（奥から手前の順に: 上の方のマスから）
   const blocks = board.map(([x, r, color]) => ({ ...at(x, r), color })).sort((a, b) => a.y - b.y);
   for (const b of blocks) g.drawImage(gemSprite(b.color), b.x - hw, b.y - hh, hw * 2, hh * 2);
+}
+
+/** Reuse the live board's glass, including connected silhouettes, in the result image. */
+async function drawGlassBoard(g, board, cx, top, c) {
+  const plate = [];
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (isInside(x, y)) plate.push({ x, y });
+  const groups = [plate, ...glassGroups(board.map(([x, y, color]) => ({ x, y, color })))];
+  const images = await Promise.all(groups.map(async (cells, i) => {
+    const el = glassElement(cells, cells[0].color, 100, { plate: i === 0 });
+    const [, , w, h] = el.getAttribute('viewBox').split(' ').map(Number);
+    const x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+    el.setAttribute('viewBox', `-12 -12 ${w + 24} ${h + 24}`);
+    el.setAttribute('width', w + 24); el.setAttribute('height', h + 24);
+    el.removeAttribute('style'); el.removeAttribute('class');
+    const img = new Image();
+    const ready = new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(el));
+    await ready;
+    return { img, x: x - 12, y: y - 12, w: w + 24, h: h + 24 };
+  }));
+  g.save();
+  g.translate(cx, top); g.scale(1, 1.04); g.rotate(225 * Math.PI / 180); g.translate(-SIZE * c / 2, -SIZE * c / 2);
+  for (const { img, x, y, w, h } of images) g.drawImage(img, x * c / 100, y * c / 100, w * c / 100, h * c / 100);
+  g.restore();
 }

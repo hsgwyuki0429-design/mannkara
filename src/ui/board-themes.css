@@ -1,0 +1,54 @@
+/* Appearance picker: native radios also support Tab and arrow keys. */
+#pauseOverlay{overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;padding:24px 16px;}
+.pause-box{width:min(100%,360px);margin:auto;flex-shrink:0;}
+.board-themes{border:0;padding:0;margin:24px 0;min-width:0;}
+.board-themes legend{width:100%;font-size:15px;font-weight:900;margin-bottom:12px;}
+.board-theme-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.board-theme-option{position:relative;cursor:pointer;min-width:0;}
+.board-theme-option input{position:absolute;opacity:0;width:1px;height:1px;}
+.board-theme-card{display:flex;flex-direction:column;align-items:center;padding:9px 9px 11px;border:2px solid rgba(198,211,255,.35);
+  border-radius:18px;background:rgba(255,255,255,.055);transition:border-color 150ms,background 150ms;}
+.board-theme-option input:checked + .board-theme-card{border-color:#b1f4f6;background:rgba(181,244,255,.13);}
+.board-theme-option input:focus-visible + .board-theme-card{outline:3px solid #fff;outline-offset:4px;}
+.board-theme-preview{position:relative;display:block;width:100%;height:106px;overflow:hidden;border-radius:11px;background:radial-gradient(ellipse at 50% 35%,#4479f2,#3a6adf);}
+.preview-glass .board-theme-preview{background:radial-gradient(ellipse at 50% 35%,#6a50cf,#5c43c2);}
+.board-theme-mini{position:absolute;left:50%;top:0;width:76px;height:76px;transform:translateX(-50%) rotate(225deg);
+  --cell:19px;--plate:#2951c2;--well:#2d4498;--well-s1:rgba(4,12,60,.7);--well-s2:rgba(4,12,60,.45);--well-rim:#608cf5;--well-hi:#96baff;}
+.board-theme-name{margin-top:9px;font-size:16px;font-weight:900;}
+.board-theme-status{margin-top:3px;min-height:15px;font-size:10px;font-weight:800;color:#bcf9f7;visibility:hidden;}
+.board-theme-option input:checked + .board-theme-card .board-theme-status{visibility:visible;}
+.board-theme-status::before{content:'✓ ';}
+.pause-box > .primary{width:100%;}
+@media (max-height:600px){.pause-box .over-title{margin-bottom:10px;}.board-themes{margin:14px 0;}.board-theme-preview{height:86px;}.board-theme-mini{top:-10px;}}
+
+/* One SVG per connected shape: no cell seams, bevel facets, or rectangular backing. */
+.glass-surface{position:absolute;overflow:visible;pointer-events:none;}
+.glass-plate{display:none;}
+.preview-glass .glass-plate{display:block;}
+html[data-board-theme="glass"]{background-color:#5c43c2 !important;}
+[data-board-theme="glass"] body{background:#5c43c2 radial-gradient(ellipse 95% 72% at 50% 35%,#6a50cf 0%,#6047c6 60%,#5c43c2 100%) !important;}
+[data-board-theme="glass"] :is(#ambient,#sceneTint,#fever){display:none !important;}
+[data-board-theme="glass"] #wellLayer .well-set{display:none !important;}
+[data-board-theme="glass"] #wellLayer .glass-plate{display:block;}
+[data-board-theme="glass"] #app .stage{width:90%;margin:0;justify-self:center;}
+[data-board-theme="glass"] .playfield .glass-joined::before,
+[data-board-theme="glass"] .playfield .glass-joined::after{visibility:hidden;}
+[data-board-theme="glass"] .tray .tray-cell,
+[data-board-theme="glass"] #dragLayer .drag-cell{visibility:hidden;}
+[data-board-theme="glass"] #dragLayer > .glass-surface{animation:pickUp 200ms cubic-bezier(.3,1.6,.5,1);}
+[data-board-theme="glass"] .playfield :is(.block,.ghost,.hi)::before{
+  inset:2.8%;border-radius:14%;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--glass-color) 62%,transparent),color-mix(in srgb,var(--glass-color) 44%,transparent) 55%,color-mix(in srgb,var(--glass-color) 70%,transparent));
+  border:1px solid color-mix(in srgb,var(--glass-color),#fff 60%);
+  box-shadow:inset 0 0 5px 1px color-mix(in srgb,var(--glass-color) 75%,transparent),inset -.8px -.8px 1px rgba(255,255,255,.8),0 0 2px color-mix(in srgb,var(--glass-color) 65%,transparent);}
+[data-board-theme="glass"] .playfield :is(.block,.ghost,.hi)::after{content:none;}
+[data-board-theme="glass"] .c-red{--glass-color:#f0a1b6;}
+[data-board-theme="glass"] .c-orange{--glass-color:#e3d96b;}
+[data-board-theme="glass"] .c-yellow{--glass-color:#d4ce68;}
+[data-board-theme="glass"] .c-green{--glass-color:#6fd98a;}
+[data-board-theme="glass"] .c-cyan{--glass-color:#73d88b;}
+[data-board-theme="glass"] .c-blue{--glass-color:#9eaff3;}
+[data-board-theme="glass"] :is(.c-purple,.c-debug){--glass-color:#ad94ff;}
+[data-board-theme="glass"] .goal{background:rgba(53,39,133,.12);border-color:#28dadd;color:#85f4f5;}
+[data-board-theme="glass"] #pauseOverlay{background:rgba(46,30,111,.64);}
+@media (prefers-reduced-motion:reduce){.board-theme-card{transition:none;}[data-board-theme="glass"] #dragLayer > .glass-surface{animation:none;}}

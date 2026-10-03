@@ -1,21 +1,26 @@
-import { Game } from '../core/game.js?v=202610030735';
-import { Board, createBlock } from '../core/board.js?v=202610030735';
-import { Piece } from '../core/pieces.js?v=202610030735';
-import * as Sim from '../core/sim.js?v=202610030735';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610030735';
-import { Renderer, delay } from './renderer.js?v=202610030735';
-import { Sfx, kitForScore } from './sfx.js?v=202610030735';
-import { Scenes } from './scenes.js?v=202610030735';
-import { Ambient } from './ambient.js?v=202610030735';
-import { colorOf } from './palette.js?v=202610030735';
-import { TrayDealer } from './tray-dealer.js?v=202610030735';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610030735';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610030735';
-import { drawResultCard, cardBlob } from './share-card.js?v=202610030735';
-import { World } from './world.js?v=202610030735';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610030735';
+import { Game } from '../core/game.js?v=202610031708';
+import { Board, createBlock } from '../core/board.js?v=202610031708';
+import { Piece } from '../core/pieces.js?v=202610031708';
+import * as Sim from '../core/sim.js?v=202610031708';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610031708';
+import { Renderer, delay } from './renderer.js?v=202610031708';
+import { Sfx, kitForScore } from './sfx.js?v=202610031708';
+import { Scenes } from './scenes.js?v=202610031708';
+import { Ambient } from './ambient.js?v=202610031708';
+import { colorOf } from './palette.js?v=202610031708';
+import { TrayDealer } from './tray-dealer.js?v=202610031708';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610031708';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610031708';
+import { drawResultCard, cardBlob } from './share-card.js?v=202610031708';
+import { World } from './world.js?v=202610031708';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610031708';
+import { BOARD_THEMES, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610031708';
+import { glassElement } from './glass.js?v=202610031708';
 
 const $ = (id) => document.getElementById(id);
+let boardTheme = readBoardTheme();
+document.documentElement.dataset.boardTheme = boardTheme;
+document.querySelector('meta[name="theme-color"]').content = boardTheme === 'glass' ? '#5c43c2' : '#3a6adf';
 const sfx = new Sfx();
 sfx.bindGestures();
 const renderer = new Renderer(sfx);
@@ -186,7 +191,7 @@ let rushBefore = 0;           // この番号より前のターンの再生は�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610030735', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610031708', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -311,7 +316,7 @@ async function playTurn(turn) {
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best.toLocaleString('en-US')}`;
     clearSave();
     $('gameOver').classList.remove('hidden');
-    prepareShare({ score: game.score.score, chain: game.score.bestChain, combo: game.score.bestStreak, best: isBest, learn: mode === 'learn',
+    prepareShare({ score: game.score.score, chain: game.score.bestChain, combo: game.score.bestStreak, best: isBest, learn: mode === 'learn', theme: boardTheme,
       board: [...game.board.entries()].map(({ block, x, r }) => [x, r, block.color]) });
   }
 }
@@ -446,6 +451,7 @@ function renderTray(enter = false) {
         Object.assign(d.style, { width: s + 'px', height: s + 'px', left: c.x * s + 'px', top: c.y * s + 'px' });
         box.appendChild(d);
       }
+      if (boardTheme === 'glass') box.appendChild(glassElement(piece.cells, piece.color, s));
       slot.appendChild(box);
     }
     wrap.appendChild(slot);
@@ -491,6 +497,12 @@ function renderDragPiece(fx, fy) {
       d.style.left = (cc.x - piece.width / 2) * c + 'px';
       d.style.top = (cc.y - piece.height / 2) * c + 'px';
       layer.appendChild(d);
+    }
+    if (boardTheme === 'glass') {
+      const surface = glassElement(piece.cells, piece.color, c);
+      surface.style.marginLeft = -piece.width * c / 2 + 'px';
+      surface.style.marginTop = -piece.height * c / 2 + 'px';
+      layer.appendChild(surface);
     }
   }
   // 動かすのは transform だけ（left / top を書くと、そのたびにレイアウトと描き直しになる。合成だけで動く）
@@ -701,6 +713,59 @@ function setPaused(v) {
 }
 $('btnPause').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) setPaused(true); });
 $('btnResume').addEventListener('click', () => setPaused(false));
+
+/* ---------- 盤面の種類 ---------- */
+function applyBoardTheme(value) {
+  cancelDrag();
+  boardTheme = saveBoardTheme(value);
+  document.documentElement.dataset.boardTheme = boardTheme;
+  document.querySelector('meta[name="theme-color"]').content = boardTheme === 'glass' ? '#5c43c2' : '#3a6adf';
+  renderer.layout();
+  renderer.refreshGlass();
+  renderTray();
+  for (const radio of $('boardThemeList').querySelectorAll('input')) radio.checked = radio.value === boardTheme;
+}
+function renderBoardThemeList() {
+  const miniCells = [];
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 4 - y; x++) miniCells.push({ x, y });
+  const pieces = [
+    { color: 'green', cells: [{ x: 0, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 1 }] },
+    { color: 'purple', cells: [{ x: 1, y: 0 }, { x: 2, y: 0 }] },
+    { color: 'yellow', cells: [{ x: 1, y: 2 }] },
+  ];
+  for (const theme of BOARD_THEMES) {
+    const label = document.createElement('label');
+    label.className = `board-theme-option preview-${theme.id}`;
+    const radio = document.createElement('input');
+    radio.type = 'radio'; radio.name = 'board-theme'; radio.value = theme.id; radio.checked = theme.id === boardTheme;
+    radio.setAttribute('aria-label', theme.name);
+    radio.addEventListener('change', () => { if (radio.checked) applyBoardTheme(theme.id); });
+    const card = document.createElement('span'); card.className = 'board-theme-card';
+    const preview = document.createElement('span'); preview.className = 'board-theme-preview'; preview.setAttribute('aria-hidden', 'true');
+    const board = document.createElement('span'); board.className = 'board-theme-mini';
+    if (theme.id === 'glass') {
+      board.appendChild(glassElement(miniCells, 'purple', 19, { plate: true }));
+      for (const piece of pieces) board.appendChild(glassElement(piece.cells, piece.color, 19));
+    } else {
+      for (const c of miniCells) {
+        const well = document.createElement('i'); well.className = 'cell well';
+        well.style.transform = `translate(${c.x * 19}px,${c.y * 19}px)`;
+        board.appendChild(well);
+      }
+      for (const piece of pieces) for (const c of piece.cells) {
+        const block = document.createElement('i'); block.className = `cell block c-${piece.color}`;
+        block.style.transform = `translate(${c.x * 19}px,${c.y * 19}px)`;
+        board.appendChild(block);
+      }
+    }
+    preview.appendChild(board);
+    const name = document.createElement('span'); name.className = 'board-theme-name'; name.textContent = theme.name;
+    const status = document.createElement('span'); status.className = 'board-theme-status'; status.textContent = '選択中';
+    card.append(preview, name, status); label.append(radio, card); $('boardThemeList').appendChild(label);
+    radio.title = theme.description;
+  }
+}
+renderBoardThemeList();
 
 /* ---------- ランキング（スコア。世界 / この端末） ---------- */
 let rankScope = 'world';
