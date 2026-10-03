@@ -366,6 +366,17 @@ export class Ambient {
     layer.plate = null;
   }
 
+  /**
+   * 画面の端（ホーム画面から開いたときの下のバー・端末のホームインジケーターの下・引っ張ったときの外側）は、全面の層や body のグラデーションが届かず、
+   * html の背景色が見える。ここを縁の色（lo）にそろえておく（以前は青のままで、色が変わったあと下のバーだけ違う色に見えることがあった）。ms = 色を重ねる長さ
+   */
+  edge(lo, ms = 0) {
+    const st = this.doc.documentElement?.style;
+    if (!st) return;
+    st.setProperty('transition', ms ? `background-color ${ms}ms ease-in-out` : 'none');
+    st.setProperty('background-color', lo);
+  }
+
   /** look が全面を覆って落ち着いた: body に描いて、層を片づける */
   settleOn(look) {
     const b = this.doc.body?.style;
@@ -373,6 +384,7 @@ export class Ambient {
     this.root.hidden = true;
     for (const l of this.layers) { l.anim?.cancel(); l.anim = null; l.on = false; l.el.style.display = 'none'; }
     this.settled = look;
+    this.edge(look.lo);
   }
 
   /** 新しい色の層を一番上に重ねて、ms かけて opacity 0 → 1。重なり終わったら、下の層は外す */
@@ -387,6 +399,7 @@ export class Ambient {
     el.style.opacity = '0';
     el.style.display = 'block';
     layer.on = true;
+    this.edge(look.lo, ms);
     layer.plate = this.mountPlate(look, ms, layer.z);
     const anim = layer.anim = el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
     anim.onfinish = () => { if (layer.anim === anim) this.cover(layer, look); };

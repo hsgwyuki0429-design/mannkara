@@ -1,19 +1,19 @@
-import { Game } from '../core/game.js?v=202610030201';
-import { Board, createBlock } from '../core/board.js?v=202610030201';
-import { Piece } from '../core/pieces.js?v=202610030201';
-import * as Sim from '../core/sim.js?v=202610030201';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610030201';
-import { Renderer, delay } from './renderer.js?v=202610030201';
-import { Sfx, kitForScore } from './sfx.js?v=202610030201';
-import { Scenes } from './scenes.js?v=202610030201';
-import { Ambient } from './ambient.js?v=202610030201';
-import { colorOf } from './palette.js?v=202610030201';
-import { TrayDealer } from './tray-dealer.js?v=202610030201';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610030201';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610030201';
-import { drawResultCard, cardBlob } from './share-card.js?v=202610030201';
-import { World } from './world.js?v=202610030201';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610030201';
+import { Game } from '../core/game.js?v=202610030213';
+import { Board, createBlock } from '../core/board.js?v=202610030213';
+import { Piece } from '../core/pieces.js?v=202610030213';
+import * as Sim from '../core/sim.js?v=202610030213';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610030213';
+import { Renderer, delay } from './renderer.js?v=202610030213';
+import { Sfx, kitForScore } from './sfx.js?v=202610030213';
+import { Scenes } from './scenes.js?v=202610030213';
+import { Ambient } from './ambient.js?v=202610030213';
+import { colorOf } from './palette.js?v=202610030213';
+import { TrayDealer } from './tray-dealer.js?v=202610030213';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610030213';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610030213';
+import { drawResultCard, cardBlob } from './share-card.js?v=202610030213';
+import { World } from './world.js?v=202610030213';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610030213';
 
 const $ = (id) => document.getElementById(id);
 const sfx = new Sfx();
@@ -186,7 +186,7 @@ let rushBefore = 0;           // この番号より前のターンの再生は�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610030201', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610030213', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {

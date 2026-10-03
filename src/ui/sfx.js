@@ -1,4 +1,4 @@
-import { placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610030201';
+import { placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610030213';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -7,7 +7,7 @@ const VOICE_LIMIT = 40;
 const LEVEL = 0.32;                                    // 全体の音量（ミュートでは 0）
 // 鈴の音量（正弦波・三角波だった前の音と、耳の感度で重み付けした大きさがそろうように測って決めた）
 const BELL = { goal: 0.5, refill: 0.2, fit: 0.33, combo: 0.135, praise: 0.36, shatter: 0.185, fanfare: 0.54, run: 0.32 };
-const SHALAN_GAIN = 0.48;                              // シャランの音量（size 1 のとき）。波形（synth.js）は尖った音のぶん山が高いので、波形の大きさを抑えて、ここで上げる
+const SHALAN_GAIN = 0.26;                              // シャランの音量（size 1 のとき）。波形（synth.js）は尖った音のぶん山が高いので、波形の大きさを抑えて、ここで上げる
 /**
  * 音のセット（synth.js の KITS: ガラス → 木琴 → オルゴール）は、スコアが KIT_EVERY 点進むごとに順に替わる（kitForScore）。
  * 置く音・シャラン・鈴（ゴール・コンボ・褒め言葉など）の楽器が替わる。短い操作の音（持ち上げ・なぞる・置けない）は、どのセットも同じ
@@ -33,7 +33,7 @@ export const note = (i, base = 261.63) => {
  */
 export const shalanTop = (chain) => {
   let f = note(chain - 1, 330) * LOWER * 8;
-  while (f >= 4500) f /= 2;
+  while (f >= 3800) f /= 2;
   return Math.round(f);
 };
 /**
@@ -172,7 +172,7 @@ export class Sfx {
     this.bright = this.ctx.createGain();
     this.bright.gain.value = this.enabled ? LEVEL : 0;
     this.air = this.ctx.createBiquadFilter();
-    this.air.type = 'lowpass'; this.air.frequency.value = 9500; this.air.Q.value = 0.5;
+    this.air.type = 'lowpass'; this.air.frequency.value = 6500; this.air.Q.value = 0.5;
     this.bright.connect(this.air); this.air.connect(comp);
     this.output = comp;
   }

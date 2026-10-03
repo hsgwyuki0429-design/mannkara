@@ -211,18 +211,18 @@ const FLICKS = [
  * 1 : 2.756 : 5.404 : 8.933（グロッケンのバーと同じ）。整数倍でないので、音の高さがはっきりしない「きらきら」になる。
  * 硬いもの（金属の撥・指先の爪）で叩くと、高い部分音が強く、尖った音になる
  */
-const BAR_PARTS = [[1, 1, 1], [2.756, 0.6, 0.55], [5.404, 0.4, 0.4], [8.933, 0.2, 0.25]];
+const BAR_PARTS = [[1, 1, 1], [2.756, 0.5, 0.55], [5.404, 0.17, 0.35], [8.933, 0.05, 0.2]];     // 高い部分音は控えめに（以前は 0.6 / 0.4 / 0.2。尖りすぎて耳に痛かった）
 /** 最後のバーを主音としたとき、ペンタトニックの音になる半音の数（最後のバーから何半音下か、12 で割った余り）。ここは大きく、長く鳴らす */
 const BAR_MAIN = [0, 3, 5, 8, 10];
 /** 叩いた瞬間の雑音（シャッ）の強さ（バーの大きさに対する倍率）と、その長さ（秒） */
-const HISS = 2.4, HISS_LEN = 0.012;
+const HISS = 0.8, HISS_LEN = 0.014;
 
 /**
  * バー 1 本を叩く: 部分音 + わずかにずれた対（ゆっくりしたうなり = 金属のきらめき）+ 叩いた瞬間の「チッ」+ 雑音の「シャッ」。
  * モードごとの向き（符号）は、打った場所での振動の向きがモードごとに違うので、ばらばらにする（そろえると、打った瞬間に全部が重なって
  * 鋭いピークになり、そのぶん全体の音量を上げられない）
  */
-function barNote(out, air, sr, f, at, gain, t60, rand, { click = 0.15, hiss = HISS, hissLen = HISS_LEN } = {}) {
+function barNote(out, air, sr, f, at, gain, t60, rand, { click = 0.08, hiss = HISS, hissLen = HISS_LEN } = {}) {
   const sign = () => (rand() < 0.5 ? -1 : 1);
   for (const [ratio, a, d] of BAR_PARTS) addMode(out, sr, at, f * ratio, gain * a * sign(), t60 * d, 0.0004);
   addMode(out, sr, at, f * (1.001 + rand() * 0.0007), gain * 0.55 * sign(), t60 * 0.95, 0.0004);
@@ -252,7 +252,7 @@ export function shalanBuffer(sr, top = SHALAN_TOP) {
       barNote(out, air, sr, top * Math.pow(2, -below / 12), Math.max(0, at), gain, main ? 0.2 + 0.18 * u : 0.1 + 0.08 * u, rand);
     }
     // top のバー: 1 回目は短い「チン」、2 回目は長く響く「シャーン」（バーが多いほど強く。埋もれないように）
-    barNote(out, air, sr, top, fl.at + fl.dur + 0.008, fl.tailLevel * Math.sqrt(steps / 12), fl.tail, rng(0x51ed270b + j * 7), { click: 0.3, hiss: 2.6, hissLen: 0.04 });
+    barNote(out, air, sr, top, fl.at + fl.dur + 0.008, fl.tailLevel * Math.sqrt(steps / 12), fl.tail, rng(0x51ed270b + j * 7), { click: 0.12, hiss: 0.9, hissLen: 0.05 });
   });
   addEchoes(out, sr, [0.083, 0.151], [0.22, 0.12]);                               // 響きだけにこだまを足す（「シャッ」を重ねると、2 回が 5 回に聞こえてしまう）
   for (let i = 0; i < out.length; i++) out[i] += air[i];

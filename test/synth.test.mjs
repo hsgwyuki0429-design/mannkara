@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { glassBuffer, shalanBuffer, bellBuffer, placeBuffer, chimeBuffer, noteBuffer, KITS, PLACE_VARIANTS, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_LOW, SHALAN_LENGTH, BELL_LENGTH } from '../src/ui/synth.js?v=202610030201';
+import { glassBuffer, shalanBuffer, bellBuffer, placeBuffer, chimeBuffer, noteBuffer, KITS, PLACE_VARIANTS, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_LOW, SHALAN_LENGTH, BELL_LENGTH } from '../src/ui/synth.js?v=202610030213';
 
 const SR = 48000;
 /** 時刻 t0〜t1（秒）の、周波数 f（Hz）の成分の大きさ（Goertzel 法）。窓は Hann */
@@ -153,10 +153,10 @@ test('シャン、シャン: 4kHz 以上が約 0.12 秒と約 0.28 秒の 2 回�
   }
 });
 
-test('尖った音: 先頭 0.6 秒のパワーの 2 割以上が 4kHz 以上にある（硬く叩いた高い部分音と、擦れ合う「シャッ」の雑音）', () => {
-  for (const top of [2220, 2492, 2797]) {              // 最後のバーの基本が 3kHz より下の高さ。4kHz 以上は、部分音と雑音だけ
+test('耳に痛くない: 先頭 0.6 秒のパワーのうち 4kHz 以上は 2 割以下（高い部分音と「シャッ」の雑音を控えめにした。以前は 2 割以上で、尖りすぎた）', () => {
+  for (const top of [2220, 2492, 2797, 3326, 3734]) {
     const hi = shareAbove(shalanBuffer(SR, top), 4000, 0.6);
-    assert.ok(hi > 0.2, `${top}Hz: 4kHz 以上は ${hi.toFixed(2)}`);
+    assert.ok(hi < 0.2, `${top}Hz: 4kHz 以上は ${hi.toFixed(2)}`);
   }
 });
 

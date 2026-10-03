@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610030201';
-import { KITS } from '../src/ui/synth.js?v=202610030201';
-import { Renderer } from '../src/ui/renderer.js?v=202610030201';
-import { RIM_MS } from '../src/ui/rims.js?v=202610030201';
+import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610030213';
+import { KITS } from '../src/ui/synth.js?v=202610030213';
+import { Renderer } from '../src/ui/renderer.js?v=202610030213';
+import { RIM_MS } from '../src/ui/rims.js?v=202610030213';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -161,17 +161,18 @@ test('ミュートは明るい出口も止める（ガラス・シャランが�
   s.stop();
 });
 
-test('シャランの最後のバーは、ゴールの音と同じ音階の高さ（バーチャイムの 2〜4.5kHz）で、連鎖が進むほど高い', () => {
-  assert.deepEqual([1, 2, 3, 4, 5, 6].map(shalanTop), [2220, 2492, 2797, 3326, 3734, 4440]);
+test('シャランの最後のバーは、ゴールの音と同じ音階の高さ（バーチャイムの 2〜3.8kHz。以前は 4.5kHz までで尖りすぎたので、上限を下げた）で、連鎖が進むほど高い', () => {
+  assert.deepEqual([1, 2, 3, 4, 5].map(shalanTop), [2220, 2492, 2797, 3326, 3734]);
   for (let c = 1; c <= 12; c++) {
     const top = shalanTop(c), goal = note(c - 1, 330) * Math.pow(2, -3 / 12);        // ゴールの音（tone は 3 半音下げて鳴らす）
-    assert.ok(top >= 2000 && top < 4500, `連鎖 ${c}: ${top}Hz`);
+    assert.ok(top >= 2000 && top < 3800, `連鎖 ${c}: ${top}Hz`);
     const octaves = Math.log2(top / goal);
     assert.ok(Math.abs(octaves - Math.round(octaves)) < 2e-3, `連鎖 ${c}: ゴールの音のオクターブ違いの高さ`);
   }
-  const ups = [1, 2, 3, 4, 5, 6].map(shalanTop);
-  assert.ok(ups.every((f, i) => i === 0 || f > ups[i - 1]), '6 連鎖までは、連鎖が進むほど高い');
-  assert.equal(shalanTop(7), shalanTop(2), '7 連鎖目からは 2 連鎖目と同じ高さに戻る（上限を超えるので 1 オクターブ下げる）');
+  const ups = [1, 2, 3, 4, 5].map(shalanTop);
+  assert.ok(ups.every((f, i) => i === 0 || f > ups[i - 1]), '5 連鎖までは、連鎖が進むほど高い');
+  assert.equal(shalanTop(6), shalanTop(1), '6 連鎖目からは 1 連鎖目と同じ高さに戻る（上限を超えるので 1 オクターブ下げる）');
+  assert.equal(shalanTop(7), shalanTop(2));
 });
 
 test('シャランは連鎖ごとの高さの波形（長さは同じ）を、再生の速さをほぼ変えずに鳴らす。同時の連打は 1 つにまとめる', () => {
@@ -179,8 +180,8 @@ test('シャランは連鎖ごとの高さの波形（長さは同じ）を、�
   for (let c = 1; c <= 8; c++) { s.shalan(c); s.ctx.currentTime += 0.2; }
   const used = s.ctx.sources.filter((n) => n.buffer);
   assert.equal(used.length, 8);
-  assert.equal(new Set(used.slice(0, 6).map((n) => n.buffer)).size, 6, '6 連鎖までは別の波形（別の高さ）');
-  assert.equal(used[6].buffer, used[1].buffer, '7 連鎖目は 2 連鎖目と同じ');
+  assert.equal(new Set(used.slice(0, 5).map((n) => n.buffer)).size, 5, '5 連鎖までは別の波形（別の高さ）');
+  assert.equal(used[5].buffer, used[0].buffer, '6 連鎖目は 1 連鎖目と同じ');
   for (let c = 1; c <= 8; c++) assert.ok(s.waves.has(`chime:0:${shalanTop(c)}`));
   assert.ok(used.every((n) => Math.abs(n.playbackRate.value - 1) <= 0.011), '高さは再生の速さでなく、波形で変える（速さを変えると長さも変わる）');
   assert.ok(used.every((n) => n.stopAt - n.started < 1.4), '長さは約 1.3 秒');
@@ -285,8 +286,8 @@ test('波形は 1 回だけ作って使い回し、warm で 1 つずつ先に作
   const s = audio();
   assert.equal(s.waves.size, 0);
   let more = true, calls = 0;
-  while (more) { more = s.warm(); assert.ok(++calls <= 42); }
-  assert.equal(s.waves.size, 42, 'いまのセットと次のセットの、置く音 4 種 + シャラン（高さ 6 種）+ 鈴（高さ 11 段）');
+  while (more) { more = s.warm(); assert.ok(++calls <= 40); }
+  assert.equal(s.waves.size, 40, 'いまのセットと次のセットの、置く音 4 種 + シャラン（高さ 5 種）+ 鈴（高さ 11 段）');
   const glass1 = s.waves.get('place:0:1');
   s.glass(1); assert.equal(s.waves.get('place:0:1'), glass1);
   s.ctx = new Context(); s.connect();
@@ -352,12 +353,12 @@ test('warm はいまのセット → 次のセットの順に 1 つずつ作る�
   const waveOf = s.waveOf.bind(s); s.waveOf = (k) => { order.push(+k.split(':')[1]); return waveOf(k); };
   s.setKit(1);
   let more = true; while (more) more = s.warm();
-  assert.equal(order.length, 42);
-  assert.ok(order.slice(0, 21).every((k) => k === 1) && order.slice(21).every((k) => k === 2), 'いまの 1 → 次の 2');
+  assert.equal(order.length, 40);
+  assert.ok(order.slice(0, 20).every((k) => k === 1) && order.slice(20).every((k) => k === 2), 'いまの 1 → 次の 2');
   const before = order.length; s.warm(); assert.equal(order.length, before, '全部作ったら何もしない');
   s.setKit(2);                                                       // 1 を捨て、2 は残してあるので、次の 0 だけ作る
   more = true; while (more) more = s.warm();
-  assert.equal(order.length, before + 21);
+  assert.equal(order.length, before + 20);
   assert.ok(order.slice(before).every((k) => k === 0));
   s.stop();
 });
@@ -366,7 +367,7 @@ test('kitReady: いまのセットの波形が全部できたら true（次の�
   const s = audio(); s.warmSoon = () => {};
   assert.equal(s.kitReady(), false);
   let guard = 0; while (!s.kitReady() && guard++ < 100) s.warm();
-  assert.equal(s.kitReady(), true); assert.equal(s.waves.size, 21, 'いまのセットだけ（次のセットはまだ）');
+  assert.equal(s.kitReady(), true); assert.equal(s.waves.size, 20, 'いまのセットだけ（次のセットはまだ）');
   s.setKit(1);
   assert.equal(s.kitReady(), false, '替えたら、そのセットを作り終えるまで false（0 は捨てられ、1 は作ってあるぶんだけ）');
   while (!s.kitReady() && guard++ < 200) s.warm();
