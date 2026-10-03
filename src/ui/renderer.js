@@ -1,11 +1,11 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610030142';
-import { Shards } from './shards.js?v=202610030142';
-import { Sparkles } from './sparkles.js?v=202610030142';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610030142';
-import { Rims } from './rims.js?v=202610030142';
-import { colorOf } from './palette.js?v=202610030142';
-import { PLATE_SETS } from './ambient.js?v=202610030142';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610030201';
+import { Shards } from './shards.js?v=202610030201';
+import { Sparkles } from './sparkles.js?v=202610030201';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610030201';
+import { Rims } from './rims.js?v=202610030201';
+import { colorOf } from './palette.js?v=202610030201';
+import { PLATE_SETS } from './ambient.js?v=202610030201';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
