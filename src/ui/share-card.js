@@ -1,7 +1,7 @@
-import { SIZE, isInside } from '../core/constants.js?v=202610031708';
-import { gemSprite } from './shards.js?v=202610031708';
-import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610031708';
-import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './glass.js?v=202610031708';
+import { SIZE, isInside } from '../core/constants.js?v=202610032224';
+import { gemSprite } from './shards.js?v=202610032224';
+import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610032224';
+import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './glass.js?v=202610032224';
 
 /**
  * 結果カード（シェア用の1枚の画像）: ロゴ・スコア・最大連鎖・最大コンボ・最後の盤面・遊べる URL。
@@ -33,7 +33,7 @@ export async function drawResultCard(data) {
   g.fillStyle = glass ? GLASS_BACKGROUND : '#3a6adf';
   g.fillRect(0, 0, CARD_W, CARD_H);
   const bg = g.createRadialGradient(CARD_W / 2, CARD_H * 0.36, 0, CARD_W / 2, CARD_H * 0.36, CARD_H * 0.62);
-  bg.addColorStop(0, glass ? GLASS_HIGHLIGHT : '#4479f2'); bg.addColorStop(1, glass ? 'rgba(92,67,194,0)' : 'rgba(58,106,223,0)');
+  bg.addColorStop(0, glass ? GLASS_HIGHLIGHT : '#4479f2'); bg.addColorStop(1, glass ? 'rgba(94,74,194,0)' : 'rgba(58,106,223,0)');
   g.fillStyle = bg;
   g.fillRect(0, 0, CARD_W, CARD_H);
   g.textAlign = 'center';
