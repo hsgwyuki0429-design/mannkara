@@ -4,7 +4,7 @@ import { Piece } from '../core/pieces.js?v=202610021128';
 import * as Sim from '../core/sim.js?v=202610021128';
 import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610021128';
 import { Renderer, delay } from './renderer.js?v=202610021128';
-import { Sfx } from './sfx.js?v=202610021128';
+import { Sfx, kitForScore } from './sfx.js?v=202610021128';
 import { Scenes } from './scenes.js?v=202610021128';
 import { Ambient } from './ambient.js?v=202610021128';
 import { colorOf } from './palette.js?v=202610021128';
@@ -181,6 +181,7 @@ function playTick(now) {
 function startPlayTick() { if (!playRaf) { playLast = 0; playRaf = requestAnimationFrame(playTick); } }
 let turnSeq = 0;              // 置いた順の番号
 let rushBefore = 0;           // この番号より前のターンの再生は早送りする
+let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
 const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610021128', import.meta.url));
@@ -195,9 +196,13 @@ const game = new Game({
       else sfx.refill();
     },
     onTurn(turn) {
+      // 音のセット: ターンの始まりのスコアで決める（連鎖の途中で楽器が替わらない）。スコアが KIT_EVERY 点進むごとに次のセットへ。チュートリアルは常にガラス
+      turn.kit = tutorial ? 0 : kitForScore(kitScore);
+      kitScore = turn.score;
+      if (!pending) sfx.setKit(turn.kit);                    // 前のターンの再生が残っていれば、このターンの再生の始まり（playTurn）で替える
       // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように。補充の手駒は届いたら onTray で出す）
       if (pending > 0) sfx.stop();
-      sfx.place(turn.placed.length);
+      sfx.place(turn.placed.length, turn.kit);
       turn.seq = ++turnSeq;
       // 穴にぴったり・凹みを埋めて長方形: 置いた瞬間に手応え（連鎖の文字が出ればそちらで上書き）
       if (turn.fit === 'perfect' || turn.rect) {
@@ -233,6 +238,7 @@ async function playTurn(turn) {
   // 途中でリスタート（モードの切り替えなど）したら、古いゲームの続き（点数・ゲームオーバー）は出さない
   const gen = generation, stale = () => gen !== generation;
   const rush = turn.seq < rushBefore;
+  sfx.setKit(turn.kit ?? 0);                             // このターンの音のセット（前のターンの再生が終わってから替わる）
   renderer.setRush(rush);
   showScore(turn.scoreAfterPlace);
   if (!tutorial) ambient.turn(turn);                     // 背景の色（コンボが続くと色相が進む。早送りでも色は合わせる）
@@ -890,6 +896,7 @@ function showState(st) {
   generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   endDrag();
   game.importState(st);
+  kitScore = game.score.score || 0; sfx.setKit(tutorial ? 0 : kitForScore(kitScore));      // 途中から続けるときは、そのスコアの音のセットから
   renderer.reset();
   scenes.clear();
   ambient.reset();
@@ -913,6 +920,7 @@ function restart() {
   bestCelebrated = false;
   runRecorded = false;
   clearSave();
+  kitScore = 0; sfx.setKit(0);
   document.querySelector('.best-pill')?.classList.remove('beat');
   game.reset();
   endDrag();
@@ -1241,6 +1249,7 @@ if (!world.named) nameGate(() => {});              // 途中の保存があっ�
 window.__booted = true;
 window.__game = game;
 window.__renderer = renderer;
+window.__sfx = sfx;
 window.__scenes = scenes;
 window.__ambient = ambient;
 window.__ui = { showScore, renderTray, setBest(v) { best = v; }, pending: () => pending };

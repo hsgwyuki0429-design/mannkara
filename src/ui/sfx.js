@@ -1,4 +1,4 @@
-import { glassBuffer, shalanBuffer, bellBuffer, GLASS_VARIANTS } from './synth.js?v=202610021128';
+import { placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610021128';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -8,6 +8,14 @@ const LEVEL = 0.32;                                    // 全体の音量（ミ�
 // 鈴の音量（正弦波・三角波だった前の音と、耳の感度で重み付けした大きさがそろうように測って決めた）
 const BELL = { goal: 0.5, refill: 0.2, fit: 0.33, combo: 0.135, praise: 0.36, shatter: 0.185, fanfare: 0.54, run: 0.32 };
 const SHALAN_GAIN = 0.48;                              // シャランの音量（size 1 のとき）。波形（synth.js）は尖った音のぶん山が高いので、波形の大きさを抑えて、ここで上げる
+/**
+ * 音のセット（synth.js の KITS: ガラス → 木琴 → オルゴール）は、スコアが KIT_EVERY 点進むごとに順に替わる（kitForScore）。
+ * 置く音・シャラン・鈴（ゴール・コンボ・褒め言葉など）の楽器が替わる。短い操作の音（持ち上げ・なぞる・置けない）は、どのセットも同じ
+ */
+export const KIT_EVERY = 1000;
+export const kitForScore = (score) => Math.floor(Math.max(0, Number.isFinite(score) ? score : 0) / KIT_EVERY) % KITS.length;
+/** 置いたときの低い胴鳴り（耳に届く強さ）: ガラスのコップは底がテーブルに当たる音が波形にもあるので、木琴・オルゴールは少し控えめに */
+const PLACE_THUMP = [0.22, 0.14, 0.1];
 // 上限で切りそろえると和音も大連鎖も同じ音になる。上限を超えた音はオクターブ下へ戻す。
 export const voicedFrequency = (hz) => {
   hz = Math.max(45, Number.isFinite(hz) ? hz : 220);
@@ -42,22 +50,26 @@ const foldBell = (f) => { while (f >= BELL_TOP) f /= 2; while (f < BELL_BOTTOM) 
  */
 export const bellPitch = (freq, oct = 0) => foldBell(voicedFrequency(freq * LOWER) * 2 ** oct);
 /**
- * 作っておく波形（synth.js）。ガラスを置く音（コップの高さ違い 4 つ）と、バーチャイムのシャラン（最後のバーの高さごと）、鈴（高さ 11 段）。
- * 鳴らすたびに計算せず、AudioBuffer を 1 回だけ作って使い回す（作るのは 1 つ数 ms〜20ms。起動後の空き時間に先に作っておく）。
+ * 作っておく波形（synth.js）。セットごとに、置く音（高さ違い 4 つ）・シャラン（最後の音の高さごと）・鈴（高さ 11 段）。キーは
+ * `place:セット:番号` / `chime:セット:高さ` / `note:セット:段`。鳴らすたびに計算せず、AudioBuffer を 1 回だけ作って使い回す
+ * （作るのは 1 つ数 ms〜20ms。起動後の空き時間に、いまのセットと次に替わるセットを先に作っておく）。
  * シャランは再生の速さで高さを変えると長さも変わってしまうので、高さごとに合成する（長さはどれも同じ）
  */
 const SHALAN_TOPS = [...new Set(Array.from({ length: 10 }, (_, i) => shalanTop(i + 1)))];
-const WAVES = {
-  ...Object.fromEntries(Array.from({ length: GLASS_VARIANTS }, (_, v) => [`glass${v}`, (sr) => glassBuffer(sr, v)])),
-  ...Object.fromEntries(SHALAN_TOPS.map((top) => [`shalan:${top}`, (sr) => shalanBuffer(sr, top)])),
-  ...Object.fromEntries(Array.from({ length: BELL_STEPS }, (_, k) => [`bell:${k}`, (sr) => bellBuffer(sr, BELL_BASE * 2 ** (k / 4))])),
-};
+const WAVES = {};
+for (let kit = 0; kit < KITS.length; kit++) {
+  for (let v = 0; v < PLACE_VARIANTS; v++) WAVES[`place:${kit}:${v}`] = (sr) => placeBuffer(sr, v, kit);
+  for (const top of SHALAN_TOPS) WAVES[`chime:${kit}:${top}`] = (sr) => chimeBuffer(sr, top, kit);
+  for (let k = 0; k < BELL_STEPS; k++) WAVES[`note:${kit}:${k}`] = (sr) => noteBuffer(sr, BELL_BASE * 2 ** (k / 4), kit);
+}
+const WAVE_KEYS = Object.keys(WAVES);
+const kitOf = (key) => Number(key.split(':')[1]);
 
 export class Sfx {
   constructor() {
     this.ctx = null; this._enabled = true; this.paused = false;
     this.gestureAt = 0; this.stuckSince = 0; this.stale = false;
-    this.voices = new Set(); this.last = new Map(); this.placement = 0; this.waves = new Map();
+    this.voices = new Set(); this.last = new Map(); this.placement = 0; this.waves = new Map(); this.kit = 0;
     try { this._enabled = localStorage.getItem('blockmancala-sound') !== 'off'; } catch {}
   }
   get enabled() { return this._enabled; }
@@ -242,33 +254,50 @@ export class Sfx {
     this.waves.set(key, w);
     return w;
   }
-  /** 波形を 1 つ作っておく（まだ作っていないものがあれば true）。最初に鳴らす瞬間に、作る計算で引っかからないように */
+  /** いまのセットと、次に替わるセット（先に作っておく）。それ以外の波形はメモリに残さない */
+  wantedKits() { return [this.kit, (this.kit + 1) % KITS.length]; }
+  /** 音のセットを替える（kitForScore で決めた番号）。使わないセットの波形は捨て、次のセットを空き時間に作り始める */
+  setKit(kit) {
+    kit = Number.isInteger(kit) && kit >= 0 && kit < KITS.length ? kit : 0;
+    if (kit === this.kit) return;
+    this.kit = kit;
+    const want = this.wantedKits();
+    for (const key of [...this.waves.keys()]) if (!want.includes(kitOf(key))) this.waves.delete(key);
+    if (this.ctx) this.warmSoon();
+  }
+  /** 波形を 1 つ作っておく（まだ作っていないものがあれば true）。最初に鳴らす瞬間に、作る計算で引っかからないように。いまのセット → 次のセットの順 */
   warm() {
     if (!this.ctx || this.ctx.state === 'closed') return false;
-    const next = Object.keys(WAVES).find((k) => !this.waves.has(k));
-    if (next && !this.waveOf(next)) return false;
-    return Object.keys(WAVES).some((k) => !this.waves.has(k));
+    const todo = this.wantedKits().flatMap((kit) => WAVE_KEYS.filter((k) => kitOf(k) === kit && !this.waves.has(k)));
+    if (todo.length && !this.waveOf(todo[0])) return false;
+    return todo.length > 1;
   }
-  /** 起動後の空き時間に、波形を 1 つずつ作っておく（まとめて作ると、それはそれで一瞬止まるので） */
+  /** いまのセットの波形が全部できているか */
+  kitReady() { return WAVE_KEYS.every((k) => kitOf(k) !== this.kit || this.waves.has(k)); }
+  /**
+   * 起動後の空き時間に、波形を 1 つずつ作っておく（まとめて作ると、それはそれで一瞬止まるので）。いまのセットは 1.5 秒以内に必ず進める。
+   * 次のセットは、遅れてもよいので、ほんとうに空いたときだけ（忙しい間は 8 秒まで待ち、ゲーム中に割り込ませない）
+   */
   warmSoon() {
     const ctx = this.ctx;
-    const idle = (f) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout: 1500 }) : setTimeout(f, 150));
-    const next = () => { if (this.ctx === ctx && this.warm()) idle(next); };
+    const idle = (f, timeout = 1500) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout }) : setTimeout(f, 150));
+    const next = () => { if (this.ctx === ctx && this.warm()) idle(next, this.kitReady() ? 8000 : 1500); };
     idle(next);
   }
   vibe(p) { if (this.enabled && !this.paused && !this.stale) try { navigator.vibrate?.(p); } catch {} }
 
   pick()        { this.tone(530, { dur: 0.045, gain: 0.19, slide: 1.12, priority: 2 }); this.vibe(5); }
-  // ガラスのコップをテーブルに置く音。コップの高さを順に変え（4 種）、マス数が多いほど低く重く
-  place(cells = 1) {
+  // 置く音（セットの楽器: ガラスのコップ・木琴・オルゴール）。高さを順に変え（4 種）、マス数が多いほど低く重く。
+  // kit = このターンの音のセット（前のターンの再生が残っていても、そのターンの楽器で鳴らす）
+  place(cells = 1, kit = this.kit) {
     const weight = Math.min(1, Math.max(0, (cells - 1) / 8));
-    this.glass(this.placement++ % GLASS_VARIANTS, weight);
-    this.tone(250 - weight * 55, { dur: 0.08, gain: 0.22, slide: 0.55, attack: 0.002, priority: 3 });   // 盤面が受け止める低い胴鳴り
+    this.glass(this.placement++ % PLACE_VARIANTS, weight, kit);
+    this.tone(250 - weight * 55, { dur: 0.08, gain: PLACE_THUMP[kit] ?? PLACE_THUMP[0], slide: 0.55, attack: 0.002, priority: 3 });   // 盤面が受け止める低い胴鳴り
     this.vibe(10 + Math.round(weight * 5));
   }
-  /** ガラスを置く音だけ。variant = コップの高さ（0〜3）、weight = 重さ（0〜1。重いほど低い） */
-  glass(variant = 0, weight = 0.3) {
-    this.playBuffer(`glass${variant % GLASS_VARIANTS}`, { gain: 0.58, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
+  /** 置く音の波形だけ（既定はガラスのコップ。kit で楽器を選ぶ）。variant = 高さ（0〜3）、weight = 重さ（0〜1。重いほど低い） */
+  glass(variant = 0, weight = 0.3, kit = this.kit) {
+    this.playBuffer(`place:${kit}:${variant % PLACE_VARIANTS}`, { gain: 0.58, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
   }
   /**
    * シャラン: バーチャイム（マークツリー）を指で 2 回なでたような、尖った高い金属の「シャン、シャン」。
@@ -278,7 +307,7 @@ export class Sfx {
    */
   shalan(chain = 1, { size = 1, at = 0 } = {}) {
     if (!at && !this.allow('shalan', 0.1)) return;
-    this.playBuffer(`shalan:${shalanTop(chain)}`, { gain: SHALAN_GAIN * size, rate: 0.99 + Math.random() * 0.02, at, priority: 1 });
+    this.playBuffer(`chime:${this.kit}:${shalanTop(chain)}`, { gain: SHALAN_GAIN * size, rate: 0.99 + Math.random() * 0.02, at, priority: 1 });
   }
   /**
    * 鈴（synth.js の bellBuffer）。freq = tone と同じ高さの指定（bellPitch が、LOWER を掛けて oct 段上げ、鈴の音域へ収める）/
@@ -289,7 +318,7 @@ export class Sfx {
   /** 鈴を、鈴の音域に収まった高さ f（Hz）そのままで鳴らす（和音で、根音からの比で重ねるとき） */
   bellAt(f, { gain = 0.3, ring = 0.5, at = 0, priority = 1 } = {}) {
     const k = Math.max(0, Math.min(BELL_STEPS - 1, Math.round(4 * Math.log2(f / BELL_BASE))));
-    this.playBuffer(`bell:${k}`, { gain, rate: f / (BELL_BASE * 2 ** (k / 4)), at, ring, priority });
+    this.playBuffer(`note:${this.kit}:${k}`, { gain, rate: f / (BELL_BASE * 2 ** (k / 4)), at, ring, priority });
   }
   /** 穴にぴったりはまる場所に入った（カチッ）・ぴったり置いた（カチッ + 上がる2音） */
   fitHover()    { if (!this.allow('fitHover', 0.08)) return;

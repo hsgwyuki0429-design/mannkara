@@ -78,7 +78,7 @@ export class FxCanvas {
     this.now = () => performance.now();
   }
 
-  /** 覆う範囲を (x, y, w, h)（親の座標 px）にする。大きさが変わらなければ何もしない */
+  /** 覆う範囲を (x, y, w, h)（親の座標 px）にする。canvas の大きさ（画素数）が変わらなければ、canvas は作り直さない */
   fit(x, y, w, h) {
     const k = Math.min(this.dprMax, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
     const W = Math.max(1, Math.round(w * k)), H = Math.max(1, Math.round(h * k));

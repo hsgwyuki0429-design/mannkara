@@ -245,6 +245,23 @@ test('Amazing 以上の連鎖は一気に明るい別の色へ（それ未満で
   stop(a);
 });
 
+test('Amazing 以上の連鎖・新記録の別の色への跳びは、向きと幅がばらつき、オリーブ色にはならない', () => {
+  const r = rng(21), dirs = new Set(), hues = [];
+  for (let i = 0; i < 80; i++) {
+    const { a } = make({ rand: r });
+    a.hue = (i * 37) % 360;                                  // 色相をばらして始める
+    const from = a.hue;
+    if (i % 2) a.chain(i % 4 ? 4 : 5); else a.celebrate('best');
+    const to = a.shown.at(-1).hue;
+    assert.ok(!(to > 80 && to < 138), `${from}° → ${to}°（オリーブ域）`);
+    dirs.add(Math.sign(hueDelta(from, to)));
+    hues.push(Math.round(Math.abs(hueDelta(from, to))));
+    stop(a);
+  }
+  assert.deepEqual([...dirs].sort(), [-1, 1], '向きは両方ある');
+  assert.ok(new Set(hues).size > 15, '幅もばらつく');
+});
+
 test('動きを減らす設定では、遠い色へも小さな重ね 1 回を、ゆっくり（急な点滅にしない）', () => {
   const { a } = make({ reduced: true });
   a.go(BASE_HUE + 160, 'base', 100);

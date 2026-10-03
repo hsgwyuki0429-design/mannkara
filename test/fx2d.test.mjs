@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FxCanvas, bezier, easeOut } from '../src/ui/fx2d.js?v=202610021128';
+import { FxCanvas, bezier, easeOut, softwareRendering } from '../src/ui/fx2d.js?v=202610021128';
 import { Sparkles, sparkPose } from '../src/ui/sparkles.js?v=202610021128';
 import { Shards, shardPose } from '../src/ui/shards.js?v=202610021128';
 import { Rims, rimPose, rimSprite, RIM_MS } from '../src/ui/rims.js?v=202610021128';
@@ -220,4 +220,42 @@ test('rimSprite: 外側のにじみ・外側の細い白・内側のにじみ・
   const names = cv.ctx.calls.map((c) => c[0]);
   assert.equal(names.filter((n) => n === 'fill').length, 4 + 0, '影 2 つ + 細い白 + 白いふち');
   assert.equal(names.filter((n) => n === 'clip').length, 2, '外側のにじみは枠の外だけ、内側のにじみは枠の中だけ');
+});
+
+test('softwareRendering: WebGL の描画装置の名前でソフトウェア描画（SwiftShader・llvmpipe など）を見分ける。分からなければ GPU ありとして扱う', () => {
+  const withRenderer = (name, { ext = true, lose = [] } = {}) => {
+    globalThis.document = {
+      createElement: () => ({
+        getContext: () => ({
+          RENDERER: 0x1f01, UNMASKED_RENDERER_WEBGL: 0x9246,
+          getExtension: (n) => (n === 'WEBGL_debug_renderer_info' ? (ext ? { UNMASKED_RENDERER_WEBGL: 0x9246 } : null) : n === 'WEBGL_lose_context' ? { loseContext: () => lose.push(1) } : null),
+          getParameter: () => name,
+        }),
+      }),
+    };
+  };
+  for (const soft of ['ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)', 'llvmpipe (LLVM 15.0.7, 256 bits)', 'Software Rasterizer', 'Microsoft Basic Render Driver']) {
+    withRenderer(soft); assert.equal(softwareRendering(), true, soft);
+  }
+  for (const hard of ['Adreno (TM) 740', 'Mali-G78', 'Apple GPU', 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)', 'ANGLE (Intel, Intel(R) UHD Graphics 620)', 'AMD Radeon Pro 5500M OpenGL Engine']) {
+    withRenderer(hard); assert.equal(softwareRendering(), false, hard);
+  }
+  const lost = []; withRenderer('Mali-G78', { lose: lost }); softwareRendering(); assert.equal(lost.length, 1, '調べ終わったら WebGL のコンテキストを手放す');
+  withRenderer('SwiftShader', { ext: false }); assert.equal(softwareRendering(), true, '描画装置の情報が出せない環境でも、通常の名前で見分ける');
+  globalThis.document = { createElement: () => ({ getContext: () => null }) };
+  assert.equal(softwareRendering(), false, 'WebGL が使えない（取れない）ときは GPU ありとして扱う');
+  globalThis.document = { createElement: () => { throw new Error('unavailable'); } };
+  assert.equal(softwareRendering(), false);
+});
+
+test('FxCanvas.setDprMax: 描く細かさの上限を下げると、覆う範囲はそのまま canvas が粗くなる', () => {
+  const t = setup({ dpr: 3 }), { fx } = t;
+  fx.fit(-10, -20, 100, 50);
+  assert.deepEqual([fx.el.width, fx.el.height, fx.k], [200, 100, 2], '密度 3 でも上限 2');
+  fx.setDprMax(1);
+  assert.deepEqual([fx.el.width, fx.el.height, fx.k], [100, 50, 1]);
+  assert.equal(fx.el.style.left, '-10px'); assert.equal(fx.el.style.width, '100px');
+  fx.setDprMax(4);
+  assert.deepEqual([fx.el.width, fx.k], [300, 3], '上限を上げても、画面の密度より細かくはしない');
+  const w = fx.el.width; fx.setDprMax(4); assert.equal(fx.el.width, w, '同じ値なら何もしない');
 });

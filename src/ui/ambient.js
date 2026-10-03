@@ -210,7 +210,7 @@ export class Ambient {
     this.reducedQuery = win.matchMedia?.('(prefers-reduced-motion: reduce)');
     this.root = doc.createElement('div');
     this.root.id = 'ambient';
-    this.root.hidden = true;                                    // 色が落ち着いている間は層を使わない（背景は body に直接描く。rest / lift）
+    this.root.hidden = true;                                    // 色が落ち着いている間は層を使わない（背景は body に直接描く。lift / settleOn）
     this.root.setAttribute('aria-hidden', 'true');
     this.layers = Array.from({ length: LAYERS }, () => {
       const el = doc.createElement('i');
@@ -271,8 +271,8 @@ export class Ambient {
   chain(tier) {
     if (tier < 4 || this.now() < this.holdUntil) return;
     this.hold(2200);
-    const jump = tier >= 5 ? 150 + this.rand() * 60 : 90 + this.rand() * 40;           // 一気に別の明るい色へ（向きと幅は毎回ばらす）
-    this.go(this.hue + (this.rand() < 0.5 ? -jump : jump), 'soft', SNAP_MS, { snap: true });
+    const jump = tier >= 5 ? 150 + this.rand() * 60 : 90 + this.rand() * 40;           // 一気に別の明るい色へ（向きと幅は毎回ばらす。オリーブ色は避ける）
+    this.go(skipOlive(wrapHue(this.hue + (this.rand() < 0.5 ? -jump : jump))), 'soft', SNAP_MS, { snap: true });
   }
 
   /** 全消し（色相をぐるりと 1 周して、少し先の色へ）/ 新記録（一気に別の明るい色へ） */
@@ -287,7 +287,7 @@ export class Ambient {
     } else {
       this.hold(2400);
       const jump = 100 + this.rand() * 40;
-      this.go(this.hue + (this.rand() < 0.5 ? -jump : jump), 'soft', SNAP_MS, { snap: true });
+      this.go(skipOlive(wrapHue(this.hue + (this.rand() < 0.5 ? -jump : jump))), 'soft', SNAP_MS, { snap: true });
     }
   }
 

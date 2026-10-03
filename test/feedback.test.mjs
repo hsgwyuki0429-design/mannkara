@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop, bellPitch } from '../src/ui/sfx.js?v=202610021128';
+import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610021128';
+import { KITS } from '../src/ui/synth.js?v=202610021128';
 import { Renderer } from '../src/ui/renderer.js?v=202610021128';
 import { RIM_MS } from '../src/ui/rims.js?v=202610021128';
 
@@ -180,7 +181,7 @@ test('シャランは連鎖ごとの高さの波形（長さは同じ）を、�
   assert.equal(used.length, 8);
   assert.equal(new Set(used.slice(0, 6).map((n) => n.buffer)).size, 6, '6 連鎖までは別の波形（別の高さ）');
   assert.equal(used[6].buffer, used[1].buffer, '7 連鎖目は 2 連鎖目と同じ');
-  for (let c = 1; c <= 8; c++) assert.ok(s.waves.has(`shalan:${shalanTop(c)}`));
+  for (let c = 1; c <= 8; c++) assert.ok(s.waves.has(`chime:0:${shalanTop(c)}`));
   assert.ok(used.every((n) => Math.abs(n.playbackRate.value - 1) <= 0.011), '高さは再生の速さでなく、波形で変える（速さを変えると長さも変わる）');
   assert.ok(used.every((n) => n.stopAt - n.started < 1.4), '長さは約 1.3 秒');
   const n = s.ctx.sources.length; s.shalan(1); s.shalan(1);
@@ -189,22 +190,22 @@ test('シャランは連鎖ごとの高さの波形（長さは同じ）を、�
 });
 
 test('全消しは「シャラン、シャラン」の 2 回（2 回目は高い）、新記録のファンファーレは 1 回', () => {
-  const shalans = (x) => x.ctx.sources.filter((n) => n.buffer && [...x.waves].some(([k, w]) => k.startsWith('shalan:') && w.buf === n.buffer));
+  const shalans = (x) => x.ctx.sources.filter((n) => n.buffer && [...x.waves].some(([k, w]) => k.startsWith('chime:') && w.buf === n.buffer));
   let s = audio(); s.allClear();
   const two = shalans(s);
   assert.equal(two.length, 2);
   assert.ok(two[1].started - two[0].started > 0.3);
   assert.notEqual(two[0].buffer, two[1].buffer);
-  assert.ok(s.waves.has(`shalan:${shalanTop(1)}`) && s.waves.has(`shalan:${shalanTop(4)}`), '1 回目は 1 連鎖の高さ、2 回目は 4 連鎖の高さ');
+  assert.ok(s.waves.has(`chime:0:${shalanTop(1)}`) && s.waves.has(`chime:0:${shalanTop(4)}`), '1 回目は 1 連鎖の高さ、2 回目は 4 連鎖の高さ');
   s.stop();
   s = audio(); s.fanfare();
   assert.equal(shalans(s).length, 1);
   s.stop();
 });
 
-/** 鳴らした鈴（波形 bell:k を再生の速さで合わせたもの）の高さ（Hz）。鈴でない発音は null */
+/** 鳴らした鈴（波形 note:セット:k を再生の速さで合わせたもの）の高さ（Hz）。鈴でない発音は null */
 function bellHz(s, n) {
-  for (const [key, w] of s.waves) if (key.startsWith('bell:') && w.buf === n.buffer) return 392 * 2 ** (+key.slice(5) / 4) * n.playbackRate.value;
+  for (const [key, w] of s.waves) if (key.startsWith('note:') && w.buf === n.buffer) return 392 * 2 ** (+key.split(':')[2] / 4) * n.playbackRate.value;
   return null;
 }
 const bells = (s) => s.ctx.sources.map((n) => bellHz(s, n)).filter((f) => f !== null);
@@ -284,13 +285,103 @@ test('波形は 1 回だけ作って使い回し、warm で 1 つずつ先に作
   const s = audio();
   assert.equal(s.waves.size, 0);
   let more = true, calls = 0;
-  while (more) { more = s.warm(); assert.ok(++calls <= 21); }
-  assert.equal(s.waves.size, 21, 'ガラス 4 種 + シャラン（高さ 6 種）+ 鈴（高さ 11 段）');
-  const glass1 = s.waves.get('glass1');
-  s.glass(1); assert.equal(s.waves.get('glass1'), glass1);
+  while (more) { more = s.warm(); assert.ok(++calls <= 42); }
+  assert.equal(s.waves.size, 42, 'いまのセットと次のセットの、置く音 4 種 + シャラン（高さ 6 種）+ 鈴（高さ 11 段）');
+  const glass1 = s.waves.get('place:0:1');
+  s.glass(1); assert.equal(s.waves.get('place:0:1'), glass1);
   s.ctx = new Context(); s.connect();
   assert.equal(s.waves.size, 0);
   assert.equal(s.warm(), true);
+  s.stop();
+});
+
+/* ---- 音のセット（ガラス → 木琴 → オルゴール）をスコアでローテーション ---- */
+test('音のセットはスコアが KIT_EVERY 点進むごとに順に替わり、最後まで行ったら最初へ戻る（0 点〜は最初のガラス）', () => {
+  assert.deepEqual(KITS, ['glass', 'marimba', 'musicbox']);
+  assert.equal(KIT_EVERY, 1000);
+  assert.deepEqual([0, 1, 999, 1000, 1999, 2000, 2999, 3000, 3999, 4000, 6000].map(kitForScore), [0, 0, 0, 1, 1, 2, 2, 0, 0, 1, 0]);
+  for (const bad of [-5, NaN, undefined, null, Infinity]) assert.equal(kitForScore(bad), 0, `${bad}`);
+  assert.equal(kitForScore(964022), Math.floor(964022 / 1000) % 3, '大きなスコアでも順番に回る');
+  for (let sc = 0; sc < 20000; sc += 137) assert.ok([0, 1, 2].includes(kitForScore(sc)));
+});
+
+test('音のセットを替えると、置く音・シャラン・鈴がそのセットの波形に替わる。短い操作の音は変わらない', () => {
+  const kinds = (s) => s.ctx.sources.filter((n) => n.buffer).map((n) => [...s.waves].find(([, w]) => w.buf === n.buffer)?.[0]);
+  for (const kit of [0, 1, 2]) {
+    const s = audio(); s.setKit(kit);
+    s.place(3); s.ctx.currentTime += 1; s.shalan(2); s.ctx.currentTime += 1; s.goal(2, 1);
+    const keys = kinds(s);
+    assert.match(keys[0], new RegExp(`^place:${kit}:\\d$`), 'placing');
+    assert.match(keys[1], new RegExp(`^chime:${kit}:\\d+$`));
+    assert.ok(keys.slice(2).length === 2 && keys.slice(2).every((k) => new RegExp(`^note:${kit}:\\d+$`).test(k)), '鈴（ゴールの根音と 5 度）');
+    s.stop();
+  }
+  // どのセットでも同じ操作の音（持ち上げ・置けない）は、波形ではなく短い音で、セットに関係なく鳴る
+  for (const kit of [0, 1, 2]) { const s = audio(); s.setKit(kit); s.pick(); s.invalid(); assert.equal(s.ctx.sources.filter((n) => n.buffer).length, 0); s.stop(); }
+});
+
+test('place(cells, kit): ターンの音のセットを指定すると、いまのセットが先に替わっていても、そのターンの楽器で置く音が鳴る', () => {
+  const s = audio(); s.setKit(2);
+  s.place(2, 0); s.ctx.currentTime += 1; s.place(2, 1); s.ctx.currentTime += 1; s.place(2);
+  const keys = s.ctx.sources.filter((n) => n.buffer).map((n) => [...s.waves].find(([, w]) => w.buf === n.buffer)[0]);
+  assert.deepEqual(keys.map((k) => +k.split(':')[1]), [0, 1, 2]);
+  assert.equal(s.kit, 2, '指定しても、いまのセットは変わらない');
+  s.stop();
+});
+
+test('音のセットを替えたら、使わないセットの波形は捨て、次のセットを先に作り始める（メモリを使いすぎない）', () => {
+  const s = audio(); let started = 0; s.warmSoon = () => { started++; };
+  const kits = () => [...new Set([...s.waves.keys()].map((k) => +k.split(':')[1]))].sort();
+  let more = true; while (more) more = s.warm();                    // いまのセット 0 と、次の 1 を作る
+  assert.deepEqual(kits(), [0, 1]);
+  s.setKit(1);
+  assert.deepEqual(kits(), [1], '0 はもう使わない（次は 2）ので捨てる');
+  assert.equal(started, 1, '次のセットを空き時間に作り始める');
+  more = true; while (more) more = s.warm();
+  assert.deepEqual(kits(), [1, 2]);
+  s.setKit(2);
+  assert.deepEqual(kits(), [2], '1 を捨てる（次は 0）');
+  more = true; while (more) more = s.warm();
+  assert.deepEqual(kits(), [0, 2]);
+  s.stop();
+});
+
+test('warm はいまのセット → 次のセットの順に 1 つずつ作る。作ったものは作り直さない', () => {
+  const s = audio(); s.warmSoon = () => {};
+  const order = [];
+  const waveOf = s.waveOf.bind(s); s.waveOf = (k) => { order.push(+k.split(':')[1]); return waveOf(k); };
+  s.setKit(1);
+  let more = true; while (more) more = s.warm();
+  assert.equal(order.length, 42);
+  assert.ok(order.slice(0, 21).every((k) => k === 1) && order.slice(21).every((k) => k === 2), 'いまの 1 → 次の 2');
+  const before = order.length; s.warm(); assert.equal(order.length, before, '全部作ったら何もしない');
+  s.setKit(2);                                                       // 1 を捨て、2 は残してあるので、次の 0 だけ作る
+  more = true; while (more) more = s.warm();
+  assert.equal(order.length, before + 21);
+  assert.ok(order.slice(before).every((k) => k === 0));
+  s.stop();
+});
+
+test('kitReady: いまのセットの波形が全部できたら true（次のセットを作るのは、そのあと空き時間に）', () => {
+  const s = audio(); s.warmSoon = () => {};
+  assert.equal(s.kitReady(), false);
+  let guard = 0; while (!s.kitReady() && guard++ < 100) s.warm();
+  assert.equal(s.kitReady(), true); assert.equal(s.waves.size, 21, 'いまのセットだけ（次のセットはまだ）');
+  s.setKit(1);
+  assert.equal(s.kitReady(), false, '替えたら、そのセットを作り終えるまで false（0 は捨てられ、1 は作ってあるぶんだけ）');
+  while (!s.kitReady() && guard++ < 200) s.warm();
+  assert.equal(s.kitReady(), true);
+  s.stop();
+});
+
+test('音のセットの番号が範囲外・同じ番号なら何もしない。波形を作れない環境でも替えられる', () => {
+  const s = audio(); let started = 0; s.warmSoon = () => { started++; };
+  s.setKit(0); assert.equal(started, 0); assert.equal(s.kit, 0);
+  s.setKit(7); s.setKit(-1); s.setKit(1.5); s.setKit('x');
+  assert.equal(s.kit, 0, '範囲外はガラスへ');
+  s.setKit(2); assert.equal(s.kit, 2); assert.equal(started, 1);
+  s.ctx.createBuffer = () => { throw new Error('unavailable'); };
+  assert.doesNotThrow(() => { s.setKit(1); s.place(3); s.shalan(2); s.goal(2, 1); });
   s.stop();
 });
 
