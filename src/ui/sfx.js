@@ -1,4 +1,4 @@
-import { placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610031708';
+import { placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610032224';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -70,6 +70,7 @@ export class Sfx {
     this.ctx = null; this._enabled = true; this.paused = false;
     this.gestureAt = 0; this.stuckSince = 0; this.stale = false;
     this.voices = new Set(); this.last = new Map(); this.placement = 0; this.waves = new Map(); this.kit = 0;
+    this.requestedKit = 0; this.glassTheme = false;
     try { this._enabled = localStorage.getItem('blockmancala-sound') !== 'off'; } catch {}
   }
   get enabled() { return this._enabled; }
@@ -255,12 +256,25 @@ export class Sfx {
     return w;
   }
   /** いまのセットと、次に替わるセット（先に作っておく）。それ以外の波形はメモリに残さない */
-  wantedKits() { return [this.kit, (this.kit + 1) % KITS.length]; }
+  wantedKits() { return this.glassTheme ? [0] : [this.kit, (this.kit + 1) % KITS.length]; }
+  /** ガラス盤面では既存のガラス音を固定する。待機中のターンが別のセットを指定しても優先する。 */
+  setBoardTheme(theme) {
+    const glass = theme === 'glass';
+    if (glass === this.glassTheme) return;
+    this.glassTheme = glass;
+    this.kit = glass ? 0 : this.requestedKit;
+    this.refreshWaves();
+  }
   /** 音のセットを替える（kitForScore で決めた番号）。使わないセットの波形は捨て、次のセットを空き時間に作り始める */
   setKit(kit) {
     kit = Number.isInteger(kit) && kit >= 0 && kit < KITS.length ? kit : 0;
+    this.requestedKit = kit;
+    if (this.glassTheme) kit = 0;
     if (kit === this.kit) return;
     this.kit = kit;
+    this.refreshWaves();
+  }
+  refreshWaves() {
     const want = this.wantedKits();
     for (const key of [...this.waves.keys()]) if (!want.includes(kitOf(key))) this.waves.delete(key);
     if (this.ctx) this.warmSoon();
@@ -290,6 +304,7 @@ export class Sfx {
   // 置く音（セットの楽器: ガラスのコップ・木琴・オルゴール）。高さを順に変え（4 種）、マス数が多いほど低く重く。
   // kit = このターンの音のセット（前のターンの再生が残っていても、そのターンの楽器で鳴らす）
   place(cells = 1, kit = this.kit) {
+    if (this.glassTheme) kit = 0;
     const weight = Math.min(1, Math.max(0, (cells - 1) / 8));
     this.glass(this.placement++ % PLACE_VARIANTS, weight, kit);
     this.tone(250 - weight * 55, { dur: 0.08, gain: PLACE_THUMP[kit] ?? PLACE_THUMP[0], slide: 0.55, attack: 0.002, priority: 3 });   // 盤面が受け止める低い胴鳴り
@@ -297,6 +312,7 @@ export class Sfx {
   }
   /** 置く音の波形だけ（既定はガラスのコップ。kit で楽器を選ぶ）。variant = 高さ（0〜3）、weight = 重さ（0〜1。重いほど低い） */
   glass(variant = 0, weight = 0.3, kit = this.kit) {
+    if (this.glassTheme) kit = 0;
     this.playBuffer(`place:${kit}:${variant % PLACE_VARIANTS}`, { gain: 0.58, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
   }
   /**

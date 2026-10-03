@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610031708';
-import { KITS } from '../src/ui/synth.js?v=202610031708';
-import { Renderer } from '../src/ui/renderer.js?v=202610031708';
-import { RIM_MS } from '../src/ui/rims.js?v=202610031708';
+import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610032224';
+import { KITS } from '../src/ui/synth.js?v=202610032224';
+import { Renderer } from '../src/ui/renderer.js?v=202610032224';
+import { RIM_MS } from '../src/ui/rims.js?v=202610032224';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -327,6 +327,37 @@ test('place(cells, kit): ターンの音のセットを指定すると、いま�
   const keys = s.ctx.sources.filter((n) => n.buffer).map((n) => [...s.waves].find(([, w]) => w.buf === n.buffer)[0]);
   assert.deepEqual(keys.map((k) => +k.split(':')[1]), [0, 1, 2]);
   assert.equal(s.kit, 2, '指定しても、いまのセットは変わらない');
+  s.stop();
+});
+
+test('ガラス盤面はスコアや待機ターンの指定に関係なく既存のガラス波形を使う', () => {
+  const s = audio(); s.warmSoon = () => {};
+  s.setKit(2); s.setBoardTheme('glass');
+  for (const score of [0, 999, 1000, 1999, 2000, 3000, 7466, 943475]) {
+    const queuedKit = kitForScore(score);
+    s.setKit(queuedKit);
+    s.place(4, queuedKit); s.glass(1, .3, queuedKit);
+    s.ctx.currentTime += 1; s.shalan(2); s.goal(2);
+    assert.equal(s.kit, 0);
+    const keys = s.ctx.sources.filter((n) => n.buffer).map((n) => [...s.waves].find(([, w]) => w.buf === n.buffer)?.[0]);
+    assert.ok(keys.length >= 5 && keys.every((k) => /^(place|chime|note):0:/.test(k)), `score ${score}`);
+    s.stop(); s.ctx.sources = [];
+  }
+});
+
+test('ガラス解除は進行中のターンの楽器へ戻り、固定中は不要な次の楽器を先読みしない', () => {
+  const s = audio(); s.warmSoon = () => {};
+  while (s.warm()) {}
+  s.setBoardTheme('glass');
+  while (s.warm()) {}
+  assert.deepEqual([...new Set([...s.waves.keys()].map((k) => +k.split(':')[1]))], [0]);
+  s.setKit(1); s.setKit(2); s.setBoardTheme('gem');
+  assert.equal(s.kit, 2);
+  s.place(1);
+  assert.ok(s.ctx.sources.some((n) => n.buffer === s.waves.get('place:2:0')?.buf));
+  s.setKit(0); s.setBoardTheme('glass'); s.setBoardTheme('gem');
+  while (s.warm()) {}
+  assert.deepEqual([...new Set([...s.waves.keys()].map((k) => +k.split(':')[1]))].sort(), [0, 1]);
   s.stop();
 });
 
