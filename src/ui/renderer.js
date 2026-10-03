@@ -1,11 +1,12 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610030735';
-import { Shards } from './shards.js?v=202610030735';
-import { Sparkles } from './sparkles.js?v=202610030735';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610030735';
-import { Rims } from './rims.js?v=202610030735';
-import { colorOf } from './palette.js?v=202610030735';
-import { PLATE_SETS } from './ambient.js?v=202610030735';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610031708';
+import { Shards } from './shards.js?v=202610031708';
+import { Sparkles } from './sparkles.js?v=202610031708';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610031708';
+import { Rims } from './rims.js?v=202610031708';
+import { colorOf } from './palette.js?v=202610031708';
+import { PLATE_SETS } from './ambient.js?v=202610031708';
+import { glassElement, glassGroups } from './glass.js?v=202610031708';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -82,11 +83,14 @@ export class Renderer {
     });
     this.hiLayer = document.getElementById('hiLayer');
     this.blockLayer = document.getElementById('blockLayer');
+    this.glassLayer = document.createElement('div');
+    this.glassLayer.className = 'layer glass-blocks';
+    this.blockLayer.after(this.glassLayer);
     this.ghostLayer = document.getElementById('ghostLayer');
     this.hintLayer = document.getElementById('hintLayer');
     this.fxLayer = document.getElementById('fxLayer');
     // 消える列のハイライトは既存ブロックの上に重ねる（下にあると隠れて見えない）
-    this.blockLayer.after(this.hiLayer);
+    this.glassLayer.after(this.hiLayer);
     // マスに色が満ちる演出（空いたマスの中に塗るので、ブロックより下・マスより上）
     this.tintLayer = document.createElement('div');
     this.tintLayer.className = 'layer';
@@ -202,6 +206,7 @@ export class Renderer {
     // ブロックは今見えている位置のまま大きさだけ合わせる（盤面に合わせると、再生中のブロックが最後の位置へ飛んでしまう）。
     // 位置はどれもマスの大きさに比例するので、比で掛ければよい
     if (k !== 1) for (const el of this.els.values()) if (el.__pos) this.setPos(el, { x: el.__pos.x * k, y: el.__pos.y * k }, 0);
+    this.refreshGlass();
   }
 
   /**
@@ -248,6 +253,10 @@ export class Renderer {
 
   drawStatic() {
     const c = this.cell;
+    this.wellLayer.querySelector('.glass-plate')?.remove();
+    const plate = [];
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (isInside(x, y)) plate.push({ x, y });
+    this.wellLayer.appendChild(glassElement(plate, 'purple', c, { plate: true }));
     for (const set of this.plateSets) set.replaceChildren();
     this.tintLayer.innerHTML = '';
     this.tints = new Map();    // 'x,r' -> マスの中を色で満たす要素（最初に1回だけ作って使い回す）
@@ -314,6 +323,7 @@ export class Renderer {
     if (!el) {
       el = document.createElement('div');
       el.className = `cell block c-${block.color}`;
+      el.__color = block.color;
       this.blockLayer.appendChild(el);
       this.els.set(block.id, el);
     }
@@ -324,16 +334,46 @@ export class Renderer {
     const t = dur + 'ms', e = ease || 'cubic-bezier(.2,.8,.3,1)', tf = `translate(${p.x}px,${p.y}px)`;
     if (el.__t !== t) { el.style.setProperty('--t', t); el.__t = t; }
     if (el.__e !== e) { el.style.setProperty('--e', e); el.__e = e; }
-    if (el.__tf !== tf) { el.style.transform = tf; el.__tf = tf; }
+    if (el.__tf !== tf) { this.detachGlass(el); el.style.transform = tf; el.__tf = tf; }
     el.__pos = p;
   }
   removeEl(id) {
+    this.detachGlass(this.els.get(id));
     this.els.get(id)?.remove();
     this.els.delete(id);
     this.manual.delete(id);
   }
 
   bindBoard(board) { this._board = board; this.syncBoard(board, 0); }
+
+  /** Split a surface before one of its cells moves, so no old silhouette is left behind. */
+  detachGlass(el) {
+    const group = el?.__glassGroup;
+    if (!group) return;
+    group.surface.remove();
+    for (const cell of group.cells) { cell.el.classList.remove('glass-joined'); cell.el.__glassGroup = null; }
+  }
+
+  /** Use displayed positions, never the logical board (which may be several animations ahead). */
+  refreshGlass(excluded = new Set()) {
+    if (!this.glassLayer) return;
+    for (const el of this.els.values()) this.detachGlass(el);
+    this.glassLayer.replaceChildren();
+    if (document.documentElement.dataset.boardTheme !== 'glass') return;
+    const cells = [];
+    for (const [id, el] of this.els) {
+      if (!el.__pos || this.manual.has(id) || excluded.has(id) || el.classList.contains('fly')) continue;
+      const x = el.__pos.x / this.cell, y = el.__pos.y / this.cell;
+      if (Math.abs(x - Math.round(x)) > .001 || Math.abs(y - Math.round(y)) > .001 || !isInside(Math.round(x), Math.round(y))) continue;
+      cells.push({ x: Math.round(x), y: Math.round(y), color: el.__color, el });
+    }
+    for (const group of glassGroups(cells)) {
+      const surface = glassElement(group, group[0].color, this.cell);
+      this.glassLayer.appendChild(surface);
+      const joined = { surface, cells: group };
+      for (const cell of group) { cell.el.classList.add('glass-joined'); cell.el.__glassGroup = joined; }
+    }
+  }
 
   syncBoard(board, dur = 0, ease = '') {
     this._board = board;
@@ -344,6 +384,7 @@ export class Renderer {
       if (!this.manual.has(block.id)) this.setPos(el, this.pos(x, r), dur, ease);
     }
     for (const id of [...this.els.keys()]) if (!alive.has(id) && !this.manual.has(id)) this.removeEl(id);
+    this.refreshGlass();
   }
 
   /** 置いた直後の着地演出: ブロックがぽよんと弾み、盤面が小さく沈む（光や粒は出さない） */
@@ -361,6 +402,7 @@ export class Renderer {
       this.cancelFxTimer(el.__landT);
       el.__landT = this.later(() => el.classList.remove('pop-in', 'fit-in'), 340);
     });
+    this.refreshGlass();
     this.bounce([[0, 1], [0.22, 0.996], [0.52, fit ? 1.014 : 1.007], [1, 1]], 220);
   }
 
@@ -547,6 +589,7 @@ export class Renderer {
       if (this.manual.has(id)) continue;
       this.setPos(this.ensureEl({ id, color }), this.pos(x, r), 0);
     }
+    this.refreshGlass();
   }
 
   /**
@@ -619,6 +662,12 @@ export class Renderer {
     const P = (fx, fr) => { const q = F(fx, fr); return this.pos(q.x, q.r); };
     const src = SIZE - N;
     const els = stack.map((b) => { this.manual.add(b.id); const el = this.ensureEl(b); el.classList.add('travel'); return el; });
+    const moving = new Set(stack.map((b) => b.id));
+    for (const [id, p] of before) {
+      const q = after.get(id);
+      if (!q || p.x !== q.x || p.r !== q.r) moving.add(id);
+    }
+    this.refreshGlass(moving);
 
     // 1) 列車（9マス）: 経路上の距離 s -> 位置。s<=8 は列の中を下へ、s>8 は通路を右へ
     const along = (s) => (s <= SIZE ? P(src, s) : P(src + (s - SIZE), SIZE));
@@ -1027,6 +1076,8 @@ export class Renderer {
     for (const a of this.wrap.getAnimations({ subtree: true })) a.cancel();
     this.pausedAnimations.clear();
     for (const w of [...this.waiters]) w();
+    for (const el of this.els.values()) this.detachGlass(el);
+    this.glassLayer?.replaceChildren();
     this.blockLayer.innerHTML = '';
     this.fxLayer.replaceChildren(this.rimFx.el);
     this.shardLayer.clear();

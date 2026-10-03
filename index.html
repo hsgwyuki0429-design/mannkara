@@ -38,7 +38,8 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202610030735" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202610031708" />
+<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610031708" />
 </head>
 <body>
 <div id="app">
@@ -204,9 +205,13 @@
   </div>
 </div>
 <div id="pauseOverlay" class="overlay hidden">
-  <div class="overlay-box">
+  <div class="overlay-box pause-box">
     <p class="over-title">一時停止中</p>
     <p id="pauseRecords" class="pause-rec"></p>
+    <fieldset class="board-themes">
+      <legend>盤面の種類</legend>
+      <div id="boardThemeList" class="board-theme-list"></div>
+    </fieldset>
     <button id="btnResume" class="primary">つづける</button>
     <button id="btnHowto" class="link howto">遊び方</button>
   </div>
@@ -230,6 +235,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202610030735"></script>
+<script type="module" src="./src/ui/main.js?v=202610031708"></script>
 </body>
 </html>
