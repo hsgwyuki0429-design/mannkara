@@ -1,4 +1,4 @@
-import { placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610032224';
+import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610032323';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -63,6 +63,9 @@ for (let kit = 0; kit < KITS.length; kit++) {
   for (let k = 0; k < BELL_STEPS; k++) WAVES[`note:${kit}:${k}`] = (sr) => noteBuffer(sr, BELL_BASE * 2 ** (k / 4), kit);
 }
 const WAVE_KEYS = Object.keys(WAVES);
+// ガラス盤面は「音セット0の鈴・チャイム」ではなく、既存のコップの波形そのものを使う。
+const GLASS_KEYS = GLASS_PITCH.map((_, v) => `glass:${v}`);
+for (const [v, key] of GLASS_KEYS.entries()) WAVES[key] = (sr) => glassBuffer(sr, v);
 const kitOf = (key) => Number(key.split(':')[1]);
 
 export class Sfx {
@@ -210,6 +213,7 @@ export class Sfx {
   }
   tone(freq, { dur = 0.1, type = 'sine', gain = 0.6, at = 0, slide = 0, attack = 0.004, priority = 1 } = {}) {
     if (!this.ready()) return;
+    if (this.glassTheme) return this.glassNote(freq, { gain, at, priority, ring: Math.max(.18, dur * 3) });
     const t = this.ctx.currentTime + at;
     freq = voicedFrequency(freq * LOWER);
     const o = this.ctx.createOscillator();
@@ -257,6 +261,9 @@ export class Sfx {
   }
   /** いまのセットと、次に替わるセット（先に作っておく）。それ以外の波形はメモリに残さない */
   wantedKits() { return this.glassTheme ? [0] : [this.kit, (this.kit + 1) % KITS.length]; }
+  wantedWaveKeys() {
+    return this.glassTheme ? GLASS_KEYS : WAVE_KEYS.filter((key) => this.wantedKits().includes(kitOf(key)));
+  }
   /** ガラス盤面では既存のガラス音を固定する。待機中のターンが別のセットを指定しても優先する。 */
   setBoardTheme(theme) {
     const glass = theme === 'glass';
@@ -275,19 +282,22 @@ export class Sfx {
     this.refreshWaves();
   }
   refreshWaves() {
-    const want = this.wantedKits();
-    for (const key of [...this.waves.keys()]) if (!want.includes(kitOf(key))) this.waves.delete(key);
+    const want = this.wantedWaveKeys();
+    for (const key of [...this.waves.keys()]) if (!want.includes(key)) this.waves.delete(key);
     if (this.ctx) this.warmSoon();
   }
   /** 波形を 1 つ作っておく（まだ作っていないものがあれば true）。最初に鳴らす瞬間に、作る計算で引っかからないように。いまのセット → 次のセットの順 */
   warm() {
     if (!this.ctx || this.ctx.state === 'closed') return false;
-    const todo = this.wantedKits().flatMap((kit) => WAVE_KEYS.filter((k) => kitOf(k) === kit && !this.waves.has(k)));
+    const wanted = this.wantedWaveKeys();
+    const todo = this.glassTheme ? wanted.filter((k) => !this.waves.has(k))
+      : this.wantedKits().flatMap((kit) => wanted.filter((k) => kitOf(k) === kit && !this.waves.has(k)));
     if (todo.length && !this.waveOf(todo[0])) return false;
     return todo.length > 1;
   }
   /** いまのセットの波形が全部できているか */
-  kitReady() { return WAVE_KEYS.every((k) => kitOf(k) !== this.kit || this.waves.has(k)); }
+  kitReady() { return this.glassTheme ? GLASS_KEYS.every((k) => this.waves.has(k))
+    : WAVE_KEYS.every((k) => kitOf(k) !== this.kit || this.waves.has(k)); }
   /**
    * 起動後の空き時間に、波形を 1 つずつ作っておく（まとめて作ると、それはそれで一瞬止まるので）。いまのセットは 1.5 秒以内に必ず進める。
    * 次のセットは、遅れてもよいので、ほんとうに空いたときだけ（忙しい間は 8 秒まで待ち、ゲーム中に割り込ませない）
@@ -307,13 +317,22 @@ export class Sfx {
     if (this.glassTheme) kit = 0;
     const weight = Math.min(1, Math.max(0, (cells - 1) / 8));
     this.glass(this.placement++ % PLACE_VARIANTS, weight, kit);
-    this.tone(250 - weight * 55, { dur: 0.08, gain: PLACE_THUMP[kit] ?? PLACE_THUMP[0], slide: 0.55, attack: 0.002, priority: 3 });   // 盤面が受け止める低い胴鳴り
+    if (!this.glassTheme) this.tone(250 - weight * 55, { dur: 0.08, gain: PLACE_THUMP[kit] ?? PLACE_THUMP[0], slide: 0.55, attack: 0.002, priority: 3 });   // ガラスのコップには底の接触音も入っている
     this.vibe(10 + Math.round(weight * 5));
   }
   /** 置く音の波形だけ（既定はガラスのコップ。kit で楽器を選ぶ）。variant = 高さ（0〜3）、weight = 重さ（0〜1。重いほど低い） */
   glass(variant = 0, weight = 0.3, kit = this.kit) {
     if (this.glassTheme) kit = 0;
-    this.playBuffer(`place:${kit}:${variant % PLACE_VARIANTS}`, { gain: 0.58, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
+    const key = this.glassTheme ? GLASS_KEYS[variant % GLASS_KEYS.length] : `place:${kit}:${variant % PLACE_VARIANTS}`;
+    this.playBuffer(key, { gain: this.glassTheme ? 0.72 : 0.58, rate: (1 - weight * 0.14) * (0.98 + Math.random() * 0.04), priority: 3 });
+  }
+  /** コップの共鳴を保ったまま高さを変える。操作音・コンボの旋律も同じ4つのガラス波形から鳴らす。 */
+  glassNote(freq, { gain = .3, at = 0, priority = 1, ring = 0 } = {}) {
+    freq = Math.max(45, Number.isFinite(freq) ? freq : 1760);
+    while (freq < 1560) freq *= 2;
+    while (freq > 3120) freq /= 2;
+    const v = GLASS_PITCH.reduce((best, pitch, i) => Math.abs(Math.log2(freq / pitch)) < Math.abs(Math.log2(freq / GLASS_PITCH[best])) ? i : best, 0);
+    this.playBuffer(GLASS_KEYS[v], { gain, rate: freq / GLASS_PITCH[v], at, priority, ring });
   }
   /**
    * シャラン: バーチャイム（マークツリー）を指で 2 回なでたような、尖った高い金属の「シャン、シャン」。
@@ -323,6 +342,11 @@ export class Sfx {
    */
   shalan(chain = 1, { size = 1, at = 0 } = {}) {
     if (!at && !this.allow('shalan', 0.1)) return;
+    if (this.glassTheme) {
+      this.glassNote(note(chain - 1, 440), { gain: .4 * size, at, priority: 1 });
+      this.glassNote(note(chain, 440), { gain: .3 * size, at: at + .12, priority: 1 });
+      return;
+    }
     this.playBuffer(`chime:${this.kit}:${shalanTop(chain)}`, { gain: SHALAN_GAIN * size, rate: 0.99 + Math.random() * 0.02, at, priority: 1 });
   }
   /**
@@ -333,6 +357,7 @@ export class Sfx {
   bell(freq, { oct = 0, ...opts } = {}) { this.bellAt(bellPitch(freq, oct), opts); }
   /** 鈴を、鈴の音域に収まった高さ f（Hz）そのままで鳴らす（和音で、根音からの比で重ねるとき） */
   bellAt(f, { gain = 0.3, ring = 0.5, at = 0, priority = 1 } = {}) {
+    if (this.glassTheme) return this.glassNote(f, { gain, ring, at, priority });
     const k = Math.max(0, Math.min(BELL_STEPS - 1, Math.round(4 * Math.log2(f / BELL_BASE))));
     this.playBuffer(`note:${this.kit}:${k}`, { gain, rate: f / (BELL_BASE * 2 ** (k / 4)), at, ring, priority });
   }
@@ -402,6 +427,7 @@ export class Sfx {
   refill()      { [0, 1, 2].forEach((k) => this.bell(note(k, 784), { gain: BELL.refill, ring: 0.45, at: k * 0.05 })); }
   /** 短いざらざらした音（波・しぶき）。ノイズを帯域フィルタに通す */
   noise({ dur = 0.6, gain = 0.3, from = 400, to = 1400, q = 0.8, at = 0, attack = dur * 0.3, priority = 1 } = {}) {
+    if (this.glassTheme) return this.glassNote(from, { gain: gain * .5, at, priority, ring: Math.max(.18, dur * 2) }); // 風・割れ音もコップの接触音へ置き換える
     if (!this.ready()) return;                                  // tone() と同じ
     const ctx = this.ctx, t = ctx.currentTime + at;
     if (!this.noiseBuf) {

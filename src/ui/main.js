@@ -1,21 +1,21 @@
-import { Game } from '../core/game.js?v=202610032224';
-import { Board, createBlock } from '../core/board.js?v=202610032224';
-import { Piece } from '../core/pieces.js?v=202610032224';
-import * as Sim from '../core/sim.js?v=202610032224';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610032224';
-import { Renderer, delay } from './renderer.js?v=202610032224';
-import { Sfx, kitForScore } from './sfx.js?v=202610032224';
-import { Scenes } from './scenes.js?v=202610032224';
-import { Ambient } from './ambient.js?v=202610032224';
-import { colorOf } from './palette.js?v=202610032224';
-import { TrayDealer } from './tray-dealer.js?v=202610032224';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610032224';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610032224';
-import { drawResultCard, cardBlob } from './share-card.js?v=202610032224';
-import { World } from './world.js?v=202610032224';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610032224';
-import { BOARD_THEMES, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610032224';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610032224';
+import { Game } from '../core/game.js?v=202610032323';
+import { Board, createBlock } from '../core/board.js?v=202610032323';
+import { Piece } from '../core/pieces.js?v=202610032323';
+import * as Sim from '../core/sim.js?v=202610032323';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610032323';
+import { Renderer, delay } from './renderer.js?v=202610032323';
+import { Sfx, kitForScore } from './sfx.js?v=202610032323';
+import { Scenes } from './scenes.js?v=202610032323';
+import { Ambient } from './ambient.js?v=202610032323';
+import { colorOf } from './palette.js?v=202610032323';
+import { TrayDealer } from './tray-dealer.js?v=202610032323';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610032323';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610032323';
+import { drawResultCard, cardBlob } from './share-card.js?v=202610032323';
+import { World } from './world.js?v=202610032323';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610032323';
+import { BOARD_THEMES, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610032323';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610032323';
 
 const $ = (id) => document.getElementById(id);
 let boardTheme = readBoardTheme();
@@ -192,7 +192,7 @@ let rushBefore = 0;           // この番号より前のターンの再生は�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610032224', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610032323', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610032224';
-import { KITS } from '../src/ui/synth.js?v=202610032224';
-import { Renderer } from '../src/ui/renderer.js?v=202610032224';
-import { RIM_MS } from '../src/ui/rims.js?v=202610032224';
+import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610032323';
+import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610032323';
+import { Renderer } from '../src/ui/renderer.js?v=202610032323';
+import { RIM_MS } from '../src/ui/rims.js?v=202610032323';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -30,7 +30,7 @@ class Context {
   createDynamicsCompressor() { return new AudioNode(); }
   createOscillator() { const n = new AudioNode(); this.sources.push(n); return n; }
   createBufferSource() { return this.createOscillator(); }
-  createBuffer(c, len) { return { getChannelData: () => new Float32Array(len) }; }
+  createBuffer(c, len) { const data = new Float32Array(len); return { getChannelData: () => data }; }
   resume() { this.state = 'running'; return Promise.resolve(); }
   close() { this.state = 'closed'; return Promise.resolve(); }
 }
@@ -340,7 +340,7 @@ test('ガラス盤面はスコアや待機ターンの指定に関係なく既�
     s.ctx.currentTime += 1; s.shalan(2); s.goal(2);
     assert.equal(s.kit, 0);
     const keys = s.ctx.sources.filter((n) => n.buffer).map((n) => [...s.waves].find(([, w]) => w.buf === n.buffer)?.[0]);
-    assert.ok(keys.length >= 5 && keys.every((k) => /^(place|chime|note):0:/.test(k)), `score ${score}`);
+    assert.ok(keys.length >= 5 && keys.every((k) => /^glass:[0-3]$/.test(k)), `score ${score}`);
     s.stop(); s.ctx.sources = [];
   }
 });
@@ -350,7 +350,8 @@ test('ガラス解除は進行中のターンの楽器へ戻り、固定中は�
   while (s.warm()) {}
   s.setBoardTheme('glass');
   while (s.warm()) {}
-  assert.deepEqual([...new Set([...s.waves.keys()].map((k) => +k.split(':')[1]))], [0]);
+  assert.deepEqual([...s.waves.keys()], ['glass:0', 'glass:1', 'glass:2', 'glass:3']);
+  assert.equal(s.kitReady(), true);
   s.setKit(1); s.setKit(2); s.setBoardTheme('gem');
   assert.equal(s.kit, 2);
   s.place(1);
@@ -359,6 +360,42 @@ test('ガラス解除は進行中のターンの楽器へ戻り、固定中は�
   while (s.warm()) {}
   assert.deepEqual([...new Set([...s.waves.keys()].map((k) => +k.split(':')[1]))].sort(), [0, 1]);
   s.stop();
+});
+
+test('ガラス盤面の配置・コンボ・連鎖・全消し・操作音はすべて既存のコップの波形だけを再生する', () => {
+  const s = audio(); s.warmSoon = () => {}; s.setBoardTheme('glass');
+  const calls = [
+    ['place', 4, 2], ['pick'], ['fitHover'], ['fit'], ['hover'], ['anticipate', 4], ['invalid'],
+    ['charge', 3], ['sink', 3, 8], ['step', 1, 2], ['goal', 4, 2], ['push', 3], ['rows', 2, 3],
+    ['combo', 5], ['praise', 5], ['fanfare'], ['allClear'], ['shatter'], ['refill'], ['wave'],
+    ['pop', 3], ['bubbles'], ['blip'], ['rattle'], ['tick', 2], ['swoosh'], ['swoosh', true], ['settle'], ['over'], ['shalan', 3],
+  ];
+  for (const [method, ...args] of calls) {
+    s.ctx.currentTime += 2; s.ctx.sources = []; s[method](...args);
+    assert.ok(s.ctx.sources.length > 0, `${method} は無音にならない`);
+    for (const src of s.ctx.sources) {
+      assert.ok(src.buffer, `${method} は正弦波・三角波の発振器を使わない`);
+      const entry = [...s.waves].find(([, w]) => w.buf === src.buffer);
+      assert.match(entry?.[0] || '', /^glass:[0-3]$/, `${method} は鈴・チャイム・雑音を使わない`);
+      assert.deepEqual(src.buffer.getChannelData(0), glassBuffer(s.ctx.sampleRate, Number(entry[0].split(':')[1])));
+      assert.ok(src.buffer.getChannelData(0).some((v) => Math.abs(v) > .1), `${method} の波形に音が入っている`);
+      assert.ok(src.playbackRate.value >= .8 && src.playbackRate.value <= 1.5, `${method} はガラスの高い響きを保つ`);
+    }
+    s.stop();
+  }
+  s.setBoardTheme('gem'); s.ctx.sources = []; s.combo(3);
+  assert.ok(s.ctx.sources.some((n) => n.buffer === [...s.waves].find(([key]) => key.startsWith('note:'))?.[1].buf));
+});
+
+test('ガラスだけの音でもミュート・一時停止・中断で予約音を残さない', () => {
+  const s = audio(); s.warmSoon = () => {}; s.setBoardTheme('glass');
+  s.combo(4); assert.ok(s.voices.size === 3);
+  s.enabled = false; assert.equal(s.voices.size, 0);
+  const count = s.ctx.sources.length; s.place(4); s.allClear(); assert.equal(s.ctx.sources.length, count);
+  s.enabled = true; s.allClear(); assert.ok(s.voices.size > 0);
+  s.setPaused(true); assert.equal(s.voices.size, 0); s.combo(3); assert.equal(s.voices.size, 0);
+  s.setPaused(false); s.goal(4); assert.ok(s.voices.size > 0);
+  s.markStale(); assert.equal(s.voices.size, 0); s.place(3); assert.equal(s.voices.size, 0);
 });
 
 test('音のセットを替えたら、使わないセットの波形は捨て、次のセットを先に作り始める（メモリを使いすぎない）', () => {
