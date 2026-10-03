@@ -10,7 +10,7 @@
 @font-face{font-family:"Round One";font-weight:900;src:url(./fonts/one-900.woff2) format("woff2");unicode-range:U+31;}
 :root{
   --cell:35px;
-  --bg:#2451c4; --bg-hi:#2e60d6;
+  --bg:#3a6adf; --bg-hi:#4479f2;
   --line:rgba(150,192,255,.78);           /* ピル・丸ボタン・トレイ枠の線 */
   --text:#fff; --dim:rgba(255,255,255,.62);
   --gold:#ffd54a; --goal:#3fd6e0; --goal-text:#8ef1f8;
@@ -100,7 +100,7 @@ button{font-family:inherit;cursor:pointer;}
 /* 盤面の土台（マスの下の土台 + くぼみ + まわりの光と影）。色は .well-set の変数で、ambient.js が背景の色相に合わせて書き換える
    （背景と同じ重ね方: 色の違う層を重ねて opacity だけで切り替える。0 番だけが最初から見えていて、今の青。動かすのは opacity だけ） */
 .well-set{position:absolute;inset:0;
-  --plate:#1a3eae;--well:#1f3285;--well-s1:rgba(4,12,60,.7);--well-s2:rgba(4,12,60,.45);--well-rim:rgba(96,140,245,.8);--well-hi:rgba(150,186,255,.95);
+  --plate:#2951c2;--well:#2d4498;--well-s1:rgba(4,12,60,.7);--well-s2:rgba(4,12,60,.45);--well-rim:rgba(96,140,245,.8);--well-hi:rgba(150,186,255,.95);
   --plate-edge:rgba(80,130,255,.9);--plate-shade:rgba(0,8,50,.35);
   filter:drop-shadow(0 0 1px var(--plate-edge)) drop-shadow(0 0 5px var(--plate-shade));}
 .cell{position:absolute;left:0;top:0;width:var(--cell);height:var(--cell);}

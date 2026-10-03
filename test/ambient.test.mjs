@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   Ambient, ambientLook, comboLook, comboStyle, COMBO_STYLE, nextHue, nextTone, skipOlive, hexToOklch, oklchToHex, contrastWithWhite, wrapHue, hueDelta,
   ORIGIN, BASE_HUE, TONES, MIN_CONTRAST, BOARD, BOARD_VARS, boardLook, PLATE_SETS, CALM_EVERY, CALM_MS, COMBO_MS, SNAP_MS,
-} from '../src/ui/ambient.js?v=202610030127';
+} from '../src/ui/ambient.js?v=202610030142';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const hue = (hex) => hexToOklch(hex).h;
@@ -43,31 +43,49 @@ test('色相の計算: 一周にそろえ、近い方まわりの角度を返す
   assert.ok(Math.abs(Math.abs(hueDelta(0, 180)) - 180) < 1e-9);
 });
 
-test('最初の色は今の背景（#2451c4 / #2e60d6）そのもの。同じ明るさ・鮮やかさの青を作っても数値が合う', () => {
+test('最初の色は今の背景（styles.css の --bg / --bg-hi と同じ #3a6adf / #4479f2）そのもの。同じ明るさ・鮮やかさの青を作っても数値が合う', () => {
   const look = ambientLook(BASE_HUE, 'base');
   assert.equal(look.lo, ORIGIN.lo); assert.equal(look.hi, ORIGIN.hi);
+  const css = readFileSync(new URL('../src/ui/styles.css?v=202610030142', import.meta.url), 'utf8');
+  assert.ok(css.includes(`--bg:${ORIGIN.lo}; --bg-hi:${ORIGIN.hi};`), 'styles.css の背景と同じ（最初の 1 枚目は CSS のまま見える）');
+  for (const f of ['../index.html', '../manifest.webmanifest']) assert.ok(readFileSync(new URL(f, import.meta.url), 'utf8').includes(ORIGIN.lo), `${f} の theme-color / background_color も同じ`);
   // 元の青から読み取った明るさ・鮮やかさで同じ色相の色を作り直すと、元の青（8bit の丸め 1〜2 以内）に戻る
   const again = oklchToHex(TONES.base.L, TONES.base.C, BASE_HUE);
   const d = (a, b) => [1, 3, 5].map((i) => Math.abs(parseInt(a.slice(i, i + 2), 16) - parseInt(b.slice(i, i + 2), 16)));
   assert.ok(d(again, ORIGIN.lo).every((v) => v <= 2), `${again} vs ${ORIGIN.lo}`);
 });
 
-test('どの色相・どの濃さでも、白い固定の文字が読める（縁の色 4.5 以上、中央の明るい色も 4.3 以上）', () => {
+test('どの色相・どの濃さでも、白い固定の文字が読める（縁の色 4.0 以上、中央の明るい色も MIN_CONTRAST = 3.6 以上。明るくしたぶん、以前の 4.5 / 4.3 から下げた）', () => {
+  assert.equal(MIN_CONTRAST, 3.6);
   for (const tone of Object.keys(TONES)) {
     for (let h = 0; h < 360; h += 2) {
       const { lo, hi } = ambientLook(h, tone);
-      assert.ok(contrastWithWhite(lo) >= 4.5, `${tone} ${h}° lo ${lo} ${contrastWithWhite(lo).toFixed(2)}`);
+      assert.ok(contrastWithWhite(lo) >= 4.0, `${tone} ${h}° lo ${lo} ${contrastWithWhite(lo).toFixed(2)}`);
       assert.ok(contrastWithWhite(hi) >= MIN_CONTRAST - 0.02, `${tone} ${h}° hi ${hi} ${contrastWithWhite(hi).toFixed(2)}`);
     }
   }
 });
 
-test('明るさは色相を回しても同じ（base は今の青と同じ L、soft は淡く、deep は濃い）', () => {
+test('明るさは色相を回しても同じ（base は今の青と同じ L、soft は淡く、deep は濃い）。白との対比で下げるのは、輝度の高い緑〜青緑の淡い段だけ', () => {
   for (let h = 0; h < 360; h += 5) {
     const base = hexToOklch(ambientLook(h, 'base').lo), soft = hexToOklch(ambientLook(h, 'soft').lo), deep = hexToOklch(ambientLook(h, 'deep').lo);
     assert.ok(Math.abs(base.L - TONES.base.L) < 0.012, `${h}° base L ${base.L}`);
-    assert.ok(soft.L > base.L + 0.02 && deep.L < base.L - 0.05, `${h}° ${soft.L} ${base.L} ${deep.L}`);
+    assert.ok(soft.L > base.L && deep.L < base.L - 0.035, `${h}° ${soft.L} ${base.L} ${deep.L}`);
+    if (h < 70 || h > 270) assert.ok(soft.L > base.L + 0.02, `${h}° 赤・桃・紫の淡い段は、ふだんの色よりはっきり淡い ${soft.L} ${base.L}`);
+    assert.ok(deep.L > 0.47, `${h}° 濃い段も暗くしすぎない（以前のふだんの青 0.478 と同じくらいまで）${deep.L}`);
   }
+});
+
+test('背景は以前より明るい（動画映り）: 最初の青の明るさは 0.478 → 0.558。どの色相でもふだんの色は以前より 0.07 以上明るく、濃い段も以前のふだんの青と同じくらい', () => {
+  assert.ok(Math.abs(hexToOklch(ORIGIN.lo).L - 0.558) < 0.004, `${hexToOklch(ORIGIN.lo).L}`);
+  const OLD = 0.478;
+  for (let h = 0; h < 360; h += 10) {
+    assert.ok(hexToOklch(ambientLook(h, 'base').lo).L > OLD + 0.07, `${h}° base`);
+    assert.ok(hexToOklch(ambientLook(h, 'deep').lo).L > OLD + 0.02, `${h}° deep`);
+  }
+  // 白い小さな文字のための下限: 緑〜青緑の淡い段（輝度が高い）だけ、明るさを下げて中央の対比を保つ
+  const green = ambientLook(150, 'soft'); assert.ok(hexToOklch(green.lo).L < TONES.soft.L - 0.01);
+  assert.ok(contrastWithWhite(green.hi) >= MIN_CONTRAST - 0.02);
 });
 
 test('色相はほぼ指定どおり（鮮やかさを縮めても色相は動かない）で、中央のほうが明るい', () => {
@@ -326,7 +344,7 @@ test('色が落ち着いている間は全面の層を使わない: 変わり始
 
 /* ---------------- 盤面の土台（プレート）も背景と一緒に変わる ---------------- */
 
-const css = readFileSync(new URL('../src/ui/styles.css?v=202610030127', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../src/ui/styles.css?v=202610030142', import.meta.url), 'utf8');
 /** 'rgba(4, 12, 60, .7)' や '#1A3EAE' を比べられる形（数値の配列・小文字）にそろえる */
 const norm = (c) => (c.startsWith('#') ? c.toLowerCase() : c.match(/[\d.]+/g).map(Number));
 
@@ -342,11 +360,12 @@ test('盤面の土台の最初の色は、styles.css の .well-set の変数と�
   assert.equal(css.includes('--plate:#1a3eae; --well:#0b163f'), false, '使われていない古い変数は残さない');
 });
 
-test('土台の色: どの色相・濃さでも、背景と同じ色相で、背景より暗い板と、もっと暗いくぼみ。暗さの差は今の青と同じ', () => {
+test('土台の色: どの色相・濃さでも、背景と同じ色相で、背景より暗い板と、もっと暗いくぼみ。暗さの差は今の青と同じ（白との対比で背景を下げた色相でも、土台は背景に合わせて下がる）', () => {
   const baseGap = hexToOklch(ambientLook(BASE_HUE, 'base').lo).L - hexToOklch(BOARD.plate).L;
+  assert.ok(baseGap > 0.06 && baseGap < 0.1, `最初の青の土台は背景より少し暗い ${baseGap}`);
   for (const tone of Object.keys(TONES)) {
     for (let h = 0; h < 360; h += 6) {
-      const bg = hexToOklch(ambientLook(h, tone).lo), v = boardLook(h, tone);
+      const look = ambientLook(h, tone), bg = hexToOklch(look.lo), v = look.board;
       const plate = hexToOklch(v['--plate']), well = hexToOklch(v['--well']);
       assert.ok(Math.abs(bg.L - plate.L - baseGap) < 0.02, `${tone} ${h}° 板の暗さの差 ${(bg.L - plate.L).toFixed(3)}`);
       assert.ok(well.L < plate.L - 0.03, `${tone} ${h}° くぼみは板より暗い ${well.L.toFixed(3)} < ${plate.L.toFixed(3)}`);
@@ -416,9 +435,9 @@ test('土台の層の z-index（色が変わるたびに増える）は #wellLay
   const rule = css.match(/#wellLayer\{([^}]*)\}/);
   assert.ok(rule, '#wellLayer の規則が要る');
   assert.match(rule[1], /isolation:\s*isolate/, '重ね合わせの文脈を閉じる（以前は filter が閉じていた）');
-  const renderer = readFileSync(new URL('../src/ui/renderer.js?v=202610030127', import.meta.url), 'utf8');
+  const renderer = readFileSync(new URL('../src/ui/renderer.js?v=202610030142', import.meta.url), 'utf8');
   assert.match(renderer, /className = 'well-set';[^}]*this\.wellLayer\.appendChild\(d\)/s, '土台の層は #wellLayer の中に作る');
-  const ambient = readFileSync(new URL('../src/ui/ambient.js?v=202610030127', import.meta.url), 'utf8');
+  const ambient = readFileSync(new URL('../src/ui/ambient.js?v=202610030142', import.meta.url), 'utf8');
   assert.match(ambient, /el\.style\.zIndex = String\(p\.z = z\)/, '層の前後は z-index で決める（だから外へ漏らさない）');
   // 土台の層に z-index を付けても、盤面の中の他の層（ブロック・プレビュー・ヒント）には付かない
   const { a, sets } = makeBoard();

@@ -1,8 +1,10 @@
 /**
  * 背景の色。ベースは今の青（styles.css の --bg / --bg-hi）。コンボ・連鎖・全消し・新記録で色が変わる。
  *
- * 白い文字・ボタン・スコアの色は変えないので、どの色になっても読めるように「明るさ」は今の青にそろえる
- * （OKLCH の L を固定して、色相だけをぐるりと回す。白との対比は、縁で 6〜7、中央の明るい所でも 5 前後。淡い段でも 4.3 以上）。
+ * 白い文字・ボタン・スコアの色は変えないので、どの色になっても読めるように「明るさ」は色相によらずそろえる
+ * （OKLCH の L を固定して、色相だけをぐるりと回す）。以前の青（#2451c4）は暗くて、画面を録画した動画で映えなかったので、
+ * 全体を明るくした（LIFT。L 0.478 → 0.558）。白との対比は、縁で 4.9 前後（青）、中央の明るい所でも 4 前後。
+ * 緑・黄緑のように同じ L でも輝度が高い色は、中央の対比が MIN_CONTRAST を下回らないところまで明るさを下げる。
  * そのうえで、同じ色相の「淡い（soft）」「濃い（deep）」の2段を足す。
  *
  * 動かすのは opacity だけ: 色ごとに全面のグラデーションの層を1枚作り、新しい色の層を上に重ねて opacity 0 → 1
@@ -69,25 +71,32 @@ export const wrapHue = (h) => ((h % 360) + 360) % 360;
 /** from から to へ、近い方まわりで進む角度（-180〜180） */
 export const hueDelta = (from, to) => ((((to - from) % 360) + 540) % 360) - 180;
 
-/** 今の背景（styles.css の --bg と --bg-hi）。ここから明るさ・鮮やかさ・色相を読み取って、同じ明るさの色を作る */
-export const ORIGIN = { lo: '#2451c4', hi: '#2e60d6' };
+/**
+ * 今の背景（styles.css の --bg と --bg-hi）。ここから明るさ・鮮やかさ・色相を読み取って、同じ明るさの色を作る。
+ * 以前は #2451c4 / #2e60d6（L 0.478）。暗くて動画映りが悪かったので、色相と鮮やかさはそのまま、明るさだけを 0.08 上げた（見比べて決めた。
+ * 0.06 は変化が小さく、0.10 は白い小さな文字の対比が 3.6 まで下がる）
+ */
+export const ORIGIN = { lo: '#3a6adf', hi: '#4479f2' };
 const O = hexToOklch(ORIGIN.lo), OH = hexToOklch(ORIGIN.hi);
 export const BASE_HUE = O.h;
 /** 3段の濃さ。base = 今の青と同じ明るさ / soft = 少し淡い / deep = 濃い。up = 中央の明るい所の明るさの差 */
 export const TONES = {
   base: { L: O.L, C: O.C, up: OH.L - O.L },
-  soft: { L: O.L + 0.045, C: O.C * 0.85, up: 0.035 },
-  deep: { L: O.L - 0.083, C: O.C * 0.9, up: 0.04 },
+  soft: { L: O.L + 0.04, C: O.C * 0.85, up: 0.035 },
+  deep: { L: O.L - 0.05, C: O.C * 0.9, up: 0.04 },       // 以前は -0.083（暗すぎた）。今の deep は、以前のふだんの青と同じくらいの明るさ
 };
-/** 中央の明るい所でも、白い小さな文字（ラインの番号など）が読める下限 */
-export const MIN_CONTRAST = 4.3;
+/** 同系色の重ね（--amb-glow。コンボ・ピンチ・色の変化）の明るさ。背景より明るく見えるよう、背景を明るくしたぶん（0.08）上げた（以前は 0.68） */
+const GLOW_L = 0.76;
+/** 中央の明るい所でも、白い小さな文字（ラインの番号など。太字・文字の影つき）が読める下限（以前は 4.3。明るくしたぶん下げた。縁は中央より 0.6 ほど高い） */
+export const MIN_CONTRAST = 3.6;
 
 /**
- * 盤面の土台の、今の青（styles.css の .well-set と同じ値）。plate = マスの下の土台 / well = マスのくぼみ /
+ * 盤面の土台の、今の青（styles.css の .well-set と同じ値。以前は plate #1a3eae / well #1f3285。背景を明るくしたのに合わせて、明るさを 0.06 上げた。
+ * 背景ほど上げないのは、土台が明るすぎるとブロックが浮かなくなるので）。plate = マスの下の土台 / well = マスのくぼみ /
  * shade1・shade2 = くぼみの内側の影 / rim・hi = くぼみの縁（上下の線）/ edge・edgeShade = 盤面全体のまわりの光と影。[r, g, b, 透明度]
  */
 export const BOARD = {
-  plate: '#1a3eae', well: '#1f3285',
+  plate: '#2951c2', well: '#2d4498',
   shade1: [4, 12, 60, 0.7], shade2: [4, 12, 60, 0.45], rim: [96, 140, 245, 0.8], hi: [150, 186, 255, 0.95],
   edge: [80, 130, 255, 0.9], edgeShade: [0, 8, 50, 0.35],
 };
@@ -100,11 +109,12 @@ const boardCss = (v) => (typeof v === 'string' ? v : `rgba(${v[0]},${v[1]},${v[2
 const hexOf = (v) => (typeof v === 'string' ? v : toHex(v.slice(0, 3)));
 /**
  * 色相 hue・濃さ tone の盤面の土台の色 { '--plate': 色, ... }（CSS の変数名 → 色）。背景と同じだけ色相を回し、背景の濃さの段（soft / deep）と同じだけ
- * 明るさ・鮮やかさをずらす。元の青のときは、元の値そのもの
+ * 明るさ・鮮やかさをずらす。dL = 明るさをずらす量（既定は濃さの段のまま。背景が白との対比のために段より暗くなった色相では、背景の実際のずれを渡して、
+ * 板が背景より暗い差を、どの色でも同じに保つ）。元の青のときは、元の値そのもの
  */
-export function boardLook(hue, tone = 'base') {
+export function boardLook(hue, tone = 'base', dL = TONES[TONES[tone] ? tone : 'base'].L - O.L) {
   tone = TONES[tone] ? tone : 'base';
-  const dh = wrapHue(hue) - BASE_HUE, dL = TONES[tone].L - O.L, cs = TONES[tone].C / O.C;
+  const dh = wrapHue(hue) - BASE_HUE, cs = TONES[tone].C / O.C;
   const same = tone === 'base' && Math.abs(hueDelta(hue, BASE_HUE)) < 0.05;
   const look = {};
   for (const [name, key] of Object.entries(BOARD_VARS)) {
@@ -125,16 +135,15 @@ export function ambientLook(hue, tone = 'base') {
   let look = looks.get(key);
   if (look) return look;
   const t = TONES[tone];
-  let lo, hi;
+  let L = t.L, lo, hi;
   if (tone === 'base' && Math.abs(hueDelta(hue, BASE_HUE)) < 0.05) { lo = ORIGIN.lo; hi = ORIGIN.hi; }      // 最初は今の背景そのもの
   else {
-    let L = t.L;
     lo = oklchToHex(L, t.C, hue);
     hi = oklchToHex(L + t.up, t.C + 0.003, hue);
     while (contrastWithWhite(hi) < MIN_CONTRAST && L > 0.3) { L -= 0.005; lo = oklchToHex(L, t.C, hue); hi = oklchToHex(L + t.up, t.C + 0.003, hue); }
   }
-  const glow = oklchToRgb(0.68, 0.15, hue).join(',');
-  look = { hue, tone, lo, hi, glow, board: boardLook(hue, tone) };
+  const glow = oklchToRgb(GLOW_L, 0.15, hue).join(',');
+  look = { hue, tone, lo, hi, glow, board: boardLook(hue, tone, L - O.L) };
   looks.set(key, look);
   return look;
 }

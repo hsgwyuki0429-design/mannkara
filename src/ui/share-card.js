@@ -1,6 +1,6 @@
-import { SIZE, isInside } from '../core/constants.js?v=202610030127';
-import { gemSprite } from './shards.js?v=202610030127';
-import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610030127';
+import { SIZE, isInside } from '../core/constants.js?v=202610030142';
+import { gemSprite } from './shards.js?v=202610030142';
+import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610030142';
 
 /**
  * 結果カード（シェア用の1枚の画像）: ロゴ・スコア・最大連鎖・最大コンボ・最後の盤面・遊べる URL。
@@ -28,10 +28,10 @@ export async function drawResultCard(data) {
   cv.width = CARD_W; cv.height = CARD_H;
   const g = cv.getContext('2d');
   // 背景: ゲームと同じ青（まん中が少し明るい）
-  g.fillStyle = '#2451c4';
+  g.fillStyle = '#3a6adf';
   g.fillRect(0, 0, CARD_W, CARD_H);
   const bg = g.createRadialGradient(CARD_W / 2, CARD_H * 0.36, 0, CARD_W / 2, CARD_H * 0.36, CARD_H * 0.62);
-  bg.addColorStop(0, '#2e60d6'); bg.addColorStop(1, 'rgba(36,81,196,0)');
+  bg.addColorStop(0, '#4479f2'); bg.addColorStop(1, 'rgba(58,106,223,0)');
   g.fillStyle = bg;
   g.fillRect(0, 0, CARD_W, CARD_H);
   g.textAlign = 'center';
@@ -135,9 +135,9 @@ function drawBoard(g, board, cx, top, c) {
   // 土台: ふちの線を先に描いてから面で覆う（外周の線だけが残る）
   g.strokeStyle = '#6f93ea'; g.lineWidth = 5; g.lineJoin = 'round';
   for (const p of cells) { diamond(p, 1.04); g.stroke(); }
-  g.fillStyle = '#1a3eae';
+  g.fillStyle = '#2951c2';
   for (const p of cells) { diamond(p, 1.04); g.fill(); }
-  g.fillStyle = '#16296f';
+  g.fillStyle = '#243a82';
   for (const p of cells) { diamond(p, 0.84); g.fill(); }
   // ブロック（奥から手前の順に: 上の方のマスから）
   const blocks = board.map(([x, r, color]) => ({ ...at(x, r), color })).sort((a, b) => a.y - b.y);
