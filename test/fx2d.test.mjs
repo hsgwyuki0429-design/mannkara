@@ -222,6 +222,26 @@ test('rimSprite: 外側のにじみ・外側の細い白・内側のにじみ・
   assert.equal(names.filter((n) => n === 'clip').length, 2, '外側のにじみは枠の外だけ、内側のにじみは枠の中だけ');
 });
 
+test('FxCanvas.setEvery: 2 コマに 1 回だけ描く（最初のコマはすぐ描く）。粒の動きは時刻で決まるので間引いても速さは同じで、終わったら外れる', () => {
+  const t = setup(), { fx } = t, drawn = [];
+  fx.fit(0, 0, 10, 10);
+  assert.equal(fx.every, 1);
+  fx.setEvery(2); assert.equal(fx.every, 2);
+  fx.setEvery(0); assert.equal(fx.every, 1, '1 より小さい・数でない値は 1'); fx.setEvery('x'); assert.equal(fx.every, 1);
+  fx.setEvery(2.4); assert.equal(fx.every, 2);
+  fx.add({ start: 0, end: 100, draw: (g, now) => drawn.push(now), done: () => drawn.push('done') });
+  const clear0 = fx.ctx.calls.filter((c) => c[0] === 'clearRect').length;
+  for (let i = 0; i < 6; i++) { t.at(10 + i * 16); t.step(); }
+  assert.deepEqual(drawn, [10, 42, 74], '1・3・5 コマ目だけ描く');
+  assert.equal(fx.ctx.calls.filter((c) => c[0] === 'clearRect').length - clear0, 3, '間引くコマは canvas を書き換えない（消しもしない）');
+  assert.equal(t.pending(), 1, '間引いても、次のコマは頼む');
+  t.at(120); t.step(); t.at(136); t.step();                    // 1 コマ目で終わりを見つけて、done を呼ぶ
+  assert.equal(drawn.at(-1), 'done'); assert.equal(fx.el.hidden, true); assert.equal(t.pending(), 0);
+  fx.add({ start: 200, end: 300, draw: (g, now) => drawn.push(now) });                    // 空いたあとの最初のコマも、すぐ描く
+  t.at(210); t.step();
+  assert.equal(drawn.at(-1), 210);
+});
+
 test('softwareRendering: WebGL の描画装置の名前でソフトウェア描画（SwiftShader・llvmpipe など）を見分ける。分からなければ GPU ありとして扱う', () => {
   const withRenderer = (name, { ext = true, lose = [] } = {}) => {
     globalThis.document = {

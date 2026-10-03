@@ -72,6 +72,8 @@ export class FxCanvas {
     this.x = 0; this.y = 0; this.w = 0; this.h = 0; // 覆う範囲（親の座標）
     this.items = [];
     this.raf = 0;
+    this.every = 1;                                 // 何コマに 1 回描くか（ソフトウェア描画では 2。canvas の中身が変わるたびに画面 1 枚ぶんの写しが要るので、半分にする）
+    this.sinceDraw = 0;
     this.paused = false;
     this.pausedAt = 0;
     this.tick = () => this.frame();
@@ -90,6 +92,9 @@ export class FxCanvas {
     this.ctx.imageSmoothingQuality = 'high';
   }
 
+  /** 何コマに 1 回描くか（1 = 毎コマ）。粒の動きは時刻で決めるので、間引いても速さは変わらず、なめらかさだけが落ちる */
+  setEvery(n) { this.every = Math.max(1, Math.round(n) || 1); }
+
   /** 描く細かさの上限を変える（覆う範囲はそのまま） */
   setDprMax(v) {
     if (v === this.dprMax) return;
@@ -102,7 +107,7 @@ export class FxCanvas {
   add(item) {
     this.items.push(item);
     this.el.hidden = false;
-    if (!this.raf && !this.paused) this.raf = requestAnimationFrame(this.tick);
+    if (!this.raf && !this.paused) { this.sinceDraw = this.every; this.raf = requestAnimationFrame(this.tick); }      // 最初のコマはすぐ描く
   }
 
   /** owner の粒だけを捨てる（done は呼ばない） */
@@ -137,11 +142,13 @@ export class FxCanvas {
     }
     const dt = this.now() - this.pausedAt;
     for (const it of this.items) { it.start += dt; it.end += dt; }
-    if (this.items.length && !this.raf) this.raf = requestAnimationFrame(this.tick);
+    if (this.items.length && !this.raf) { this.sinceDraw = this.every; this.raf = requestAnimationFrame(this.tick); }
   }
 
   frame() {
     this.raf = 0;
+    if (++this.sinceDraw < this.every) { this.raf = requestAnimationFrame(this.tick); return; }       // 間引くコマ: 何も書き換えない（canvas を更新しなければ、写しも要らない）
+    this.sinceDraw = 0;
     const now = this.now(), g = this.ctx, items = this.items, k = this.k;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, this.el.width, this.el.height);

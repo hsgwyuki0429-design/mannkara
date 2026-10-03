@@ -204,10 +204,13 @@ export class Renderer {
     if (k !== 1) for (const el of this.els.values()) if (el.__pos) this.setPos(el, { x: el.__pos.x * k, y: el.__pos.y * k }, 0);
   }
 
-  /** 小さな演出の canvas の細かさを、描画装置に合わせる（GPU が無い端末では粗くして、毎フレームの仕事を減らす。起動後の空き時間に 1 度） */
+  /**
+   * 小さな演出の canvas の細かさと更新の頻度を、描画装置に合わせる（起動後の空き時間に 1 度）。GPU が無い端末（ソフトウェア描画）では、
+   * canvas の中身を書き換えるたびに画面の面積ぶんの写しが要るので、細かさを 1 倍・2 コマに 1 回の更新（30fps）にして、毎フレームの仕事を減らす
+   */
   tuneFxDensity() {
     if (!softwareRendering()) return;
-    this.fxTop.setDprMax(1); this.rimFx.setDprMax(1);
+    for (const fx of [this.fxTop, this.rimFx]) { fx.setDprMax(1); fx.setEvery(2); }
   }
 
   /** 盤面と同じ見え方にする transform（ドラッグ中のピースにも使う） */

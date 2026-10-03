@@ -189,8 +189,8 @@
     canvas（GPU で描く）なら粒の数によらず 1 枚の層と `drawImage` だけで、粒に使う仕事は同じ 60 個で約 1/7。色ごとに 1 回だけ描いた小さな絵（星 64px・宝石 64px・光の枠）を、拡大・回転・濃さを変えて貼る。
     何も描いていない間は canvas を画面から外す（`hidden`）ので、層は残らない。星・かけらはブロックの前（`.fx2`）、光の跡は以前の光る要素と同じ重なり（動いているブロックの後ろ。`#fxLayer`）。
     動き（ease-out・区切りごとの直線・放物線）は以前の Web Animations と同じ式（`sparkPose` / `shardPose` / `rimPose`）。同時に 星 36 個・かけら 14 個（全消しは 42）まで。
-    一時停止は canvas の時計も止める。GPU を使わない描画（ソフトウェア。仮想マシンなど）では canvas が面積と密度の 2 乗に比例して重くなるので、起動後の空き時間に WebGL の
-    描画装置の名前で見分け（`softwareRendering`）、そのときだけ描く細かさを 1 倍に下げる
+    一時停止は canvas の時計も止める。GPU を使わない描画（ソフトウェア。仮想マシンなど）では、canvas の中身を書き換えるたびに画面の面積ぶんの写しが要り、面積と密度の 2 乗に比例して重くなるので、
+    起動後の空き時間に WebGL の描画装置の名前で見分け（`softwareRendering`）、そのときだけ描く細かさを 1 倍に下げ、2 コマに 1 回の更新（30fps。動きは時刻で決まるので、速さは同じで、なめらかさだけが少し落ちる）にする
   - マスに満ちる色の要素（36 個）は、色が満ちている間だけ画面に出す（常に 36 個あると、何も動いていなくても描画の仕事が増える）
   - ブロックが動いている間のフレーム時間を測り、遅い端末では かけら・波打ち・1文字ずつの文字・マスに満ちる色 を自動で減らす（`Renderer.q`）
   - アニメーションのやり直しに `offsetWidth` を読む強制レイアウトは使わない（Web Animations か要素の差し替え）
@@ -324,7 +324,8 @@
 - ルールのテスト: `node test/rules.test.mjs`（DOM 不要）
 - 効果音・演出の停止/再開・ラインの光のテスト: `node --test test/feedback.test.mjs`（DOM 不要）
 - 背景の色（明るさ・白とのコントラスト・色の進み方・層の入れ替え）と、盤面の土台の色（背景と同じ色相・暗さの差・層の同期）のテスト: `node --test test/ambient.test.mjs`
-- ガラス・シャラン・鈴の波形（部分音の比・減衰・音量・2 回はじける構造・高い帯域の多さ・鈴の部分音・44.1kHz でも作れること）のテスト: `node --test test/synth.test.mjs`
+- ガラス・木琴・オルゴールの波形（部分音の比・減衰・音量・2 回はじける構造・高い帯域の多さ・鈴の部分音・3 セットの大きさのそろい・44.1kHz でも作れること）のテスト: `node --test test/synth.test.mjs`
+- 小さな演出の canvas（動きの式が以前の Web Animations と同じ・一時停止・間引き・描画装置の見分け・光の枠の絵）のテスト: `node --test test/fx2d.test.mjs`
 - ローカル: `python3 -m http.server` で `index.html` を開く
 - **デプロイ前に `node scripts/stamp.mjs`**：CSS/JS の参照に `?v=` を付け直し、スマホが古いファイルと新しいファイルを混ぜて読むのを防ぐ
 
@@ -336,13 +337,14 @@ src/core/   constants.js board.js pieces.js mancala.js score.js game.js ranking.
             dealer.js dealer-worker.js                                   … 手駒の決め方・おすすめを Web Worker で動かす
 src/ui/     renderer.js scenes.js shards.js palette.js main.js sfx.js styles.css … 描画・入力・音
             ambient.js                                                   … 背景と盤面の土台の色（同じ明るさで色相を回す。層の重ねは opacity だけ）
-            sparkles.js                                                  … キラキラの星（ラインの枠・通り過ぎた跡・ゴール）
-            synth.js                                                     … ガラスを置く音・シャラン・鈴の波形（純粋な計算）
+            sparkles.js rims.js                                          … キラキラの星（ラインの枠・通り過ぎた跡・ゴール）・通り過ぎた跡の光（どちらも canvas）
+            fx2d.js                                                      … 小さな演出を 1 枚の canvas に描く（`FxCanvas`。動きの式・描画装置の見分け）
+            synth.js                                                     … ガラス・木琴・オルゴールの 置く音・シャラン・鈴の波形（純粋な計算）
             brand.js share-card.js                                       … ゲーム名・URL・端末の記録の名前 / 結果カード
             tray-dealer.js                                               … Web Worker（dealer-worker.js）との窓口
             tutorial-steps.js                                            … チュートリアルの盤面・手駒・説明
 functions/  api/ranking.js api/admin.js                                        … 世界ランキングの API・名前を隠す管理 API（Cloudflare Pages Functions + D1）
-test/       rules.test.mjs feedback.test.mjs ambient.test.mjs synth.test.mjs
+test/       rules.test.mjs feedback.test.mjs ambient.test.mjs synth.test.mjs fx2d.test.mjs
 scripts/    stamp.mjs build-allclear.mjs subset-fonts.py
 ```
 
