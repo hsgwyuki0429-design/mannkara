@@ -1,7 +1,7 @@
-import { SIZE, isInside } from '../core/constants.js?v=202610032323';
-import { gemSprite } from './shards.js?v=202610032323';
-import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610032323';
-import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './glass.js?v=202610032323';
+import { SIZE, isInside } from '../core/constants.js?v=202610040525';
+import { gemSprite } from './shards.js?v=202610040525';
+import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610040525';
+import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './glass.js?v=202610040525';
 
 /**
  * 結果カード（シェア用の1枚の画像）: ロゴ・スコア・最大連鎖・最大コンボ・最後の盤面・遊べる URL。
@@ -9,6 +9,8 @@ import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './
  * 4:5 の縦長（SNS のタイムラインでそのまま大きく見える形）
  */
 export const CARD_W = 1080, CARD_H = 1350;
+/** 盤面の中心（斜辺の中心線）の位置と 1 マスの大きさ（3D の絵もこの位置に描く） */
+export const CARD_BOARD = { cx: CARD_W / 2, cy: 742, cell: 60 };
 const FONT = '"Round One","Nunito","M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Arial Rounded MT Bold",sans-serif';
 const DIM = '#b9ccff', GOLD = '#ffd54a';
 
@@ -29,13 +31,18 @@ export async function drawResultCard(data) {
   cv.width = CARD_W; cv.height = CARD_H;
   const g = cv.getContext('2d');
   const glass = data.theme === 'glass';
-  // 背景: ゲームと同じ青（まん中が少し明るい）
-  g.fillStyle = glass ? GLASS_BACKGROUND : '#3a6adf';
-  g.fillRect(0, 0, CARD_W, CARD_H);
-  const bg = g.createRadialGradient(CARD_W / 2, CARD_H * 0.36, 0, CARD_W / 2, CARD_H * 0.36, CARD_H * 0.62);
-  bg.addColorStop(0, glass ? GLASS_HIGHLIGHT : '#4479f2'); bg.addColorStop(1, glass ? 'rgba(94,74,194,0)' : 'rgba(58,106,223,0)');
-  g.fillStyle = bg;
-  g.fillRect(0, 0, CARD_W, CARD_H);
+  if (data.image3d) {
+    // 3D: 背景と盤面は、ゲームと同じ描き方で描いた 1 枚の絵（cube3d.js の snapshot。盤面の位置は下の drawBoard と同じ）
+    g.drawImage(data.image3d, 0, 0, CARD_W, CARD_H);
+  } else {
+    // 背景: ゲームと同じ青（まん中が少し明るい）
+    g.fillStyle = glass ? GLASS_BACKGROUND : '#3a6adf';
+    g.fillRect(0, 0, CARD_W, CARD_H);
+    const bg = g.createRadialGradient(CARD_W / 2, CARD_H * 0.36, 0, CARD_W / 2, CARD_H * 0.36, CARD_H * 0.62);
+    bg.addColorStop(0, glass ? GLASS_HIGHLIGHT : '#4479f2'); bg.addColorStop(1, glass ? 'rgba(94,74,194,0)' : 'rgba(58,106,223,0)');
+    g.fillStyle = bg;
+    g.fillRect(0, 0, CARD_W, CARD_H);
+  }
   g.textAlign = 'center';
   g.textBaseline = 'alphabetic';
 
@@ -61,7 +68,8 @@ export async function drawResultCard(data) {
     label(name, x, 530, 32);
     shadow(g, () => { g.font = `900 92px ${FONT}`; g.fillStyle = '#fff'; g.fillText(String(v), x, 626); });
   }
-  if (glass) await drawGlassBoard(g, data.board, CARD_W / 2, 742, 60);
+  if (data.image3d) { /* 盤面は背景の絵に入っている */ }
+  else if (glass) await drawGlassBoard(g, data.board, CARD_W / 2, 742, 60);
   else drawBoard(g, data.board, CARD_W / 2, 742, 60);
   // 遊べる場所
   label('ブラウザで すぐ遊べる', CARD_W / 2, 1222, 32);

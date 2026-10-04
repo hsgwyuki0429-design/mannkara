@@ -1,4 +1,4 @@
-import { colorOf } from './palette.js?v=202610032323';
+import { colorOf } from './palette.js?v=202610040525';
 
 /**
  * ゴールから飛び散る宝石のかけら。
@@ -20,11 +20,15 @@ function mix(a, b, t) {
 }
 
 const SPRITES = new Map();
+/** 3D の盤面の間は、かけらもガラスの立方体の絵（cube3d.js の sprites）にする。null で宝石の絵に戻す */
+let override = null;
+export function useSprites(map) { override = map; }
 /**
  * 色ごとの宝石のかけらの絵（styles.css の .block と同じ塗り分け。画面の左上から光が当たる）。
  * 盤面の演出（Shards）と画面全体の演出（scenes.js の紙吹雪）で同じ絵を使い、作画をそろえる
  */
 export function gemSprite(name) {
+  if (override?.has(name)) return override.get(name);
   let img = SPRITES.get(name);
   if (img) return img;
   const c = colorOf(name), S = SPRITE, h = S / 2, k = S * 0.2;     // k = テーブル面までの距離

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610032323';
-import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610032323';
-import { Renderer } from '../src/ui/renderer.js?v=202610032323';
-import { RIM_MS } from '../src/ui/rims.js?v=202610032323';
+import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610040525';
+import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610040525';
+import { Renderer } from '../src/ui/renderer.js?v=202610040525';
+import { RIM_MS } from '../src/ui/rims.js?v=202610040525';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -385,6 +385,20 @@ test('ガラス盤面の配置・コンボ・連鎖・全消し・操作音は�
   }
   s.setBoardTheme('gem'); s.ctx.sources = []; s.combo(3);
   assert.ok(s.ctx.sources.some((n) => n.buffer === [...s.waves].find(([key]) => key.startsWith('note:'))?.[1].buf));
+});
+
+test('3D の盤面（ガラスの立方体）もガラス盤面と同じく、既存のガラスのコップの波形だけを使う', () => {
+  const s = audio(); s.warmSoon = () => {};
+  s.setKit(2); s.setBoardTheme('3d');
+  assert.equal(s.kit, 0);
+  while (s.warm()) {}
+  assert.deepEqual([...s.waves.keys()], ['glass:0', 'glass:1', 'glass:2', 'glass:3']);
+  s.ctx.sources = []; s.place(4, 2); s.ctx.currentTime += 1; s.shalan(2); s.goal(2); s.combo(3);
+  const keys = s.ctx.sources.filter((n) => n.buffer).map((n) => [...s.waves].find(([, w]) => w.buf === n.buffer)?.[0]);
+  assert.ok(keys.length >= 4 && keys.every((k) => /^glass:[0-3]$/.test(k)));
+  s.setBoardTheme('gem');
+  assert.equal(s.kit, 2);
+  s.stop();
 });
 
 test('ガラスだけの音でもミュート・一時停止・中断で予約音を残さない', () => {
