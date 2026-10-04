@@ -69,7 +69,7 @@ export const SCORE_PER_RECT_CELL = 10;
 export const WAYS_MAX = 300;
 /** 目標の何倍以内なら、その候補で決める */
 export const WAYS_TOLERANCE = 2;
-export const TIGHT_RATE = 0.2;
+export const TIGHT_RATE = 0.05;
 export const TIGHT_MAX_FILL = 0.6;         // ブロック 16 個まで
 export const TIGHT_MIN_SPOTS = 4;
 export const TIGHT_MAX_WAYS = 2;

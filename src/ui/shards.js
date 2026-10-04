@@ -1,4 +1,4 @@
-import { colorOf } from './palette.js?v=202610040525';
+import { colorOf } from './palette.js?v=202610040947';
 
 /**
  * ゴールから飛び散る宝石のかけら。

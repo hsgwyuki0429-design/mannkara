@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202610040525';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610040525';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610040525';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610040525';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610040525';
-import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610040525';
-import * as Sim from '../src/core/sim.js?v=202610040525';
-import { DealerCore } from '../src/core/dealer.js?v=202610040525';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610040525';
-import { ScoreManager } from '../src/core/score.js?v=202610040525';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610040525';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610040525';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610040525';
+import { Board, createBlock } from '../src/core/board.js?v=202610040947';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610040947';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610040947';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610040947';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610040947';
+import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610040947';
+import * as Sim from '../src/core/sim.js?v=202610040947';
+import { DealerCore } from '../src/core/dealer.js?v=202610040947';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610040947';
+import { ScoreManager } from '../src/core/score.js?v=202610040947';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610040947';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610040947';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610040947';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610040525';
+  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610040947';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -498,7 +498,7 @@ console.log('ときどき「1つずつなら置けるのに、3つとも置け�
   eq(ok && found > 0, true, `置き方は1〜2通り・どの形も1つずつなら ${TIGHT_MIN_SPOTS} か所以上に置ける (${found}/${tries} 盤面で見つかった)`);
 }
 {
-  // 補充のたびに約20%（見つからなければ次の補充で探し直すので、出る割合もおよそ20%）
+  // 補充のたびに約5%（見つからなければ次の補充で探し直すので、出る割合もおよそ5%）
   let seed = 31, tight = 0, n = 0;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd });
@@ -508,7 +508,7 @@ console.log('ときどき「1つずつなら置けるのに、3つとも置け�
     g.spawnTray(); n++;
     if (g.lastLineup.kind === 'tight') tight++;
   }
-  eq(tight / n > 0.12 && tight / n < 0.30, true, `置き方の少ない組み合わせの割合 ${(tight / n * 100).toFixed(0)}%`);
+  eq(tight / n > 0.015 && tight / n < 0.11, true, `置き方の少ない組み合わせの割合 ${(tight / n * 100).toFixed(0)}%`);
   let high = 0;
   for (let i = 0; i < 60; i++) { g.board = boardWithBlocks(rnd, 17, 27); g.spawnTray(); if (g.lastLineup.kind === 'tight') high++; }
   eq(high, 0, '6割以上埋まっているときは出さない（ふつうの目標がもともと少ない）');
@@ -1016,7 +1016,7 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202610040525');
+  const api = await import('../functions/api/ranking.js?v=202610040947');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');
@@ -1057,7 +1057,7 @@ console.log('世界ランキングの API（functions/api/ranking.js）');
     eq((await api.ranking(d1, C, 0, 9999)).top.length, api.PAGE_MAX, '1回に読めるのは PAGE_MAX 人まで');
     eq([...p1.top, ...p2.top].map((x) => x.rank), Array.from({ length: 100 }, (_, i) => i + 1), 'ページをつなげても順位が飛ばない');
     // 不適切な名前を隠す（作成者だけ。書き換えはできない）
-    const admin = await import('../functions/api/admin.js?v=202610040525');
+    const admin = await import('../functions/api/admin.js?v=202610040947');
     const P = '5'.repeat(32), Q = '6'.repeat(32);
     await api.submit(d1, { id: P, name: 'わるい名前', score: 700 }, 1000);
     await api.submit(d1, { id: Q, name: 'ふつう', score: 650 }, 1001);
