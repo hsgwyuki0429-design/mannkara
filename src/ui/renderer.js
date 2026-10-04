@@ -1,12 +1,12 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610032323';
-import { Shards } from './shards.js?v=202610032323';
-import { Sparkles } from './sparkles.js?v=202610032323';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610032323';
-import { Rims } from './rims.js?v=202610032323';
-import { colorOf } from './palette.js?v=202610032323';
-import { PLATE_SETS } from './ambient.js?v=202610032323';
-import { glassElement, glassGroups } from './glass.js?v=202610032323';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610040525';
+import { Shards } from './shards.js?v=202610040525';
+import { Sparkles } from './sparkles.js?v=202610040525';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610040525';
+import { Rims } from './rims.js?v=202610040525';
+import { colorOf } from './palette.js?v=202610040525';
+import { PLATE_SETS } from './ambient.js?v=202610040525';
+import { glassElement, glassGroups } from './glass.js?v=202610040525';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -156,6 +156,9 @@ export class Renderer {
     this.celebration = 0;
     this.els = new Map();     // blockId -> element
     this.manual = new Set();  // 手動制御中
+    // 3D の盤面（cube3d.js）。選ばれている間だけ入る。ブロックの位置はここの要素（el.__pos）から毎フレーム読み、
+    // 着地・溜め・ゴール・仮置き・マスに満ちる色・全消しは、ここから知らせる
+    this.view3d = null;
     this.cell = 40;
     this.layout();
     window.addEventListener('resize', () => this.layout());
@@ -207,6 +210,7 @@ export class Renderer {
     // 位置はどれもマスの大きさに比例するので、比で掛ければよい
     if (k !== 1) for (const el of this.els.values()) if (el.__pos) this.setPos(el, { x: el.__pos.x * k, y: el.__pos.y * k }, 0);
     this.refreshGlass();
+    this.view3d?.layout();
   }
 
   /**
@@ -326,6 +330,7 @@ export class Renderer {
       el.__color = block.color;
       this.blockLayer.appendChild(el);
       this.els.set(block.id, el);
+      this.view3d?.invalidate();
     }
     return el;
   }
@@ -334,7 +339,7 @@ export class Renderer {
     const t = dur + 'ms', e = ease || 'cubic-bezier(.2,.8,.3,1)', tf = `translate(${p.x}px,${p.y}px)`;
     if (el.__t !== t) { el.style.setProperty('--t', t); el.__t = t; }
     if (el.__e !== e) { el.style.setProperty('--e', e); el.__e = e; }
-    if (el.__tf !== tf) { this.detachGlass(el); el.style.transform = tf; el.__tf = tf; }
+    if (el.__tf !== tf) { this.detachGlass(el); el.style.transform = tf; el.__tf = tf; this.view3d?.invalidate(); }
     el.__pos = p;
   }
   removeEl(id) {
@@ -342,6 +347,7 @@ export class Renderer {
     this.els.get(id)?.remove();
     this.els.delete(id);
     this.manual.delete(id);
+    this.view3d?.invalidate();
   }
 
   bindBoard(board) { this._board = board; this.syncBoard(board, 0); }
@@ -403,6 +409,7 @@ export class Renderer {
       el.__landT = this.later(() => el.classList.remove('pop-in', 'fit-in'), 340);
     });
     this.refreshGlass();
+    this.view3d?.land(placed.map(({ block }, i) => ({ id: block.id, delay: Math.min(i * 9, 36) })), fit);
     this.bounce([[0, 1], [0.22, 0.996], [0.52, fit ? 1.014 : 1.007], [1, 1]], 220);
   }
 
@@ -426,17 +433,20 @@ export class Renderer {
       this.ghostLayer.appendChild(d);
     }
     // 斜辺側の端から順に光が走り込むよう、少しずつ遅らせる
-    const seen = new Set();
+    const seen = new Set(), hi = [];
     for (const { x, r } of clearCells) {
       const k = `${x},${r}`;
       if (seen.has(k)) continue;
       seen.add(k);
+      hi.push({ x, r, d: (x + r) * 14 });
       const d = document.createElement('div');
       d.className = `cell hi c-${piece.color}` + (fresh ? ' enter' : '');
       d.style.transform = `translate(${x * c}px,${r * c}px)`;
       d.style.setProperty('--d', (x + r) * 14 + 'ms');
       this.hiLayer.appendChild(d);
     }
+    this.view3d?.setPreview({ key, cells: piece.cells.map((cc) => ({ x: ox + cc.x, r: oy + cc.y })), color: piece.color,
+      strong: willClear, fit: fit?.kind ?? null, hi, fresh });
     this.litLines(lines, piece.color);
     this.goal.classList.toggle('ready', willClear);
   }
@@ -481,6 +491,7 @@ export class Renderer {
   clearPreview() {
     this.ghostLayer.innerHTML = ''; this.hiLayer.innerHTML = '';
     this._pvKey = null;
+    this.view3d?.setPreview(null);
     this.litLines([]);
     this.goal.classList.remove('ready');
   }
@@ -501,9 +512,12 @@ export class Renderer {
       el.style.setProperty('--charge', ms + 'ms');
       el.classList.add('charging');
     }
+    const ids = stack.map((b) => b.id);
+    this.view3d?.charge(ids, ms);
     this.numEls?.get(kind + n)?.animate([{ scale: '1' }, { scale: '1.5' }, { scale: '1' }], { duration: ms + 160, easing: 'ease-out' });
     await this.wait(ms);
     for (const el of els) el.classList.remove('charging');
+    this.view3d?.charge(ids, 0);
   }
 
   /** 再生の時間で ms 待つ（一時停止中は止まり、速めると早く終わる。早送り・リスタートしたらすぐ終わる） */
@@ -569,6 +583,7 @@ export class Renderer {
       else this.armFxTimer(t);
     }
     this.fxTop.setPaused(on); this.rimFx.setPaused(on);
+    this.view3d?.setPaused(on);
     if (on) {
       for (const a of this.wrap.getAnimations({ subtree: true })) if (a.playState === 'running') {
         a.pause(); this.pausedAnimations.add(a);
@@ -581,6 +596,7 @@ export class Renderer {
   clearCelebration() {
     this.celebration++;
     this.fxLayer.querySelectorAll('.ac-gem').forEach((el) => el.remove());
+    this.view3d?.clearGems();
   }
 
   /** スナップショット Map<id,{x,r,color}> の位置へ全ブロックを即座に合わせる（載っていないブロックは触らない） */
@@ -777,6 +793,7 @@ export class Renderer {
       el.style.setProperty('--t', '0ms'); el.__t = '0ms';
       if (this.rush) { this.removeEl(block.id); continue; }
       el.classList.add('fly');
+      this.view3d?.fly(block.id);
       this.later(() => { if (this.els.get(block.id) === el) this.removeEl(block.id); }, 220);
     }
     if (this.rush) return;
@@ -827,6 +844,7 @@ export class Renderer {
     if (this._glowKey === key && now - this._glowAt < 320) return;
     this._glowKey = key; this._glowAt = now;
     this.sfx?.shalan(chain, { size: chain > 1 ? 0.8 : 0.65 });
+    this.view3d?.sweep(Math.min(1.3, 0.6 + chain * 0.1));      // 3D: ガラスの面に映る光の帯が横切る
     const c = this.cell, fixed = SIZE - n, quiet = reducedMotion();
     const vertical = kind === 'col';
     const box = vertical ? { x: fixed * c, y: 0, w: c, h: n * c } : { x: 0, y: fixed * c, w: n * c, h: c };
@@ -910,6 +928,7 @@ export class Renderer {
    * 要素はマスごとに1つを使い回す（色が変わるのは満ち始める瞬間）
    */
   tintCell(x, r, color, delay, life) {
+    if (this.view3d) { this.view3d.tint(x, r, color, delay, life); return; }     // 3D: マスのくぼみの底が、その色で光る
     const d = this.tints?.get(`${x},${r}`);
     if (!d) return;
     d.__anim?.cancel();
@@ -927,6 +946,7 @@ export class Renderer {
     if (reducedMotion()) return;
     this._bounce?.cancel();
     this._bounce = this.pf.animate(eased(frames.map(([offset, v]) => ({ offset, scale: `${v}` })), 'ease-out'), { duration: dur });
+    this.view3d?.invalidate(dur + 40);
   }
 
   /** マス中心のローカル px -> rotWrap 内の座標 */
@@ -954,6 +974,7 @@ export class Renderer {
     if (reducedMotion()) return;
     this._punch?.cancel();
     this._punch = this.wrap.animate([{ scale: `${1 + amount}` }, { scale: '1' }], { duration: dur, easing: 'cubic-bezier(.2,.8,.3,1)' });
+    this.view3d?.invalidate(dur + 40);
   }
 
   /** 盤面の外接四角（rotWrap の座標）。画面全体の演出を盤面の中心から始めるため */
@@ -974,6 +995,7 @@ export class Renderer {
     this.clearCelebration();
     const celebration = this.celebration;
     this.sfx?.allClear();
+    this.view3d?.sweep(1.5);
     this.punch(0.045, 320);
     const c = this.cell, cx = (SIZE - 1) / 3, cr = (SIZE - 1) / 3;   // 直角三角形の盤面の重心あたり
     const RING = 55, LIFE = 760;                                   // 短い余韻。次を置いたらすぐ引く
@@ -995,6 +1017,7 @@ export class Renderer {
       el.style.setProperty('--d', d + 'ms');
       el.style.setProperty('--life', LIFE + 'ms');
       this.addFx(this.fxLayer, el, d + LIFE + 50);
+      this.view3d?.gem(q.x, q.r, color, d, LIFE);
       if (i % shardEvery) return;
       // 宝石が砕ける瞬間（アニメの 72% の所）にかけらを散らす
       this.later(() => {
@@ -1020,6 +1043,7 @@ export class Renderer {
     frames.push({ translate: '0 0' });
     this._shake?.cancel();
     this._shake = this.wrap.animate(frames, { duration: dur, easing: 'ease-out' });
+    this.view3d?.invalidate(dur + 40);
   }
 
   /** ゴールの近くに得点が浮かぶ */
@@ -1093,5 +1117,6 @@ export class Renderer {
     this.manual.clear();
     this.setRush(false);
     this.clearPreview();
+    this.view3d?.reset();
   }
 }

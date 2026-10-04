@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { outlineLoops, glassGroups, glassPath } from '../src/ui/glass.js?v=202610032323';
-import { readBoardTheme, saveBoardTheme, BOARD_THEME_KEY } from '../src/ui/board-themes.js?v=202610032323';
+import { outlineLoops, glassGroups, glassPath } from '../src/ui/glass.js?v=202610040525';
+import { readBoardTheme, saveBoardTheme, BOARD_THEME_KEY, BOARD_THEMES } from '../src/ui/board-themes.js?v=202610040525';
 
 const area = (loop) => loop.reduce((sum, p, i) => {
   const q = loop[(i + 1) % loop.length];
@@ -54,6 +54,17 @@ test('theme selection is persistent and does not alter game saves, scores or mod
   assert.equal(values.get('blockmancala-best'), '943475');
   assert.equal(values.get('blockmancala-mode'), 'learn');
   values.set(BOARD_THEME_KEY, 'unknown');
+  assert.equal(readBoardTheme(), 'gem');
+});
+
+test('the 3D board can be chosen and is remembered like the other boards', () => {
+  const values = new Map([['blockmancala-save', 'game']]);
+  globalThis.localStorage = { getItem: (key) => values.get(key), setItem: (key, value) => values.set(key, value) };
+  assert.ok(BOARD_THEMES.some((t) => t.id === '3d'));
+  assert.equal(saveBoardTheme('3d'), '3d');
+  assert.equal(readBoardTheme(), '3d');
+  assert.equal(values.get('blockmancala-save'), 'game');
+  assert.equal(saveBoardTheme('gem'), 'gem');
   assert.equal(readBoardTheme(), 'gem');
 });
 

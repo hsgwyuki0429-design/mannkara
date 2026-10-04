@@ -1,26 +1,29 @@
-import { Game } from '../core/game.js?v=202610032323';
-import { Board, createBlock } from '../core/board.js?v=202610032323';
-import { Piece } from '../core/pieces.js?v=202610032323';
-import * as Sim from '../core/sim.js?v=202610032323';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610032323';
-import { Renderer, delay } from './renderer.js?v=202610032323';
-import { Sfx, kitForScore } from './sfx.js?v=202610032323';
-import { Scenes } from './scenes.js?v=202610032323';
-import { Ambient } from './ambient.js?v=202610032323';
-import { colorOf } from './palette.js?v=202610032323';
-import { TrayDealer } from './tray-dealer.js?v=202610032323';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610032323';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610032323';
-import { drawResultCard, cardBlob } from './share-card.js?v=202610032323';
-import { World } from './world.js?v=202610032323';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610032323';
-import { BOARD_THEMES, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610032323';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610032323';
+import { Game } from '../core/game.js?v=202610040525';
+import { Board, createBlock } from '../core/board.js?v=202610040525';
+import { Piece } from '../core/pieces.js?v=202610040525';
+import * as Sim from '../core/sim.js?v=202610040525';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610040525';
+import { Renderer, delay } from './renderer.js?v=202610040525';
+import { Sfx, kitForScore } from './sfx.js?v=202610040525';
+import { Scenes } from './scenes.js?v=202610040525';
+import { Ambient } from './ambient.js?v=202610040525';
+import { colorOf } from './palette.js?v=202610040525';
+import { TrayDealer } from './tray-dealer.js?v=202610040525';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610040525';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610040525';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610040525';
+import { World } from './world.js?v=202610040525';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610040525';
+import { BOARD_THEMES, CUBE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610040525';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610040525';
+import { softwareRendering } from './fx2d.js?v=202610040525';
+import { useSprites } from './shards.js?v=202610040525';
 
 const $ = (id) => document.getElementById(id);
 let boardTheme = readBoardTheme();
 document.documentElement.dataset.boardTheme = boardTheme;
-document.querySelector('meta[name="theme-color"]').content = boardTheme === 'glass' ? GLASS_BACKGROUND : '#3a6adf';
+const themeColor = (t) => (t === 'glass' ? GLASS_BACKGROUND : t === '3d' ? CUBE_BACKGROUND : '#3a6adf');
+document.querySelector('meta[name="theme-color"]').content = themeColor(boardTheme);
 const sfx = new Sfx();
 sfx.setBoardTheme(boardTheme);
 sfx.bindGestures();
@@ -192,7 +195,7 @@ let rushBefore = 0;           // この番号より前のターンの再生は�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610032323', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610040525', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -426,7 +429,7 @@ function measureSlotBox(wrap) {
   if (wrap.clientWidth) slotBoxCache = box;                 // まだ並んでいない（幅 0）ときは覚えない
   return box;
 }
-try { new ResizeObserver(() => { slotBoxCache = null; }).observe($('tray')); } catch {}
+try { new ResizeObserver(() => { slotBoxCache = null; slotCenterCache = null; }).observe($('tray')); } catch {}
 function renderTray(enter = false) {
   const wrap = $('tray');
   const slotBox = measureSlotBox(wrap);                     // 中身を消す前に測る（消した後だと、その場でレイアウトの計算になる）
@@ -457,6 +460,38 @@ function renderTray(enter = false) {
     }
     wrap.appendChild(slot);
   });
+  if (renderer.view3d) tray3d(enter);
+}
+/** 手駒の枠の中心（画面座標）。測るとレイアウトの計算し直しになるので、トレイの大きさが変わったときだけ測り直す */
+let slotCenterCache = null;
+function slotCenters() {
+  if (slotCenterCache) return slotCenterCache;
+  const list = [...document.querySelectorAll('#tray .slot')].map((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  if (list.length === 3 && list.every((p) => p.x || p.y)) slotCenterCache = list;
+  return list;
+}
+/** 3D の手駒: 2D と同じ大きさ・同じ場所・同じ向きに、ガラスの立方体で描く（cube3d.js） */
+function tray3d(enter = false) {
+  const view = renderer.view3d;
+  if (!view) return;
+  const box = measureSlotBox($('tray')), centers = slotCenters();
+  view.setTray(game.tray.map((piece, i) => {
+    if (!piece || !centers[i]) return null;
+    const s = trayCellSize(piece, box), mid = pieceScreenCenter(piece, s);
+    return { cells: piece.cells, color: piece.color, s, width: piece.width, height: piece.height, center: { x: centers[i].x - mid.x, y: centers[i].y - mid.y } };
+  }), enter);
+  view.setTrayState({ dragging: drag ? drag.slot : -1, hint: hintedSlot });
+}
+/** 学習モード・チュートリアルで弾ませる手駒（-1 = なし） */
+let hintedSlot = -1;
+function setHintedSlot(i) {
+  hintedSlot = i;
+  document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
+  if (i >= 0) document.querySelector(`.slot[data-slot="${i}"]`)?.classList.add('hinted');
+  renderer.view3d?.setTrayState({ hint: i });
 }
 
 /* ---------- ドラッグ ---------- */
@@ -508,6 +543,7 @@ function renderDragPiece(fx, fy) {
   }
   // 動かすのは transform だけ（left / top を書くと、そのたびにレイアウトと描き直しになる。合成だけで動く）
   layer.style.transform = `translate(${cx}px,${cy}px) ${renderer.boardTransform()}`;
+  renderer.view3d?.drag({ piece, x: cx, y: cy });      // 3D: ガラスのピースが盤面から少し浮いて付いてくる
   return local;
 }
 
@@ -573,6 +609,8 @@ function endDrag() {
   $('dragLayer').innerHTML = '';
   renderer.clearPreview();
   document.querySelectorAll('.slot').forEach((s) => s.classList.remove('dragging'));
+  renderer.view3d?.drag(null);
+  renderer.view3d?.setTrayState({ dragging: -1 });
   drag = null;
   renderer.timeScale = paused ? 0 : 1;
 }
@@ -608,6 +646,7 @@ $('tray').addEventListener('pointerdown', (e) => {
     boardRect: renderer.pf.getBoundingClientRect(), approach: 0, movedAt: 0, lastD: null, lastT: 0 };
   dropHint();
   slotEl.classList.add('dragging');
+  renderer.view3d?.setTrayState({ dragging: slot });
   $('dragLayer').innerHTML = '';
   updateDrag(e);
   e.preventDefault();
@@ -645,17 +684,17 @@ function updateHint() {
   const seq = ++hintSeq;
   if (tutorial) { showTutorialTarget(); return; }
   if (mode !== 'learn' || game.gameOver || drag || pending > 1) {
-    document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
+    setHintedSlot(-1);
     renderer.clearHint();
     return;
   }
   // 総当たりは別スレッドで（Game.hintAsync。答えは Game.hint と同じ）
   game.hintAsync().then((h) => {
     if (seq !== hintSeq || drag || game.gameOver) return;
-    document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
+    setHintedSlot(-1);
     if (!h) { renderer.clearHint(); return; }
     renderer.showHint(game.tray[h.slot], h.ox, h.oy, h.plan);
-    document.querySelector(`.slot[data-slot="${h.slot}"]`)?.classList.add('hinted');
+    setHintedSlot(h.slot);
   });
 }
 /** おすすめを消す（頼んでいる途中の答えも出さない） */
@@ -711,6 +750,7 @@ function setPaused(v) {
     $('pauseRecords').innerHTML = `記録　最大連鎖 ${chain}・最大コンボ ${combo}`;
   }
   $('pauseOverlay').classList.toggle('hidden', !v);
+  if (v) render3dPreview();
 }
 $('btnPause').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) setPaused(true); });
 $('btnResume').addEventListener('click', () => setPaused(false));
@@ -721,11 +761,63 @@ function applyBoardTheme(value) {
   boardTheme = saveBoardTheme(value);
   sfx.setBoardTheme(boardTheme);
   document.documentElement.dataset.boardTheme = boardTheme;
-  document.querySelector('meta[name="theme-color"]').content = boardTheme === 'glass' ? GLASS_BACKGROUND : '#3a6adf';
+  document.querySelector('meta[name="theme-color"]').content = themeColor(boardTheme);
+  if (boardTheme === '3d') enable3d(); else disable3d();
   renderer.layout();
   renderer.refreshGlass();
   renderTray();
   for (const radio of $('boardThemeList').querySelectorAll('input')) radio.checked = radio.value === boardTheme;
+}
+
+/* ---------- 3D の盤面（ガラスの立方体。cube3d.js と three.js は、3D を選んだときだけ読み込む） ---------- */
+/**
+ * 読み込んでいる間は盤面を隠し（html の data-gl が無い）、描けるようになったら data-gl="on"（2D のブロック・手駒・持っているピースは隠れ、
+ * WebGL の canvas が描く）。WebGL2 が無い・読み込めない・途中で描けなくなったときは data-gl="off"（宝石の見た目で遊べる）
+ */
+let cube3dLoad = null;
+function load3d() {
+  cube3dLoad ??= import('./cube3d.js?v=202610040525').then((m) => {
+    if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
+    const view = new m.Cube3D(renderer, { software: softwareRendering() });
+    // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
+    view.onLost = () => {
+      if (renderer.view3d !== view) return;
+      renderer.view3d = null;
+      view.detach();
+      document.documentElement.dataset.gl = 'off';          // 2D のブロック・手駒は位置を保ったまま隠していただけなので、そのまま見える
+      useSprites(null);
+    };
+    view.onRestored = () => { if (boardTheme === '3d' && !renderer.view3d) enable3d(); };
+    return view.prepare().then(() => view);
+  }).catch((e) => { if (!e.unsupported) cube3dLoad = null; throw e; });   // 通信の失敗なら、次はもう一度読み込む
+  return cube3dLoad;
+}
+function enable3d() {
+  if (renderer.view3d) return;
+  delete document.documentElement.dataset.gl;
+  load3d().then((view) => {
+    if (boardTheme !== '3d' || renderer.view3d) return;
+    if (view.lost || view.failed) { document.documentElement.dataset.gl = 'off'; return; }
+    renderer.view3d = view;
+    view.attach();
+    view.setPaused(paused);
+    document.documentElement.dataset.gl = 'on';
+    renderTray();
+    // かけら・紙吹雪も、ガラスの立方体の絵にする（色ごとに 1 回だけ描く）
+    try { glassSprites ??= view.sprites(64); useSprites(glassSprites); } catch (e) { console.error(e); }
+  }).catch((e) => {
+    console.error(e);
+    if (boardTheme === '3d') document.documentElement.dataset.gl = 'off';
+  });
+}
+let glassSprites = null;
+function disable3d() {
+  delete document.documentElement.dataset.gl;
+  useSprites(null);
+  const view = renderer.view3d;
+  if (!view) return;
+  renderer.view3d = null;
+  view.detach();
 }
 function renderBoardThemeList() {
   const miniCells = [];
@@ -761,6 +853,11 @@ function renderBoardThemeList() {
       }
     }
     preview.appendChild(board);
+    if (theme.id === '3d') {
+      // 3D の見本は、選んだときと同じ描き方（cube3d.js）で描いた絵。一時停止の画面を開いたときに作る（render3dPreview）
+      const shot = document.createElement('img'); shot.className = 'board-theme-shot'; shot.alt = ''; shot.hidden = true;
+      preview.appendChild(shot);
+    }
     const name = document.createElement('span'); name.className = 'board-theme-name'; name.textContent = theme.name;
     const status = document.createElement('span'); status.className = 'board-theme-status'; status.textContent = '選択中';
     card.append(preview, name, status); label.append(radio, card); $('boardThemeList').appendChild(label);
@@ -768,6 +865,38 @@ function renderBoardThemeList() {
   }
 }
 renderBoardThemeList();
+if (boardTheme === '3d') enable3d();
+/** 一時停止の画面の 3D の見本（ガラスの立方体を並べた小さな盤面）を、実物と同じ描き方で 1 回だけ作る */
+let preview3d = null;
+const PREVIEW_3D = [[0, 0, 'blue'], [1, 0, 'blue'], [0, 1, 'cyan'], [2, 0, 'yellow'], [3, 0, 'red'], [3, 1, 'red'],
+  [1, 1, 'green'], [1, 2, 'green'], [0, 3, 'purple'], [0, 2, 'orange']];
+function render3dPreview() {
+  if (preview3d) return;
+  const box = document.querySelector('.preview-3d .board-theme-preview');
+  if (!box) return;
+  preview3d = 'pending';
+  load3d().then((view) => new Promise((resolve, reject) => requestAnimationFrame(() => {
+    if (view.failed) { reject(Object.assign(new Error('3D shaders failed'), { unsupported: true })); return; }
+    if (view.lost) { preview3d = null; resolve(); return; }
+    const w = box.clientWidth, h = box.clientHeight;
+    if (!w || !h) { preview3d = null; resolve(); return; }
+    const k = Math.min(2, window.devicePixelRatio || 1), cell = Math.min(w / 8.4, h / 5.1) * k;
+    const cv = view.snapshot({ width: Math.round(w * k), height: Math.round(h * k), cx: w * k / 2, cy: h * k * 0.2, cell, size: 5, blocks: PREVIEW_3D });
+    const img = box.querySelector('.board-theme-shot');
+    img.src = cv.toDataURL('image/png');
+    img.hidden = false;
+    preview3d = 'done';
+    resolve();
+  }))).catch((e) => {
+    console.error(e);
+    preview3d = null;                              // 通信の失敗なら、次に開いたときにもう一度
+    if (!e.unsupported) return;
+    // この端末では 3D を選べない（WebGL2 が無いなど）
+    preview3d = 'unsupported';
+    const radio = $('boardThemeList').querySelector('input[value="3d"]');
+    if (radio && boardTheme !== '3d') { radio.disabled = true; radio.closest('.board-theme-option')?.classList.add('unavailable'); }
+  });
+}
 
 /* ---------- ランキング（スコア。世界 / この端末） ---------- */
 let rankScope = 'world';
@@ -1179,13 +1308,13 @@ function placeTutorialText() {
 }
 /** 置く場所（金色の枠）・トレイの手駒の弾み・指の絵を出す（持っている間・置いた後は消す） */
 function showTutorialTarget() {
-  document.querySelectorAll('.slot.hinted').forEach((el) => el.classList.remove('hinted'));
+  setHintedSlot(-1);
   const t = tutorialTarget();
   if (!t || !t.piece || game.gameOver) { renderer.clearHint(); hideHand(); return; }
   renderer.showHint(t.piece, t.ox, t.oy, true);                     // 持っている間も置く場所は見せたまま
   if (drag) { hideHand(); return; }
   renderer.litLines((TUTORIAL_STEPS[tutorial.i].lit ?? []).map(([kind, n]) => ({ kind, n })), 'yellow');   // 見てほしいラインの番号
-  document.querySelector(`.slot[data-slot="${t.slot}"]`)?.classList.add('hinted');
+  setHintedSlot(t.slot);
   moveHand();
 }
 /** 指の絵: トレイの手駒をつまんで、置く場所まで運んで離す（を繰り返す）。指で持つとピースは指より上に浮くので、そのぶん下を通る */
@@ -1242,7 +1371,11 @@ function prepareShare(data) {
   dropShare();
   const s = { data };
   // 画面が出てくる動き（360ms）が終わってから描く（描いている間に動きが引っかからないように）
-  s.file = delay(450).then(() => drawResultCard(data)).then(cardBlob).then((blob) => {
+  // 3D の盤面は、ゲームと同じ描き方で背景ごと描いた絵を使う（描けなければ宝石の絵）
+  const image3d = () => (data.theme === '3d' && renderer.view3d
+    ? load3d().then((view) => view.snapshot({ width: CARD_W, height: CARD_H, cx: CARD_BOARD.cx, cy: CARD_BOARD.cy, cell: CARD_BOARD.cell, blocks: data.board })).catch(() => null)
+    : null);
+  s.file = delay(450).then(image3d).then((img) => drawResultCard(img ? { ...data, image3d: img } : data)).then(cardBlob).then((blob) => {
     if (!blob || s !== share) return null;             // 待っている間に次のゲームになった
     s.url = URL.createObjectURL(blob);
     return new File([blob], `${GAME_NAME}.png`, { type: 'image/png' });
@@ -1282,7 +1415,7 @@ $('shareCopy').addEventListener('click', () => {
 applyMode();
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); saveBest(); restart(); });
 window.addEventListener('resize', () => {
-  slotBoxCache = null;
+  slotBoxCache = null; slotCenterCache = null;
   renderTray();
   // 持っているピースはマスの大きさが変わったので作り直す（盤面は renderer が先に合わせ直している）
   if (drag) { $('dragLayer').innerHTML = ''; drag.ox = null; updateDrag({ clientX: drag.x, clientY: drag.y }); }

@@ -1,4 +1,4 @@
-import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610032323';
+import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610040525';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -264,9 +264,9 @@ export class Sfx {
   wantedWaveKeys() {
     return this.glassTheme ? GLASS_KEYS : WAVE_KEYS.filter((key) => this.wantedKits().includes(kitOf(key)));
   }
-  /** ガラス盤面では既存のガラス音を固定する。待機中のターンが別のセットを指定しても優先する。 */
+  /** ガラス盤面（3D のガラスの立方体も）では既存のガラス音を固定する。待機中のターンが別のセットを指定しても優先する。 */
   setBoardTheme(theme) {
-    const glass = theme === 'glass';
+    const glass = theme === 'glass' || theme === '3d';
     if (glass === this.glassTheme) return;
     this.glassTheme = glass;
     this.kit = glass ? 0 : this.requestedKit;

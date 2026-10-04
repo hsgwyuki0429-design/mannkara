@@ -53,3 +53,22 @@ html[data-board-theme="glass"]{background-color:#5e4ac2 !important;}
 [data-board-theme="glass"] .goal{background:rgba(53,39,133,.12);border-color:#28dadd;color:#85f4f5;}
 [data-board-theme="glass"] #pauseOverlay{background:rgba(46,30,111,.64);}
 @media (prefers-reduced-motion:reduce){.board-theme-card{transition:none;}[data-board-theme="glass"] #dragLayer > .glass-surface{animation:none;}}
+
+/* 3D: WebGL の canvas（cube3d.js）が、背景・盤面・ブロック・手駒・持っているピースを描く（html の data-gl="on"）。
+   読み込みの間（data-gl が無い）は盤面を隠し、WebGL が使えないとき（data-gl="off"）は宝石の見た目のまま遊べる */
+.gl-board{position:fixed;left:0;top:0;z-index:0;pointer-events:none;}
+html[data-board-theme="3d"]{background-color:#2a3192 !important;}
+[data-board-theme="3d"] body{background:#2a3192 radial-gradient(ellipse 95% 60% at 50% 42%,#4650c8 0%,#333aa4 55%,#20256f 100%) !important;}
+[data-board-theme="3d"]:not([data-gl="off"]) :is(#ambient,#sceneTint,#fever){display:none !important;}
+[data-board-theme="3d"]:not([data-gl="off"]) #wellLayer,
+[data-board-theme="3d"]:not([data-gl="off"]) .playfield :is(.block,.ghost,.hi,.well-tint),
+[data-board-theme="3d"]:not([data-gl="off"]) .tray .tray-cell,
+[data-board-theme="3d"]:not([data-gl="off"]) #dragLayer .drag-cell{visibility:hidden;}
+[data-board-theme="3d"] #pauseOverlay{background:rgba(22,24,80,.62);}
+.preview-3d .board-theme-preview{background:radial-gradient(ellipse at 50% 42%,#3a40b2,#232873);}
+.board-theme-shot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+/* 3D は横いっぱいの見本（光の当たり方まで見えるように） */
+.board-theme-option.preview-3d{grid-column:1 / -1;}
+.preview-3d .board-theme-preview{height:128px;}
+.board-theme-option.unavailable{opacity:.45;cursor:default;}
+@media (max-height:600px){.preview-3d .board-theme-preview{height:96px;}}
