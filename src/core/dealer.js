@@ -1,8 +1,8 @@
-import { Game } from './game.js?v=202610051342';
-import { Piece } from './pieces.js?v=202610051342';
-import { bestMove } from './advisor.js?v=202610051342';
-import { Board } from './board.js?v=202610051342';
-import { SIZE } from './constants.js?v=202610051342';
+import { Game } from './game.js?v=202610051407';
+import { Piece } from './pieces.js?v=202610051407';
+import { bestMove } from './advisor.js?v=202610051407';
+import { Board } from './board.js?v=202610051407';
+import { SIZE } from './constants.js?v=202610051407';
 
 /**
  * 手駒の決め方（Game.spawnTray）だけを受け持つ。画面では Web Worker の中で動かす（dealer-worker.js）。
@@ -42,12 +42,12 @@ export class DealerCore {
   /** 手駒の決め方の状態（途中から再開用） */
   state() {
     const g = this.game;
-    return { plan: g.plan, history: [...g.history], wantAllClear: g.wantAllClear, wantTight: g.wantTight };
+    return { plan: g.plan, history: [...g.history], wantAllClear: g.wantAllClear, wantTight: g.wantTight, tightCooldown: g.tightCooldown };
   }
   /** state() で残した状態に戻す */
   load(st) {
     const g = this.game;
-    g.plan = st.plan ?? null; g.history = new Set(st.history ?? []); g.wantAllClear = !!st.wantAllClear; g.wantTight = !!st.wantTight;
+    g.plan = st.plan ?? null; g.history = new Set(st.history ?? []); g.wantAllClear = !!st.wantAllClear; g.wantTight = !!st.wantTight; g.tightCooldown = st.tightCooldown ?? 0;
   }
 
   /** 学習モードのおすすめの総当たり（advisor.bestMove そのまま）。names = トレイの形の名前（使った枠は null） */
