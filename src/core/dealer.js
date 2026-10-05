@@ -1,8 +1,8 @@
-import { Game } from './game.js?v=202610051329';
-import { Piece } from './pieces.js?v=202610051329';
-import { bestMove } from './advisor.js?v=202610051329';
-import { Board } from './board.js?v=202610051329';
-import { SIZE } from './constants.js?v=202610051329';
+import { Game } from './game.js?v=202610051342';
+import { Piece } from './pieces.js?v=202610051342';
+import { bestMove } from './advisor.js?v=202610051342';
+import { Board } from './board.js?v=202610051342';
+import { SIZE } from './constants.js?v=202610051342';
 
 /**
  * 手駒の決め方（Game.spawnTray）だけを受け持つ。画面では Web Worker の中で動かす（dealer-worker.js）。
@@ -28,8 +28,9 @@ export class DealerCore {
    * cells = 埋まっているマスの番号（r * 8 + x）の一覧。
    * 返り値 { names: 手駒の形の名前, planTray: 全消しの手順どおりの手（あれば）, lastLineup: 決め方（デバッグ用） }
    */
-  deal(cells) {
+  deal(cells, tightRate) {
     const g = this.game;
+    if (typeof tightRate === 'number') g.tightRate = tightRate;
     g.board = boardOf(cells);
     g.planTray = null;                 // Game.placePiece と同じく、補充の前に消しておく
     const tray = g.spawnTray();
