@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610051407';
-import { SIZE } from '../core/constants.js?v=202610051407';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610051407';
+import * as THREE from './vendor/three.js?v=202610052318';
+import { SIZE } from '../core/constants.js?v=202610052318';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610052318';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -57,6 +57,8 @@ const norm = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 /** 光源の向き（B 空間: x 右・y 上・z 手前）。光の向きは 2D と同じ「左上」 */
 const KEY_DIR = norm([-0.48, 0.62, 0.62]);
+/** 影を落とす光の向き（マスの座標: x, r, 手前）。高さ 1 マスで、影は x に 0.34・r に 0.2 マスだけずれる */
+const SHADOW_DIR = norm([0.34, 0.2, 1]);
 const RIM_DIR = norm([0.6, 0.3, 0.74]);
 const RIM2_DIR = norm([-0.9, -0.08, 0.42]);
 const FLOOR_DIR = norm([0.0, -0.86, 0.5]);
@@ -135,8 +137,11 @@ const GLASS_VERT = /* glsl */ `
 uniform mat4 uProj;
 attribute vec3 iTint;
 attribute vec4 iParams;
+attribute vec4 iJoin;      // 同じ色の隣とつなぐ側（ローカルの +x, -x, +y, -y）へ伸ばす長さ（一辺 1 に対して）。0 = つながない
+uniform float uBevel;
 varying vec3 vPos;
 varying vec3 vNrm;
+flat varying vec4 vJoin;
 flat varying vec3 vCenter;
 flat varying vec3 vAx;
 flat varying vec3 vAy;
@@ -151,9 +156,25 @@ void main() {
   vAx = sx / sc.x; vAy = sy / sc.y; vAz = sz / sc.z;
   vHalf = sc * 0.5;
   vCenter = m[3].xyz;
-  vec3 n = normal / sc;
+  // つなぐ側は角を丸めず、隣との境目（伸ばした先の平らな面）までまっすぐ伸ばす
+  vec3 p = position, nn = normal, inner = position - normal * uBevel;
+  vec3 dir[4] = vec3[4](vec3(1.0, 0.0, 0.0), vec3(-1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, -1.0, 0.0));
+  for (int k = 0; k < 4; k++) {
+    float e = iJoin[k];
+    if (e <= 0.0) continue;
+    vec3 a = dir[k];
+    if (dot(inner, a) < 0.5 - uBevel - 1e-4 || dot(nn, a) < 1e-4) continue;
+    vec3 d = nn - a * dot(nn, a);
+    float l = length(d);
+    nn = l > 1e-4 ? d / l : a;
+    vec3 q = inner + (l > 1e-4 ? nn * uBevel : vec3(0.0));
+    p = q - a * dot(q, a) + a * (0.5 + e);
+    inner = inner - a * dot(inner, a) + a * (0.5 + e);   // 2 方向でつながる角も、両方の面まで伸ばす
+  }
+  vJoin = iJoin;
+  vec3 n = nn / sc;
   vNrm = normalize(vAx * n.x + vAy * n.y + vAz * n.z);
-  vec4 wp = m * vec4(position, 1.0);
+  vec4 wp = m * vec4(p, 1.0);
   vPos = wp.xyz;
   vTint = iTint;
   vParams = iParams;
@@ -185,6 +206,7 @@ flat varying vec3 vAz;
 flat varying vec3 vHalf;
 flat varying vec3 vTint;
 flat varying vec4 vParams;
+flat varying vec4 vJoin;
 ${ENV_GLSL}
 ${COMMON_GLSL}
 
@@ -225,12 +247,21 @@ vec3 refractOut(vec3 d, vec3 n, float eta) {
 void main() {
   mat3 R = mat3(vAx, vAy, vAz);
   mat3 Rt = transpose(R);
-  vec3 h = vHalf;
-  float rb = uBevel * 2.0 * min(h.x, min(h.y, h.z));
+  float rb = uBevel * 2.0 * min(vHalf.x, min(vHalf.y, vHalf.z));
+  // 同じ色の隣とつながった側: 本当の外形（lo〜hi）はその側へ伸び、角の丸みは無い（丸みを測る箱は、その側へさらに遠くまで伸ばしておく）
+  vec4 ext = vJoin * vec4(2.0 * vHalf.x, 2.0 * vHalf.x, 2.0 * vHalf.y, 2.0 * vHalf.y);
+  vec4 on = step(1e-5, vJoin);
+  vec3 hi = vHalf + vec3(ext.x, ext.z, 0.0), lo = -vHalf - vec3(ext.y, ext.w, 0.0);
+  float far = 4.0 * vHalf.x;
+  vec3 hiV = hi + far * vec3(on.x, on.z, 0.0), loV = lo - far * vec3(on.y, on.w, 0.0);
+  vec3 cv = (hiV + loV) * 0.5, h = (hiV - loV) * 0.5;
   vec3 V = normalize(vPos - uEye);
   vec3 pl = Rt * (vPos - vCenter);
+  // つながった面そのもの（隣との境目）は描かない（ガラスがひと続きに見える）
+  float eps = 0.004 * vHalf.x;
+  if ((on.x > 0.0 && pl.x > hi.x - eps) || (on.y > 0.0 && pl.x < lo.x + eps) || (on.z > 0.0 && pl.y > hi.y - eps) || (on.w > 0.0 && pl.y < lo.y + eps)) discard;
   vec3 vl = Rt * V;
-  vec3 nl = roundBoxNormal(pl, h, rb);
+  vec3 nl = roundBoxNormal(pl - cv, h, rb);
   if (dot(nl, vl) > -0.001) nl = normalize(Rt * vNrm);
   if (dot(nl, vl) > -0.001) nl = -vl;
   vec3 N = R * nl;
@@ -246,13 +277,28 @@ void main() {
   vec3 acc = vec3(0.0);
   for (int i = 0; i < 4; i++) {
     if (i >= uBounces) break;
-    float t = boxExit(o, dl, h);
+    // つながった面から抜ける光は、隣の同じ色のガラスへそのまま進む（曲がらず、まっすぐ奥へ）
+    vec3 dd = sign(dl) * max(abs(dl), vec3(1e-5));
+    vec3 tb = (mix(lo, hi, step(0.0, dd)) - o) / dd;
+    float tJ = 1e9;
+    if (dl.x > 0.0 && on.x > 0.0) tJ = min(tJ, tb.x);
+    if (dl.x < 0.0 && on.y > 0.0) tJ = min(tJ, tb.x);
+    if (dl.y > 0.0 && on.z > 0.0) tJ = min(tJ, tb.y);
+    if (dl.y < 0.0 && on.w > 0.0) tJ = min(tJ, tb.y);
+    if (tJ <= min(tb.x, min(tb.y, tb.z)) + 1e-5) {
+      thr *= exp(-sigma * max(tJ, 0.0) * 1.6);       // 隣のガラスの中も進む分、少し多めに色づく
+      vec3 pj = o + dl * tJ;
+      acc += thr * behind(vCenter + R * pj, R * dl, true);
+      thr = vec3(0.0);
+      break;
+    }
+    float t = boxExit(o - cv, dl, h);
     vec3 pe = o + dl * t;
-    float s = sdRoundBox(pe, h, rb); t -= s; pe = o + dl * t;
-    s = sdRoundBox(pe, h, rb); t -= s; pe = o + dl * t;
+    float s = sdRoundBox(pe - cv, h, rb); t -= s; pe = o + dl * t;
+    s = sdRoundBox(pe - cv, h, rb); t -= s; pe = o + dl * t;
     t = max(t, 0.0);
     thr *= exp(-sigma * t);
-    vec3 ne = roundBoxNormal(pe, h, rb);
+    vec3 ne = roundBoxNormal(pe - cv, h, rb);
     float c = dot(dl, ne);
     if (c < 0.02) { ne = normalize(ne + dl * (0.02 - c) * 2.0); c = dot(dl, ne); }
     vec3 pw = vCenter + R * pe;
@@ -279,7 +325,7 @@ void main() {
 
   // 消える列の予告（params.y）: ふちが白く光って脈打つ
   if (vParams.y > 0.0) {
-    vec3 a = abs(pl) / h;
+    vec3 a = abs(pl) / (vHalf + vec3(max(ext.x, ext.y), max(ext.z, ext.w), 0.0));
     vec3 srt = vec3(min(a.x, min(a.y, a.z)), max(min(a.x, a.y), min(max(a.x, a.y), a.z)), max(a.x, max(a.y, a.z)));
     float edge = smoothstep(0.72, 0.97, srt.y);
     col += (vec3(1.0, 0.98, 0.95) * 2.4 * edge + vTint * 0.35) * vParams.y;
@@ -674,6 +720,9 @@ class Batch {
     this.params = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
     this.geometry.setAttribute('iTint', this.tint);
     this.geometry.setAttribute('iParams', this.params);
+    this.join = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
+    this.geometry.setAttribute('iJoin', this.join);
+    this.joinable = true;
     this.mesh = new THREE.InstancedMesh(this.geometry, material, capacity);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
@@ -689,12 +738,47 @@ class Batch {
     this.params.array.set(params, i * 4);
   }
   end() {
+    if (this.joinable) cubeJoins(this.mesh.instanceMatrix.array, this.tint.array, this.n, this.join.array);
+    else this.join.array.fill(0, 0, this.n * 4);
+    this.join.needsUpdate = true;
     this.mesh.count = this.n;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.tint.needsUpdate = true;
     this.params.needsUpdate = true;
     this.mesh.visible = this.n > 0;
   }
+}
+
+/**
+ * 同じ色の立方体が辺どうしで隣り合っていたら、すき間を埋めてつなぐ（GLASS_VERT / GLASS_FRAG の iJoin）。
+ * いま描く位置（動きの途中も含む）で毎回決めるので、そろって滑っている間もつながったまま。
+ * m = 行列（列優先 16 個ずつ）、tint = 色（3 個ずつ。同じ色は同じ値）、out = 4 個ずつ（ローカルの +x, -x, +y, -y へ伸ばす長さ。一辺 1 に対して）
+ */
+export function cubeJoins(m, tint, n, out) {
+  out.fill(0, 0, n * 4);
+  for (let i = 0; i < n; i++) {
+    const o = i * 16, ax = [m[o], m[o + 1], m[o + 2]], ay = [m[o + 4], m[o + 5], m[o + 6]], az = [m[o + 8], m[o + 9], m[o + 10]];
+    const sx = Math.hypot(...ax), sy = Math.hypot(...ay), sz = Math.hypot(...az);
+    if (sx < 1e-6 || sy < 1e-6) continue;
+    for (let j = 0; j < n; j++) {
+      if (j === i || tint[i * 3] !== tint[j * 3] || tint[i * 3 + 1] !== tint[j * 3 + 1] || tint[i * 3 + 2] !== tint[j * 3 + 2]) continue;
+      const q = j * 16;
+      // 大きさ・高さがほぼ同じ立方体どうしだけ（落ちてくる途中・弾んでいる途中は、つながない）
+      if (Math.abs(Math.hypot(m[q], m[q + 1], m[q + 2]) - sx) > sx * 0.04 || Math.abs(Math.hypot(m[q + 8], m[q + 9], m[q + 10]) - sz) > sz * 0.04) continue;
+      const d = [m[q + 12] - m[o + 12], m[q + 13] - m[o + 13], m[q + 14] - m[o + 14]];
+      const u = (d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2]) / sx, v = (d[0] * ay[0] + d[1] * ay[1] + d[2] * ay[2]) / sy;
+      const w = (d[0] * az[0] + d[1] * az[1] + d[2] * az[2]) / sz;
+      if (Math.abs(w) > sz * 0.04) continue;
+      for (const [along, side, across, size] of [[u, 0, v, sx], [v, 2, u, sy]]) {
+        const a = Math.abs(along);
+        // 辺どうしで隣り合う（横へのずれはほとんど無く、間はマスの間のすき間ほど）
+        if (Math.abs(across) > size * 0.05 || a < size * 0.96 || a > size * 1.2) continue;
+        const k = i * 4 + side + (along > 0 ? 0 : 1);
+        out[k] = Math.max(out[k], (a / 2 - size / 2) / size + 0.004);
+      }
+    }
+  }
+  return out;
 }
 
 /** 立方体の行列（列優先 16 個）: 底の中心 (x, y, z)、大きさ (sx, sy, sz)、z 軸まわりの角度 a、追加の回転（3×3 の行列。省略可） */
@@ -1540,8 +1624,10 @@ export class Cube3D {
       this.causTargets.set(res, t);
     }
     this.causRect = new THREE.Vector4(-1.6, -1.6, size + 2.6, size + 2.6);
-    const L = KEY_DIR;     // B 空間の光の向き → マスの座標の向き
-    this.causMat.uniforms.uL.value.set(Math.SQRT1_2 * (L[1] - L[0]), Math.SQRT1_2 * (L[0] + L[1]), L[2]);
+    // 影を落とす光は、照らす光（KEY_DIR）より真上寄りにする。KEY_DIR のままだと、立方体の影がちょうど隣のマス 1 つぶんに伸びて
+    // 空いているくぼみにぴったり収まり、ブロックがあるように見える。影は立方体の足もとから 3 割ほどだけ、斜めにずらして出す
+    const L = SHADOW_DIR;  // マスの座標の向き（z は手前）
+    this.causMat.uniforms.uL.value.set(L[0], L[1], L[2]);
     // マスの座標は r が下向き（B 空間の y とは向きの関係が鏡写し）なので、z の向きはそのまま
     this.causMat.uniforms.uRect.value.copy(this.causRect);
     const n = this.caus.length;
