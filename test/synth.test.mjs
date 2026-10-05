@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { glassBuffer, shalanBuffer, bellBuffer, placeBuffer, chimeBuffer, noteBuffer, KITS, PLACE_VARIANTS, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_LOW, SHALAN_LENGTH, BELL_LENGTH } from '../src/ui/synth.js?v=202610051342';
+import { glassBuffer, shalanBuffer, bellBuffer, placeBuffer, chimeBuffer, noteBuffer, KITS, PLACE_VARIANTS, rng, peakOf, rmsOf, GLASS_VARIANTS, SHALAN_LOW, SHALAN_LENGTH, BELL_LENGTH } from '../src/ui/synth.js?v=202610051407';
 
 const SR = 48000;
 /** 時刻 t0〜t1（秒）の、周波数 f（Hz）の成分の大きさ（Goertzel 法）。窓は Hann */
