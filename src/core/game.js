@@ -1,16 +1,17 @@
-import { Board, createBlock } from './board.js?v=202610051329';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610051329';
-import { ScoreManager } from './score.js?v=202610051329';
-import { nextActivation, lineMoves } from './mancala.js?v=202610051329';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610051329';
-import * as Sim from './sim.js?v=202610051329';
-import { bestMove } from './advisor.js?v=202610051329';
+import { Board, createBlock } from './board.js?v=202610051342';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610051342';
+import { ScoreManager } from './score.js?v=202610051342';
+import { nextActivation, lineMoves } from './mancala.js?v=202610051342';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610051342';
+import * as Sim from './sim.js?v=202610051342';
+import { tightRateFor } from './difficulty.js?v=202610051342';
+import { bestMove } from './advisor.js?v=202610051342';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202610051329';
+} from './constants.js?v=202610051342';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -68,6 +69,7 @@ export class Game {
     this.stats = { refills: 0, allClearRolled: 0, allClearSearches: 0, allClearFound: 0 };   // 手駒の決め方の集計（確率が狙いどおりか調べる用）
     this.wantAllClear = false;    // 全消しのチャンスを引いたが、まだ手順が見つかっていない
     this.wantTight = false;       // 置き方の少ない組み合わせのチャンスを引いたが、まだ見つかっていない
+    this.tightRate = TIGHT_RATE;  // ひっかけの確率（画面側が skill から決めて、配るたびに渡す。difficulty.js）
     this.history = new Set();     // これまでに手駒を配った時の盤面（ループの判定用）
     this.lastLineup = null;       // 直前に配った手駒の決め方（デバッグ・テスト用）
   }
@@ -76,11 +78,14 @@ export class Game {
    * 今の盤面で、別スレッドに手駒を決めてもらう。届いたら tray・planTray を入れ替え、（補充なら）詰みを判定して
    * hooks.onTray を呼ぶ。返り値は届いた時に { gameOver } になる Promise（その間に新しいゲームになったら null）
    */
+  /** 遊んでいる人の出来（skill = { best, recent }。画面側が入れる）と今のスコアから決めた、ひっかけの確率 */
+  currentTightRate() { return tightRateFor(this.score?.score ?? 0, this.skill); }
+
   dealAsync(initial) {
     const seq = this.dealSeq;
     const cells = [];
     for (const { x, r } of this.board.entries()) cells.push(r * SIZE + x);
-    return this.dealer.deal(cells).then((res) => {
+    return this.dealer.deal(cells, this.currentTightRate()).then((res) => {
       if (seq !== this.dealSeq) return null;
       this.tray = res.names.map((name) => new Piece(name));
       this.planTray = res.planTray;
@@ -220,6 +225,7 @@ export class Game {
    *    詰む組み合わせを配る（同じ盤面を永遠にくり返さないように）
    */
   spawnTray() {
+    if (this.skill !== undefined) this.tightRate = this.currentTightRate();
     const fill = this.board.fillRate();
     this.stats.refills++;
     const start = Sim.fromBoard(this.board);
@@ -228,7 +234,7 @@ export class Game {
     if (planned) { this.lastLineup = { kind: 'allClear' }; return planned; }
 
     if (fill >= TIGHT_MAX_FILL) this.wantTight = false;
-    else this.wantTight ||= this.generator.random() < TIGHT_RATE;
+    else this.wantTight ||= this.generator.random() < this.tightRate;
     let pick = this.wantTight ? this.searchTight(start) : null;
     if (pick) this.wantTight = false;                          // 見つからなければ次の補充でもう一度
     pick ??= this.searchTray(start, fill);

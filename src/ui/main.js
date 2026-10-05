@@ -1,23 +1,24 @@
-import { Game } from '../core/game.js?v=202610051329';
-import { Board, createBlock } from '../core/board.js?v=202610051329';
-import { Piece } from '../core/pieces.js?v=202610051329';
-import * as Sim from '../core/sim.js?v=202610051329';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610051329';
-import { Renderer, delay, markJoins } from './renderer.js?v=202610051329';
-import { Sfx, kitForScore } from './sfx.js?v=202610051329';
-import { Scenes } from './scenes.js?v=202610051329';
-import { Ambient } from './ambient.js?v=202610051329';
-import { colorOf } from './palette.js?v=202610051329';
-import { TrayDealer } from './tray-dealer.js?v=202610051329';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610051329';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610051329';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610051329';
-import { World } from './world.js?v=202610051329';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610051329';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610051329';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610051329';
-import { softwareRendering } from './fx2d.js?v=202610051329';
-import { useSprites } from './shards.js?v=202610051329';
+import { Game } from '../core/game.js?v=202610051342';
+import { Board, createBlock } from '../core/board.js?v=202610051342';
+import { Piece } from '../core/pieces.js?v=202610051342';
+import * as Sim from '../core/sim.js?v=202610051342';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610051342';
+import { Renderer, delay, markJoins } from './renderer.js?v=202610051342';
+import { Sfx, kitForScore } from './sfx.js?v=202610051342';
+import { Scenes } from './scenes.js?v=202610051342';
+import { Ambient } from './ambient.js?v=202610051342';
+import { colorOf } from './palette.js?v=202610051342';
+import { TrayDealer } from './tray-dealer.js?v=202610051342';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610051342';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610051342';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610051342';
+import { World } from './world.js?v=202610051342';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610051342';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610051342';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610051342';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610051342';
+import { softwareRendering } from './fx2d.js?v=202610051342';
+import { useSprites } from './shards.js?v=202610051342';
 
 const $ = (id) => document.getElementById(id);
 let boardTheme = readBoardTheme();
@@ -45,12 +46,20 @@ let best = 0;
 /** 最大連鎖・最大コンボの記録（端末ごと・モードごとに別） */
 const recordsKey = () => (mode === 'learn' ? 'blockmancala-records-learn' : 'blockmancala-records');
 let records = { chain: 0, combo: 0 };
+/** 最近のゲームのスコア（新しい順、RECENT_GAMES 件まで。端末ごと・モードごと）。ひっかけの確率を出来に合わせるのに使う（core/difficulty.js） */
+const recentKey = () => (mode === 'learn' ? 'blockmancala-recent-learn' : 'blockmancala-recent');
+let recent = [];
+/** このゲームを始めたときのベストスコア（途中でベストを残しても変えない。超えたかどうかを見るため） */
+let skillBest = 0;
 function loadBest() {
   best = 0;
+  recent = [];
+  try { recent = (JSON.parse(localStorage.getItem(recentKey()) || '[]') || []).filter((n) => Number.isFinite(n)).slice(0, RECENT_GAMES); } catch {}
   records = { chain: 0, combo: 0 };
   try { best = Number(localStorage.getItem(bestKey())) || 0; } catch {}
   try { records = { ...records, ...JSON.parse(localStorage.getItem(recordsKey()) || '{}') }; } catch {}
   loadRanking();
+  skillBest = best;
 }
 /** この端末のランキング（スコア。端末ごと・モードごとに別）。1ゲームずつ、終わったときに入れる */
 const rankingKey = () => (mode === 'learn' ? 'blockmancala-ranking-learn' : 'blockmancala-ranking');
@@ -85,6 +94,8 @@ function recordRun() {
   if (runRecorded || tutorial || game.score.score <= 0) return null;
   runRecorded = true;
   const run = { score: game.score.score, at: Date.now() };
+  recent = [run.score, ...recent].slice(0, RECENT_GAMES);
+  try { localStorage.setItem(recentKey(), JSON.stringify(recent)); } catch {}
   const res = addRun(ranking, run);
   ranking = res.list;
   if (res.rank) lastRun = run;
@@ -195,7 +206,7 @@ let rushBefore = 0;           // この番号より前のターンの再生は�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610051329', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610051342', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -242,6 +253,8 @@ const game = new Game({
     },
   },
 });
+/** ひっかけの確率を出来に合わせる（core/difficulty.js）。チュートリアル中はふつう */
+Object.defineProperty(game, 'skill', { get: () => (tutorial ? null : { best: skillBest, recent }) });
 
 const allClearText = (turn) => `ALL CLEAR!<small>BONUS +${turn.allClearBonus.toLocaleString('en-US')}</small>`;
 
@@ -780,7 +793,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610051329').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610051342').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -1123,6 +1136,7 @@ function showState(st) {
 function restart() {
   // ベストスコアは呼ぶ側で残しておく（ここで残すと、モードを切り替えたときに前のモードの点数が新しいモードのベストになる）
   stopTutorial();
+  skillBest = best;
   generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
   bestCelebrated = false;
   runRecorded = false;

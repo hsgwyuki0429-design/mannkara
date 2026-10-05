@@ -1,12 +1,12 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610051329';
-import { Shards } from './shards.js?v=202610051329';
-import { Sparkles } from './sparkles.js?v=202610051329';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610051329';
-import { Rims } from './rims.js?v=202610051329';
-import { colorOf } from './palette.js?v=202610051329';
-import { PLATE_SETS } from './ambient.js?v=202610051329';
-import { glassElement, glassGroups } from './glass.js?v=202610051329';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610051342';
+import { Shards } from './shards.js?v=202610051342';
+import { Sparkles } from './sparkles.js?v=202610051342';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610051342';
+import { Rims } from './rims.js?v=202610051342';
+import { colorOf } from './palette.js?v=202610051342';
+import { PLATE_SETS } from './ambient.js?v=202610051342';
+import { glassElement, glassGroups } from './glass.js?v=202610051342';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -64,7 +64,11 @@ export function markJoins(cells) {
   for (const c of cells) {
     const same = (dx, dy) => at.get((c.x + dx) + ',' + (c.y + dy))?.color === c.color;
     c.el.classList.toggle('j-l', same(-1, 0)); c.el.classList.toggle('j-r', same(1, 0));
-    c.el.classList.toggle('j-t', same(0, -1)); c.el.classList.toggle('j-b', same(0, 1));
+    const l = same(-1, 0), r = same(1, 0), t = same(0, -1), b = same(0, 1);
+    c.el.classList.toggle('j-t', t); c.el.classList.toggle('j-b', b);
+    // 2 辺でつながっていて斜めが違う色・空きの角（L 字の内側）は、はみ出した角を切る
+    c.el.classList.toggle('n-tl', l && t && !same(-1, -1)); c.el.classList.toggle('n-tr', r && t && !same(1, -1));
+    c.el.classList.toggle('n-br', r && b && !same(1, 1)); c.el.classList.toggle('n-bl', l && b && !same(-1, 1));
   }
 }
 
@@ -377,7 +381,7 @@ export class Renderer {
     this.glassLayer.replaceChildren();
     const theme = document.documentElement.dataset.boardTheme;
     if (theme !== 'glass' && theme !== 'white') {
-      for (const el of this.els.values()) el.classList.remove('j-l', 'j-r', 'j-t', 'j-b');
+      for (const el of this.els.values()) el.classList.remove('j-l', 'j-r', 'j-t', 'j-b', 'n-tl', 'n-tr', 'n-br', 'n-bl');
       return;
     }
     const cells = [];
@@ -389,7 +393,7 @@ export class Renderer {
     }
     if (theme === 'white') {
       const joinable = new Set(cells.map((c) => c.el));
-      for (const el of this.els.values()) if (!joinable.has(el)) el.classList.remove('j-l', 'j-r', 'j-t', 'j-b');
+      for (const el of this.els.values()) if (!joinable.has(el)) el.classList.remove('j-l', 'j-r', 'j-t', 'j-b', 'n-tl', 'n-tr', 'n-br', 'n-bl');
       markJoins(cells);
       return;
     }
