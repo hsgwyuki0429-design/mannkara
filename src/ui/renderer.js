@@ -1,12 +1,12 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610040947';
-import { Shards } from './shards.js?v=202610040947';
-import { Sparkles } from './sparkles.js?v=202610040947';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610040947';
-import { Rims } from './rims.js?v=202610040947';
-import { colorOf } from './palette.js?v=202610040947';
-import { PLATE_SETS } from './ambient.js?v=202610040947';
-import { glassElement, glassGroups } from './glass.js?v=202610040947';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610051052';
+import { Shards } from './shards.js?v=202610051052';
+import { Sparkles } from './sparkles.js?v=202610051052';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610051052';
+import { Rims } from './rims.js?v=202610051052';
+import { colorOf } from './palette.js?v=202610051052';
+import { PLATE_SETS } from './ambient.js?v=202610051052';
+import { glassElement, glassGroups } from './glass.js?v=202610051052';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
