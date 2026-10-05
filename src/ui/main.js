@@ -1,23 +1,23 @@
-import { Game } from '../core/game.js?v=202610051326';
-import { Board, createBlock } from '../core/board.js?v=202610051326';
-import { Piece } from '../core/pieces.js?v=202610051326';
-import * as Sim from '../core/sim.js?v=202610051326';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610051326';
-import { Renderer, delay } from './renderer.js?v=202610051326';
-import { Sfx, kitForScore } from './sfx.js?v=202610051326';
-import { Scenes } from './scenes.js?v=202610051326';
-import { Ambient } from './ambient.js?v=202610051326';
-import { colorOf } from './palette.js?v=202610051326';
-import { TrayDealer } from './tray-dealer.js?v=202610051326';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610051326';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610051326';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610051326';
-import { World } from './world.js?v=202610051326';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610051326';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610051326';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610051326';
-import { softwareRendering } from './fx2d.js?v=202610051326';
-import { useSprites } from './shards.js?v=202610051326';
+import { Game } from '../core/game.js?v=202610051329';
+import { Board, createBlock } from '../core/board.js?v=202610051329';
+import { Piece } from '../core/pieces.js?v=202610051329';
+import * as Sim from '../core/sim.js?v=202610051329';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610051329';
+import { Renderer, delay, markJoins } from './renderer.js?v=202610051329';
+import { Sfx, kitForScore } from './sfx.js?v=202610051329';
+import { Scenes } from './scenes.js?v=202610051329';
+import { Ambient } from './ambient.js?v=202610051329';
+import { colorOf } from './palette.js?v=202610051329';
+import { TrayDealer } from './tray-dealer.js?v=202610051329';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610051329';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610051329';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610051329';
+import { World } from './world.js?v=202610051329';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610051329';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610051329';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610051329';
+import { softwareRendering } from './fx2d.js?v=202610051329';
+import { useSprites } from './shards.js?v=202610051329';
 
 const $ = (id) => document.getElementById(id);
 let boardTheme = readBoardTheme();
@@ -195,7 +195,7 @@ let rushBefore = 0;           // この番号より前のターンの再生は�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610051326', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610051329', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -449,12 +449,14 @@ function renderTray(enter = false) {
       const mid = pieceScreenCenter(piece, s);
       box.style.translate = `${-mid.x}px ${-mid.y}px`;
       if (enter) box.style.animationDelay = `${i * 60}ms`;
+      const joinEls = [];
       for (const c of piece.cells) {
         const d = document.createElement('div');
         d.className = `tray-cell c-${piece.color}`;
         Object.assign(d.style, { width: s + 'px', height: s + 'px', left: c.x * s + 'px', top: c.y * s + 'px' });
-        box.appendChild(d);
+        box.appendChild(d); joinEls.push({ x: c.x, y: c.y, color: piece.color, el: d });
       }
+      markJoins(joinEls);
       if (boardTheme === 'glass') box.appendChild(glassElement(piece.cells, piece.color, s));
       slot.appendChild(box);
     }
@@ -527,13 +529,15 @@ function renderDragPiece(fx, fy) {
   // （ドラッグ中のピースは盤面の外の層なので、動かしても盤面の位置は変わらない）
   const local = renderer.clientToLocal(cx, cy);
   if (!layer.childElementCount) {
+    const joinEls = [];
     for (const cc of piece.cells) {
       const d = document.createElement('div');
       d.className = `drag-cell c-${piece.color}`;
       d.style.left = (cc.x - piece.width / 2) * c + 'px';
       d.style.top = (cc.y - piece.height / 2) * c + 'px';
-      layer.appendChild(d);
+      layer.appendChild(d); joinEls.push({ x: cc.x, y: cc.y, color: piece.color, el: d });
     }
+    markJoins(joinEls);
     if (boardTheme === 'glass') {
       const surface = glassElement(piece.cells, piece.color, c);
       surface.style.marginLeft = -piece.width * c / 2 + 'px';
@@ -776,7 +780,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610051326').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610051329').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -846,10 +850,15 @@ function renderBoardThemeList() {
         well.style.transform = `translate(${c.x * 19}px,${c.y * 19}px)`;
         board.appendChild(well);
       }
-      for (const piece of pieces) for (const c of piece.cells) {
+      for (const piece of pieces) {
+        const joinEls = [];
+        for (const c of piece.cells) {
         const block = document.createElement('i'); block.className = `cell block c-${piece.color}`;
+        joinEls.push({ x: c.x, y: c.y, color: piece.color, el: block });
         block.style.transform = `translate(${c.x * 19}px,${c.y * 19}px)`;
         board.appendChild(block);
+        }
+        markJoins(joinEls);
       }
     }
     preview.appendChild(board);

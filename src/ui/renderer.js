@@ -1,12 +1,12 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610051326';
-import { Shards } from './shards.js?v=202610051326';
-import { Sparkles } from './sparkles.js?v=202610051326';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610051326';
-import { Rims } from './rims.js?v=202610051326';
-import { colorOf } from './palette.js?v=202610051326';
-import { PLATE_SETS } from './ambient.js?v=202610051326';
-import { glassElement, glassGroups } from './glass.js?v=202610051326';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610051329';
+import { Shards } from './shards.js?v=202610051329';
+import { Sparkles } from './sparkles.js?v=202610051329';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610051329';
+import { Rims } from './rims.js?v=202610051329';
+import { colorOf } from './palette.js?v=202610051329';
+import { PLATE_SETS } from './ambient.js?v=202610051329';
+import { glassElement, glassGroups } from './glass.js?v=202610051329';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -58,6 +58,16 @@ const glowOf = (name, a = 0.85) => {
  * 画面座標 (x, r): x=0 左端…7 右端, r=0 上端…7 下端。
  * 縦列は r=8 の行（盤面の下）を右へ、横列は x=8 の列（盤面の右）を下へ流れ、(8,8) のゴールへ入る。
  */
+/** ホワイト用: 辺が接している同じ色のマスの間を、すき間なくつなぐ（cells = [{x, y, color, el}]。クラス j-l/j-r/j-t/j-b を付け直す） */
+export function markJoins(cells) {
+  const at = new Map(cells.map((c) => [c.x + ',' + c.y, c]));
+  for (const c of cells) {
+    const same = (dx, dy) => at.get((c.x + dx) + ',' + (c.y + dy))?.color === c.color;
+    c.el.classList.toggle('j-l', same(-1, 0)); c.el.classList.toggle('j-r', same(1, 0));
+    c.el.classList.toggle('j-t', same(0, -1)); c.el.classList.toggle('j-b', same(0, 1));
+  }
+}
+
 export class Renderer {
   constructor(sfx) {
     this.sfx = sfx;
@@ -365,13 +375,23 @@ export class Renderer {
     if (!this.glassLayer) return;
     for (const el of this.els.values()) this.detachGlass(el);
     this.glassLayer.replaceChildren();
-    if (document.documentElement.dataset.boardTheme !== 'glass') return;
+    const theme = document.documentElement.dataset.boardTheme;
+    if (theme !== 'glass' && theme !== 'white') {
+      for (const el of this.els.values()) el.classList.remove('j-l', 'j-r', 'j-t', 'j-b');
+      return;
+    }
     const cells = [];
     for (const [id, el] of this.els) {
       if (!el.__pos || this.manual.has(id) || excluded.has(id) || el.classList.contains('fly')) continue;
       const x = el.__pos.x / this.cell, y = el.__pos.y / this.cell;
       if (Math.abs(x - Math.round(x)) > .001 || Math.abs(y - Math.round(y)) > .001 || !isInside(Math.round(x), Math.round(y))) continue;
       cells.push({ x: Math.round(x), y: Math.round(y), color: el.__color, el });
+    }
+    if (theme === 'white') {
+      const joinable = new Set(cells.map((c) => c.el));
+      for (const el of this.els.values()) if (!joinable.has(el)) el.classList.remove('j-l', 'j-r', 'j-t', 'j-b');
+      markJoins(cells);
+      return;
     }
     for (const group of glassGroups(cells)) {
       const surface = glassElement(group, group[0].color, this.cell);
