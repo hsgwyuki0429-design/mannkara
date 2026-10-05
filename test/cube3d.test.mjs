@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
   STRETCH_Y, CUBE, BEVEL, VIEW_ANGLE, localToB, bToLocal, eyeFor, projection, apply4, projectToClient, unprojectClient,
   keyframes, cubicBezier, EASE, platePolygon,
-} from '../src/ui/cube3d-math.js?v=202610051407';
-import { roundedCube } from '../src/ui/cube3d.js?v=202610051407';
-import { ROTATION } from '../src/ui/renderer.js?v=202610051407';
+} from '../src/ui/cube3d-math.js?v=202610052318';
+import { roundedCube, cubeJoins } from '../src/ui/cube3d.js?v=202610052318';
+import { ROTATION } from '../src/ui/renderer.js?v=202610052318';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 const VIEWS = [
@@ -135,4 +135,31 @@ test('角を丸めた立方体: 頂点はすべて角の丸い箱の表面にあ
     if (Math.hypot(...cr) < 1e-9) continue;          // 丸い角の先の、面積の無い三角形
     assert.ok(cr[0] * mid[0] + cr[1] * mid[1] + cr[2] * mid[2] > 0, `三角形 ${t / 3} が内を向いている`);
   }
+});
+
+test('同じ色で辺どうし隣り合う立方体はつなぐ（違う色・ずれている・大きさが違うものはつながない。そろって滑っている途中もつながる）', () => {
+  const cell = 40, size = CUBE * cell, a = Math.PI / 4, c = Math.cos(a), s = Math.sin(a);
+  // 立方体の行列（cube3d.js の cubeMatrix と同じ形。z 軸まわりに 45°）。(u, v) = ローカルの x, y 方向へのマス数
+  const mat = (u, v, k = 1) => {
+    const x = (u * c - v * s) * cell, y = (u * s + v * c) * cell;
+    return [c * size * k, s * size * k, 0, 0, -s * size * k, c * size * k, 0, 0, 0, 0, size * k, 0, x, y, size * k / 2, 1];
+  };
+  const red = [1, 0.2, 0.2], blue = [0.2, 0.3, 1];
+  const run = (list) => {
+    const m = new Float32Array(list.length * 16), t = new Float32Array(list.length * 3), out = new Float32Array(list.length * 4);
+    list.forEach(([mm, tt], i) => { m.set(mm, i * 16); t.set(tt, i * 3); });
+    return cubeJoins(m, t, list.length, out);
+  };
+  const gap = (1 / CUBE - 1) / 2 + 0.004;
+  let j = run([[mat(0, 0), red], [mat(1, 0), red], [mat(0, 1), red], [mat(-1, 0), blue]]);
+  assert.ok(near(j[0], gap, 1e-5) && j[1] === 0 && near(j[2], gap, 1e-5) && j[3] === 0);   // +x と +y の隣だけ（-x は違う色）
+  assert.ok(near(j[5], gap, 1e-5) && j[4] === 0);                                          // 2 個目は -x 側
+  assert.deepEqual([...j.slice(12, 16)], [0, 0, 0, 0]);                                     // 違う色
+  // そろって滑っている途中（マスの途中の位置）でもつながる
+  j = run([[mat(0.37, 0.2), red], [mat(1.37, 0.2), red]]);
+  assert.ok(near(j[0], gap, 1e-5) && near(j[5], gap, 1e-5));
+  // 横にずれている・離れている・大きさが違う（弾んでいる途中）ならつながない
+  assert.ok(run([[mat(0, 0), red], [mat(1, 0.3), red]]).every((v) => v === 0));
+  assert.ok(run([[mat(0, 0), red], [mat(1.5, 0), red]]).every((v) => v === 0));
+  assert.ok(run([[mat(0, 0), red], [mat(1, 0, 1.12), red]]).every((v) => v === 0));
 });
