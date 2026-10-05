@@ -483,6 +483,7 @@ body.tutorial-on .score-wrap{visibility:hidden;}
   backdrop-filter:blur(10px) saturate(1.2);-webkit-backdrop-filter:blur(10px) saturate(1.2);}
 [data-board-theme="glass"] #gameOver{--go-card:rgba(70,48,170,.55);--go-edge:rgba(214,196,255,.55);}
 [data-board-theme="3d"] #gameOver{--go-card:rgba(30,34,120,.6);--go-edge:rgba(170,176,255,.55);}
+[data-board-theme="white"] #gameOver{--go-card:rgba(29,35,64,.84);--go-edge:rgba(255,255,255,.35);}
 #gameOver .over-box{position:relative;width:min(100%,340px);max-height:100%;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;
   padding:26px 20px 18px;border-radius:30px;border:1.5px solid var(--go-edge);
   background:linear-gradient(180deg,var(--go-hi),rgba(255,255,255,0) 38%),var(--go-card);
