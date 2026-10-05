@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610052318';
-import { SIZE } from '../core/constants.js?v=202610052318';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610052318';
+import * as THREE from './vendor/three.js?v=202610052342';
+import { SIZE } from '../core/constants.js?v=202610052342';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610052342';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -29,15 +29,16 @@ const srgb = (hex, k = 1) => [1, 3, 5].map((i) => {
   const v = parseInt(hex.slice(i, i + 2), 16) / 255;
   return (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4) * k;
 });
-/** 色名 → ガラスを一辺ぶん通ったあとに残る光の割合（線形 RGB）。通る距離が長いほど、この割合を何回も掛けて濃くなる */
+/** 色名 → ガラスを一辺ぶん通ったあとに残る光の割合（線形 RGB）。通る距離が長いほど、この割合を何回も掛けて濃くなる。
+ *  青い盤面の上で沈まないよう、どの色も明るさ（輝度）がオレンジ（約 0.4）以上になるようにしてある */
 const GLASS = {
-  red: [1.0, 0.06, 0.11],
+  red: [1.0, 0.2, 0.24],
   orange: [1.0, 0.3, 0.02],
   yellow: [1.0, 0.78, 0.03],
   green: [0.06, 0.86, 0.14],
   cyan: [0.03, 0.74, 1.0],
-  blue: [0.08, 0.2, 1.0],
-  purple: [0.45, 0.09, 1.0],
+  blue: [0.12, 0.34, 1.0],
+  purple: [0.62, 0.26, 1.0],
   debug: [0.6, 0.66, 0.8],
   x: [0.6, 0.66, 0.8],
 };
@@ -286,9 +287,11 @@ void main() {
     if (dl.y > 0.0 && on.z > 0.0) tJ = min(tJ, tb.y);
     if (dl.y < 0.0 && on.w > 0.0) tJ = min(tJ, tb.y);
     if (tJ <= min(tb.x, min(tb.y, tb.z)) + 1e-5) {
-      thr *= exp(-sigma * max(tJ, 0.0) * 1.6);       // 隣のガラスの中も進む分、少し多めに色づく
+      // 隣の同じ色のガラスの中も進むが、色を重ねすぎると大きなかたまりほど暗く濁るので、この立方体の分だけ色づける
+      // （隣の色の地図も通さない。通すと同じ色を 2 回掛けて暗くなる）
+      thr *= exp(-sigma * max(tJ, 0.0));
       vec3 pj = o + dl * tJ;
-      acc += thr * behind(vCenter + R * pj, R * dl, true);
+      acc += thr * behind(vCenter + R * pj, R * dl, false);
       thr = vec3(0.0);
       break;
     }
