@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610061014';
-import { SIZE } from '../core/constants.js?v=202610061014';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon, plateFieldData, toHalf } from './cube3d-math.js?v=202610061014';
+import * as THREE from './vendor/three.js?v=202610061243';
+import { SIZE } from '../core/constants.js?v=202610061243';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon, plateFieldData, toHalf } from './cube3d-math.js?v=202610061243';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -44,13 +44,13 @@ const GLASS = {
 };
 const glassOf = (name) => GLASS[name] || GLASS.purple;
 /** 背景・盤面・照明（線形 RGB） */
-export const BACKDROP = { top: '#2a3192', mid: '#454ecb', bottom: '#20256f', glow: '#6870ff' };
+export const BACKDROP = { top: '#3a6adf', mid: '#4479f2', bottom: '#3a6adf', glow: '#4479f2' };
 const LOOK = {
-  backTop: srgb(BACKDROP.top), backMid: srgb(BACKDROP.mid), backBottom: srgb(BACKDROP.bottom), backGlow: srgb(BACKDROP.glow, 0.55),
+  backTop: srgb(BACKDROP.top), backMid: srgb(BACKDROP.mid), backBottom: srgb(BACKDROP.bottom), backGlow: srgb(BACKDROP.glow, 0.25),
   plate: srgb('#c4c8ef'), plateEdge: srgb('#d4d8ff', 0.9), plateGlow: srgb('#7c84e8', 0.1),
   envLo: srgb('#1f2257'), envMid: srgb('#3c4196'), envHi: srgb('#8890dc'),
   key: [20, 19.4, 18.4], rim: [12, 12.6, 13.8], rim2: [3.2, 3.4, 3.9], fill: [1.3, 1.35, 1.6], floor: [2.3, 2.2, 2.6], sun: [26, 25, 23],
-  trayGlow: srgb('#8f95ff', 0.16), backLight: [0.52, 0.5, 0.56],
+  trayGlow: srgb(BACKDROP.glow, 0.16), backLight: [0.52, 0.5, 0.56],
   keyIrr: [1.55, 1.5, 1.42], amb: srgb('#5c62b8', 0.62),
   exposure: 1.0, bloom: 0.26, bloomThreshold: 0.92,
 };
@@ -1248,6 +1248,33 @@ export class Cube3D {
     return [a, 0, 0, a, ox, oy];
   }
 
+  /** 通常デザインと同じ色・所要時間を受け取り、屈折に使う背景も一緒に変える。 */
+  setBackground(look, ms = 0) {
+    const now = performance.now();
+    this.updateBackground(now); // 途中で次の色が来ても、いま見えている色から続ける
+    const colors = {
+      uBackTop: srgb(look.lo), uBackMid: srgb(look.hi), uBackBottom: srgb(look.lo),
+      uBackGlow: srgb(look.hi, 0.25), uTrayGlow: srgb(look.hi, 0.16),
+    };
+    const entries = Object.entries(colors).map(([key, rgb]) => {
+      const value = this.bgMat.uniforms[key].value;
+      return { value, from: value.clone(), to: new THREE.Vector3(...rgb) };
+    });
+    this.backgroundFade = { start: now, ms, entries };
+    this.updateBackground(now);
+    this.invalidate(ms);
+  }
+
+  updateBackground(now = performance.now()) {
+    const fade = this.backgroundFade;
+    if (!fade) return false;
+    const t = fade.ms > 0 ? Math.min(1, Math.max(0, (now - fade.start) / fade.ms)) : 1;
+    const eased = t * t * (3 - 2 * t);
+    for (const { value, from, to } of fade.entries) value.lerpVectors(from, to, eased);
+    if (t === 1) this.backgroundFade = null;
+    return t < 1;
+  }
+
   render(now) {
     const v = this.view, T = this.targets;
     if (!v || !T) return false;
@@ -1258,6 +1285,7 @@ export class Cube3D {
     busy = this.collect(now, v, eye) || busy;
     busy = this.updateTints(now) || busy;
     busy = this.updateSweep(now) || busy;
+    busy = this.updateBackground() || busy;
     this.draw({ view: v, eye, img, size: SIZE, quality: QUALITY[this.quality], tray: true }, T, null);
     return busy;
   }

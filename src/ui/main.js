@@ -1,24 +1,25 @@
-import { Game } from '../core/game.js?v=202610061014';
-import { Board, createBlock } from '../core/board.js?v=202610061014';
-import { Piece } from '../core/pieces.js?v=202610061014';
-import * as Sim from '../core/sim.js?v=202610061014';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610061014';
-import { Renderer, delay, markJoins } from './renderer.js?v=202610061014';
-import { Sfx, kitForScore } from './sfx.js?v=202610061014';
-import { Scenes } from './scenes.js?v=202610061014';
-import { Ambient } from './ambient.js?v=202610061014';
-import { colorOf } from './palette.js?v=202610061014';
-import { TrayDealer } from './tray-dealer.js?v=202610061014';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610061014';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610061014';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610061014';
-import { World } from './world.js?v=202610061014';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610061014';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610061014';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610061014';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610061014';
-import { softwareRendering } from './fx2d.js?v=202610061014';
-import { useSprites } from './shards.js?v=202610061014';
+import { Game } from '../core/game.js?v=202610061243';
+import { Board, createBlock } from '../core/board.js?v=202610061243';
+import { Piece } from '../core/pieces.js?v=202610061243';
+import * as Sim from '../core/sim.js?v=202610061243';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610061243';
+import { Renderer, delay, markJoins } from './renderer.js?v=202610061243';
+import { Sfx, kitForScore } from './sfx.js?v=202610061243';
+import { Scenes } from './scenes.js?v=202610061243';
+import { Ambient } from './ambient.js?v=202610061243';
+import { colorOf } from './palette.js?v=202610061243';
+import { TrayDealer } from './tray-dealer.js?v=202610061243';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610061243';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610061243';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610061243';
+import { World } from './world.js?v=202610061243';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610061243';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610061243';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610061243';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610061243';
+import { softwareRendering } from './fx2d.js?v=202610061243';
+import { useSprites } from './shards.js?v=202610061243';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610061243';
 
 const $ = (id) => document.getElementById(id);
 let boardTheme = readBoardTheme();
@@ -33,6 +34,7 @@ const renderer = new Renderer(sfx);
 const scenes = new Scenes({ sfx, colorOf });
 /** 背景の色（今の青と同じ明るさのまま色相を回す。コンボ・連鎖・全消し・新記録で変わる。チュートリアル中は変えない） */
 const ambient = new Ambient();
+ambient.onChange = (look, ms) => renderer.view3d?.setBackground(look, ms);
 ambient.bindBoard(renderer.plateSets);                     // 盤面の土台の色も、背景と一緒に変わる
 
 /* ---------- モード（通常 / 学習）とベストスコア（端末ごと・モードごとに別） ---------- */
@@ -151,8 +153,10 @@ function planSpeeds(steps) {
   const k = Math.max(1, total / TURN_PLAY_BUDGET);
   return base.map((v) => v * k);
 }
-/** 再生中に次のピースが置かれて待ちが溜まっていたら、さらに速める */
-const backlog = () => (pending > 1 ? BACKLOG_SPEED : 1);
+/** 連鎖の通り道に次のピースを置いたときだけ、音と動きを残して追いつく。 */
+const OVERLAP_SPEED = 8;
+const playingSpeed = () => (playingSeq && playingSeq < fastBefore ? OVERLAP_SPEED : 1);
+const desiredSpeed = () => (paused ? 0 : Math.max(playingSpeed(), drag ? catchUpSpeed(performance.now()) : 1));
 /**
  * 再生中にピースを持ち上げたときの再生の速さ（置くまでに表示を盤面に追いつかせる）:
  *  - 持っているだけ（盤面へ近づけていない）なら速めない
@@ -197,16 +201,18 @@ function playTick(now) {
   if (!pending) { playLeft = 0; return; }
   if (playLast) playLeft = Math.max(0, playLeft - Math.max(0, now - playLast) * renderer.timeScale);
   playLast = now;
-  if (drag && !paused) renderer.timeScale = catchUpSpeed(now);    // 持っている間は、毎フレーム速さを見直す（止まっている指はイベントが来ない）
+  if (!paused) renderer.timeScale = desiredSpeed();
   playRaf = requestAnimationFrame(playTick);
 }
 function startPlayTick() { if (!playRaf) { playLast = 0; playRaf = requestAnimationFrame(playTick); } }
 let turnSeq = 0;              // 置いた順の番号
-let rushBefore = 0;           // この番号より前のターンの再生は早送りする
+let fastBefore = 0;           // この番号より前の干渉するターンを早送りする
+let playingSeq = 0;
+const playback = new Map();   // 再生待ち・再生中の各ターンと次のステップ
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610061014', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610061243', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -223,7 +229,6 @@ const game = new Game({
       kitScore = turn.score;
       if (!pending) sfx.setKit(turn.kit);                    // 前のターンの再生が残っていれば、このターンの再生の始まり（playTurn）で替える
       // 置いたピースは即表示・トレイも即更新（すぐ次を置けるように。補充の手駒は届いたら onTray で出す）
-      if (pending > 0) sfx.stop();
       sfx.place(turn.placed.length, turn.kit);
       turn.seq = ++turnSeq;
       // 穴にぴったり・凹みを埋めて長方形: 置いた瞬間に手応え（連鎖の文字が出ればそちらで上書き）
@@ -231,23 +236,26 @@ const game = new Game({
         sfx.fit();
         renderer.showText(`${turn.fit === 'perfect' ? 'PERFECT FIT!' : 'NICE FIT!'}<small>+${turn.fitBonus.toLocaleString('en-US')}</small>`, 't2');
       }
-      // 前のターンの再生がまだ終わっていなければ、残りを一気に最後まで進める（表示を盤面に追いつかせる）。
-      // ルールは置いた瞬間に確定しているので、遅れた表示のまま新しいピースを出すと古いブロックに重なって見える
-      if (pending > 0) { rushBefore = turn.seq; renderer.setRush(true); }
-      renderer.popIn(turn.placed, turn.fit === 'perfect' || !!turn.rect);
+      const overlaps = [...playback.values()].some(({ turn: prior, next }) => chainTouchesPlacement(prior.steps.slice(next), turn.placed));
+      if (overlaps) { fastBefore = turn.seq; renderer.timeScale = desiredSpeed(); }
+      // 干渉するブロックは、先の連鎖が通過するまで表示を待つ。そうしないと重なって見える。
+      if (!overlaps) renderer.popIn(turn.placed, turn.fit === 'perfect' || !!turn.rect);
+      else turn.deferPlace = true;
       dropHint();
       const refilledNow = turn.refilled && !turn.trayReady;
       renderTray(refilledNow);
       if (refilledNow) sfx.refill();
       updateDebug();
       pending++;
+      playback.set(turn.seq, { turn, next: 0 });
       playLeft += turnPlayCost(turn);
       startPlayTick();
       const gen = generation;
       enqueue(() => playTurn(turn)).finally(() => {
         if (gen !== generation) return;
+        playback.delete(turn.seq);
         pending = Math.max(0, pending - 1);
-        if (!pending) caughtUp();
+        if (!pending) { playingSeq = 0; renderer.timeScale = paused ? 0 : 1; caughtUp(); }
       });
       if (tutorial) tutorialPlaced();
     },
@@ -261,17 +269,12 @@ const allClearText = (turn) => `ALL CLEAR!<small>BONUS +${turn.allClearBonus.toL
 async function playTurn(turn) {
   // 途中でリスタート（モードの切り替えなど）したら、古いゲームの続き（点数・ゲームオーバー）は出さない
   const gen = generation, stale = () => gen !== generation;
-  const rush = turn.seq < rushBefore;
+  playingSeq = turn.seq;
   sfx.setKit(turn.kit ?? 0);                             // このターンの音のセット（前のターンの再生が終わってから替わる）
-  renderer.setRush(rush);
+  renderer.timeScale = desiredSpeed();
+  if (turn.deferPlace) renderer.popIn(turn.placed, turn.fit === 'perfect' || !!turn.rect);
   showScore(turn.scoreAfterPlace);
   if (!tutorial) ambient.turn(turn);                     // 背景の色（コンボが続くと色相が進む。早送りでも色は合わせる）
-  if (rush) {                                            // 早送り: 演出なしで盤面と点数だけ最後まで進める
-    for (const step of turn.steps) { await renderer.playStep(step, 1); if (stale()) return; }
-    if (turn.allClear) { renderer.showText(allClearText(turn), 't5'); sfx.allClear(); if (!tutorial) ambient.celebrate('clear'); }   // 全消しは見せ場なので早送りでも出す
-    showScore(turn.score);
-    return;
-  }
   const speeds = planSpeeds(turn.steps);
   if (turn.steps.length) {
     renderer.setFever((turn.streak - 1) / 5);
@@ -281,17 +284,15 @@ async function playTurn(turn) {
   let shownTier = 0;                                       // このターンで画面の色を変えた褒め言葉の段階
   const explain = tutorial ? TUTORIAL_STEPS[tutorial.i]?.explain : null;   // チュートリアルで動きを1つずつ説明する
   for (const [i, step] of turn.steps.entries()) {
-    const sp = speeds[i] * backlog() * tutorialSlow();
-    // 再生中に次のピースが置かれたら、残りの発動は演出なしで一気に進める
-    if (renderer.rush) { await renderer.playStep(step, 1); if (stale()) return; continue; }
+    const sp = speeds[i] * tutorialSlow();
     const ex = explain?.[i];
     if (ex?.full) { await explainFull(step, ex.full); if (stale()) return; }
-    if (i === 0) await renderer.charge(step.kind, step.n, step.stack, ANIM.charge / backlog());
+    if (i === 0) await renderer.charge(step.kind, step.n, step.stack, ANIM.charge);
     if (stale()) return;
     await renderer.playStep(step, sp, ex && (ex.out || ex.enter) ? () => explainEnter(step, ex) : null);
     if (ex) { renderer.clearAnnotations(); renderer.litLines([]); }
     if (stale()) return;
-    if (renderer.rush) continue;
+    playback.get(turn.seq).next = i + 1;
     const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
     if (step.chain >= 2) {
       renderer.showText(`${step.chain} CHAIN<small>${praise}</small>`, `t${tier}`);
@@ -596,7 +597,7 @@ function updateDrag(e) {
   }
   drag.lastD = d; drag.lastT = now;
   drag.x = e.clientX; drag.y = e.clientY;
-  if (pending > 0 && !paused) renderer.timeScale = catchUpSpeed(now);
+  if (pending > 0 && !paused) renderer.timeScale = desiredSpeed();
   const center = renderDragPiece(e.clientX, e.clientY);
   const c = renderer.cell;
   const fx = center.x / c - drag.piece.width / 2;
@@ -629,7 +630,7 @@ function endDrag() {
   renderer.view3d?.drag(null);
   renderer.view3d?.setTrayState({ dragging: -1 });
   drag = null;
-  renderer.timeScale = paused ? 0 : 1;
+  renderer.timeScale = desiredSpeed();
 }
 /** 持っているピースを置かずに戻す（指が離れたのを取りこぼしたとき・一時停止・画面の切り替えなど） */
 function cancelDrag() {
@@ -759,7 +760,7 @@ let paused = false;
 function setPaused(v) {
   paused = v;
   if (v) cancelDrag();
-  renderer.timeScale = v ? 0 : 1;
+  renderer.timeScale = desiredSpeed();
   renderer.setPaused(v);
   sfx.setPaused(v);
   if (v) {
@@ -793,7 +794,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610061014').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610061243').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -817,6 +818,7 @@ function enable3d() {
     if (view.lost || view.failed) { document.documentElement.dataset.gl = 'off'; return; }
     renderer.view3d = view;
     view.attach();
+    view.setBackground(ambient.currentLook);
     view.setPaused(paused);
     document.documentElement.dataset.gl = 'on';
     renderTray();
@@ -1026,7 +1028,7 @@ function closeRanking() {
   rankToken++;
   editName(false);
   paused = pausedBeforeRank;
-  renderer.timeScale = paused ? 0 : 1;
+  renderer.timeScale = desiredSpeed();
   $('rankOverlay').classList.add('hidden');
 }
 /** 名前の変更: 「変更」で入力欄、「決定」（または Enter）でサーバーへ */
@@ -1113,7 +1115,7 @@ function readSave() {
 }
 /** 状態 st の盤面・トレイ・スコアをそのまま画面に出す（再生の途中のものは打ち切る） */
 function showState(st) {
-  generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
+  generation++; queue = Promise.resolve(); pending = 0; fastBefore = 0; playingSeq = 0; playback.clear(); playLeft = 0;
   endDrag();
   game.importState(st);
   kitScore = game.score.score || 0; sfx.setKit(tutorial ? 0 : kitForScore(kitScore));      // 途中から続けるときは、そのスコアの音のセットから
@@ -1137,7 +1139,7 @@ function restart() {
   // ベストスコアは呼ぶ側で残しておく（ここで残すと、モードを切り替えたときに前のモードの点数が新しいモードのベストになる）
   stopTutorial();
   skillBest = best;
-  generation++; queue = Promise.resolve(); pending = 0; rushBefore = 0; playLeft = 0;
+  generation++; queue = Promise.resolve(); pending = 0; fastBefore = 0; playingSeq = 0; playback.clear(); playLeft = 0;
   bestCelebrated = false;
   runRecorded = false;
   clearSave();

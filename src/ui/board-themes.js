@@ -7,7 +7,7 @@ export const BOARD_THEMES = [
   { id: '3d', name: '3D', description: '光の屈折を計算した、本物のようなガラスの立方体' },
 ];
 /** 3D の背景の色（読み込みの間・ブラウザの上のバー）。cube3d.js の BACKDROP.top と同じ */
-export const CUBE_BACKGROUND = '#2a3192';
+export const CUBE_BACKGROUND = '#3a6adf';
 /** ホワイトの背景の色（ブラウザの上のバー・結果の画像） */
 export const WHITE_BACKGROUND = '#f4f6fb';
 export const normalizeBoardTheme = (value) => BOARD_THEMES.some((t) => t.id === value) ? value : 'gem';

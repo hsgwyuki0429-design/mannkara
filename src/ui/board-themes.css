@@ -57,8 +57,7 @@ html[data-board-theme="glass"]{background-color:#5e4ac2 !important;}
 /* 3D: WebGL の canvas（cube3d.js）が、背景・盤面・ブロック・手駒・持っているピースを描く（html の data-gl="on"）。
    読み込みの間（data-gl が無い）は盤面を隠し、WebGL が使えないとき（data-gl="off"）は宝石の見た目のまま遊べる */
 .gl-board{position:fixed;left:0;top:0;z-index:0;pointer-events:none;}
-html[data-board-theme="3d"]{background-color:#2a3192 !important;}
-[data-board-theme="3d"] body{background:#2a3192 radial-gradient(ellipse 95% 60% at 50% 42%,#4650c8 0%,#333aa4 55%,#20256f 100%) !important;}
+/* 読み込み中と WebGL が使えないときも、通常デザインと同じ明るい背景・色の変化を使う。 */
 [data-board-theme="3d"]:not([data-gl="off"]) :is(#ambient,#sceneTint,#fever){display:none !important;}
 [data-board-theme="3d"]:not([data-gl="off"]) #wellLayer,
 [data-board-theme="3d"]:not([data-gl="off"]) .playfield :is(.block,.ghost,.hi,.well-tint),
