@@ -1,4 +1,4 @@
-import { TIGHT_RATE } from './constants.js?v=202610060102';
+import { TIGHT_RATE } from './constants.js?v=202610060110';
 
 /**
  * ひっかけ（置き方が1〜2通りしかない組み合わせ）の確率を、遊んでいる人の出来に合わせて変える。
