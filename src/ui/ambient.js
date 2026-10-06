@@ -239,6 +239,7 @@ export class Ambient {
     this.dir = this.rand() < 0.5 ? -1 : 1;                      // ふだんの色が進む向き（ときどき反対になる）
     this.combo = null;                                          // いまのコンボの色の進み方（comboStyle）。コンボが途切れたら捨てる
     this.settled = ambientLook(BASE_HUE, 'base');               // いま body に描いてある色（styles.css の body の背景 = 今の青）
+    this.currentLook = this.settled;
     this.moves = 0;
     this.holdUntil = 0;
     this.plates = null;                                         // 盤面の土台の層（bindBoard）
@@ -389,6 +390,8 @@ export class Ambient {
 
   /** 新しい色の層を一番上に重ねて、ms かけて opacity 0 → 1。重なり終わったら、下の層は外す */
   show(look, ms) {
+    this.currentLook = look;
+    this.onChange?.(look, ms);
     if (this.root.hidden) this.lift();
     const layer = this.layers.find((l) => !l.on) ?? this.layers.reduce((a, b) => (a.z <= b.z ? a : b));
     const { el } = layer;

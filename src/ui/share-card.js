@@ -1,7 +1,7 @@
-import { SIZE, isInside } from '../core/constants.js?v=202610061014';
-import { gemSprite } from './shards.js?v=202610061014';
-import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610061014';
-import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './glass.js?v=202610061014';
+import { SIZE, isInside } from '../core/constants.js?v=202610061235';
+import { gemSprite } from './shards.js?v=202610061235';
+import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610061235';
+import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './glass.js?v=202610061235';
 
 /**
  * 結果カード（シェア用の1枚の画像）: ロゴ・スコア・最大連鎖・最大コンボ・最後の盤面・遊べる URL。
