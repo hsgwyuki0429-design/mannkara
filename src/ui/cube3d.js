@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610060102';
-import { SIZE } from '../core/constants.js?v=202610060102';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610060102';
+import * as THREE from './vendor/three.js?v=202610060110';
+import { SIZE } from '../core/constants.js?v=202610060110';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610060110';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -543,7 +543,8 @@ void main() {
     // 角の丸い所に当たった光は外へ曲がる（暗いふち）→ そのすぐ内側に集まる（明るい線）
     T *= mix(0.22, 1.0, smoothstep(0.0, rb * 1.4, e));
     float ring = smoothstep(rb * 0.8, rb * 1.7, e) * smoothstep(rb * 4.2, rb * 1.9, e);
-    T += vTint * vTint * ring * 1.0 + vTint * 0.12;
+    float joined = step(1e-5, vExt.x + vExt.y + vExt.z + vExt.w);
+    T += vTint * vTint * ring * mix(1.0, 0.0, joined) + vTint * 0.12;
   }
   // 立方体が盤面に接している所のまわりは、まわりの光が届きにくい（接地の影）
   vec2 bc = vCube.xy + 0.5 * (vExt.yw - vExt.xz), bh = vec2(vCube.z) + 0.5 * (vExt.xz + vExt.yw);
