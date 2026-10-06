@@ -1,24 +1,24 @@
-import { Game } from '../core/game.js?v=202610060110';
-import { Board, createBlock } from '../core/board.js?v=202610060110';
-import { Piece } from '../core/pieces.js?v=202610060110';
-import * as Sim from '../core/sim.js?v=202610060110';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610060110';
-import { Renderer, delay, markJoins } from './renderer.js?v=202610060110';
-import { Sfx, kitForScore } from './sfx.js?v=202610060110';
-import { Scenes } from './scenes.js?v=202610060110';
-import { Ambient } from './ambient.js?v=202610060110';
-import { colorOf } from './palette.js?v=202610060110';
-import { TrayDealer } from './tray-dealer.js?v=202610060110';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610060110';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610060110';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610060110';
-import { World } from './world.js?v=202610060110';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610060110';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610060110';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610060110';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610060110';
-import { softwareRendering } from './fx2d.js?v=202610060110';
-import { useSprites } from './shards.js?v=202610060110';
+import { Game } from '../core/game.js?v=202610060607';
+import { Board, createBlock } from '../core/board.js?v=202610060607';
+import { Piece } from '../core/pieces.js?v=202610060607';
+import * as Sim from '../core/sim.js?v=202610060607';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET, BACKLOG_SPEED } from '../core/constants.js?v=202610060607';
+import { Renderer, delay, markJoins } from './renderer.js?v=202610060607';
+import { Sfx, kitForScore } from './sfx.js?v=202610060607';
+import { Scenes } from './scenes.js?v=202610060607';
+import { Ambient } from './ambient.js?v=202610060607';
+import { colorOf } from './palette.js?v=202610060607';
+import { TrayDealer } from './tray-dealer.js?v=202610060607';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610060607';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610060607';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610060607';
+import { World } from './world.js?v=202610060607';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610060607';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610060607';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610060607';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610060607';
+import { softwareRendering } from './fx2d.js?v=202610060607';
+import { useSprites } from './shards.js?v=202610060607';
 
 const $ = (id) => document.getElementById(id);
 let boardTheme = readBoardTheme();
@@ -206,7 +206,7 @@ let rushBefore = 0;           // この番号より前のターンの再生は�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610060110', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610060607', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -793,7 +793,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610060110').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610060607').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
