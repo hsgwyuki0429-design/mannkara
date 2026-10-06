@@ -40,12 +40,12 @@ export const KIND_PRIORITY = { col: 0, row: 1 };
 // ===== トレイ =====
 export const TRAY_SIZE = 3;
 /**
- * ふつうの抽選（条件なしの1回分）で、手駒1つごとに「置けば発動が起きる形」を選ぶ確率。残り（80%）は、下の「穴・凹みに気持ちよくはまる形」。
+ * ふつうの抽選（条件なしの1回分）で、手駒1つごとに「置けば発動が起きる形」を選ぶ確率。残り（60%）は、下の「穴・凹みに気持ちよくはまる形」。
  * どちらの形も今の盤面に1つも無いときだけ、形の重みどおりのランダム
  */
-export const CHAIN_PIECE_RATE = 0.2;
+export const CHAIN_PIECE_RATE = 0.4;
 /**
- * 「今の盤面の穴・凹みに気持ちよくはまる形」を選ぶ（連鎖ピースに選ばれなかった枠 = 80%）。
+ * 「今の盤面の穴・凹みに気持ちよくはまる形」を選ぶ（連鎖ピースに選ばれなかった枠 = 60%）。
  * 列を消すのとは別に「空いている所にぴったり入れたい・凹みを埋めて四角くそろえたい」気持ちに応えるための形。
  * はまり方（Sim.fitOf）ごとの選びやすさ（× 形のマス数。大きい形ほど選びやすい）:
  *   perfect = 囲まれた穴をちょうど埋める / rect = 凹みを埋めて長方形ができる / dent = 凹みにはまる
@@ -69,7 +69,7 @@ export const SCORE_PER_RECT_CELL = 10;
 export const WAYS_MAX = 300;
 /** 目標の何倍以内なら、その候補で決める */
 export const WAYS_TOLERANCE = 2;
-export const TIGHT_RATE = 0.05;
+export const TIGHT_RATE = 0.03;
 export const TIGHT_MAX_FILL = 0.6;         // ブロック 16 個まで
 export const TIGHT_MIN_SPOTS = 4;
 export const TIGHT_MAX_WAYS = 2;
