@@ -1,17 +1,17 @@
-import { Board, createBlock } from './board.js?v=202610060959';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610060959';
-import { ScoreManager } from './score.js?v=202610060959';
-import { nextActivation, lineMoves } from './mancala.js?v=202610060959';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610060959';
-import * as Sim from './sim.js?v=202610060959';
-import { tightRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610060959';
-import { bestMove } from './advisor.js?v=202610060959';
+import { Board, createBlock } from './board.js?v=202610061014';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610061014';
+import { ScoreManager } from './score.js?v=202610061014';
+import { nextActivation, lineMoves } from './mancala.js?v=202610061014';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610061014';
+import * as Sim from './sim.js?v=202610061014';
+import { tightRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610061014';
+import { bestMove } from './advisor.js?v=202610061014';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202610060959';
+} from './constants.js?v=202610061014';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
