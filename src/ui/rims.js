@@ -1,5 +1,5 @@
-import { colorOf } from './palette.js?v=202610060057';
-import { easeOut } from './fx2d.js?v=202610060057';
+import { colorOf } from './palette.js?v=202610060100';
+import { easeOut } from './fx2d.js?v=202610060100';
 
 /**
  * ラインの光の跡: ブロックが通り過ぎたマスの縁が、ほんの少しのあいだ白く光って引く。

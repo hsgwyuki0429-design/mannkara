@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610060057';
-import { SIZE } from '../core/constants.js?v=202610060057';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610060057';
+import * as THREE from './vendor/three.js?v=202610060100';
+import { SIZE } from '../core/constants.js?v=202610060100';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610060100';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -492,17 +492,19 @@ uniform vec4 uRect;        // 地図が覆う範囲（マス単位）
 attribute vec4 iCube;      // 中心 x, r（マス単位）・半分の大きさ・底の高さ
 attribute vec4 iCube2;     // 高さ・角の丸み
 attribute vec3 iTint;
+attribute vec4 iExt;       // 同じ色の隣とつなぐ側へ伸ばす長さ（マス単位。-x, +x, -r, +r）。ひとつの塊として影・光を決める
 varying vec2 vCell;
 flat varying vec4 vCube;
 flat varying vec4 vCube2;
 flat varying vec3 vTint;
+flat varying vec4 vExt;
 void main() {
   vec2 s = -uL.xy / uL.z;
   float z0 = iCube.w, z1 = iCube.w + iCube2.x;
-  vec2 lo = iCube.xy - iCube.z + min(s * z0, s * z1) - 0.32;
-  vec2 hi = iCube.xy + iCube.z + max(s * z0, s * z1) + 0.32;
+  vec2 lo = iCube.xy - iCube.z - iExt.xz + min(s * z0, s * z1) - 0.32;
+  vec2 hi = iCube.xy + iCube.z + iExt.yw + max(s * z0, s * z1) + 0.32;
   vCell = mix(lo, hi, position.xy + 0.5);
-  vCube = iCube; vCube2 = iCube2; vTint = iTint;
+  vCube = iCube; vCube2 = iCube2; vTint = iTint; vExt = iExt;
   gl_Position = vec4((vCell - uRect.xy) / (uRect.zw - uRect.xy) * 2.0 - 1.0, 0.0, 1.0);
 }
 `;
@@ -512,15 +514,21 @@ varying vec2 vCell;
 flat varying vec4 vCube;
 flat varying vec4 vCube2;
 flat varying vec3 vTint;
+flat varying vec4 vExt;
 float edgeDist(vec3 p, vec3 lo, vec3 hi) {
   vec3 d = min(p - lo, hi - p);
+  // つながった側は塊の内側なので、ふち（角の丸み）は無い
+  if (vExt.x > 0.0 && p.x - lo.x < hi.x - p.x) d.x = 1e3;
+  if (vExt.y > 0.0 && hi.x - p.x <= p.x - lo.x) d.x = 1e3;
+  if (vExt.z > 0.0 && p.y - lo.y < hi.y - p.y) d.y = 1e3;
+  if (vExt.w > 0.0 && hi.y - p.y <= p.y - lo.y) d.y = 1e3;
   // 面の上の点: いちばん小さいのはその面、2 番目が近いふちまでの距離
   float a = min(d.x, min(d.y, d.z)), c = max(d.x, max(d.y, d.z));
   return d.x + d.y + d.z - a - c;
 }
 void main() {
   vec3 q = vec3(vCell, 0.0);
-  vec3 lo = vec3(vCube.xy - vCube.z, vCube.w), hi = vec3(vCube.xy + vCube.z, vCube.w + vCube2.x);
+  vec3 lo = vec3(vCube.xy - vCube.z - vExt.xz, vCube.w), hi = vec3(vCube.xy + vCube.z + vExt.yw, vCube.w + vCube2.x);
   vec3 L = uL;
   vec3 t1 = (lo - q) / L, t2 = (hi - q) / L;
   vec3 tn = min(t1, t2), tf = max(t1, t2);
@@ -538,7 +546,8 @@ void main() {
     T += vTint * vTint * ring * 1.0 + vTint * 0.12;
   }
   // 立方体が盤面に接している所のまわりは、まわりの光が届きにくい（接地の影）
-  vec2 dq = abs(vCell - vCube.xy) - vCube.z;
+  vec2 bc = vCube.xy + 0.5 * (vExt.yw - vExt.xz), bh = vec2(vCube.z) + 0.5 * (vExt.xz + vExt.yw);
+  vec2 dq = abs(vCell - bc) - bh;
   float dBase = length(max(dq, 0.0)) + min(max(dq.x, dq.y), 0.0);
   float near = exp(-vCube.w * 3.0);
   float ao = 1.0 - near * 0.5 * smoothstep(0.24, 0.0, dBase);
@@ -583,13 +592,16 @@ uniform vec4 uRect;
 attribute vec4 iCube;
 attribute vec4 iCube2;
 attribute vec3 iTint;
+attribute vec4 iExt;
 varying vec2 vCell;
 flat varying vec4 vCube;
 flat varying vec3 vTint;
+flat varying vec4 vExt;
 void main() {
-  vCube = iCube; vTint = iTint;
+  vCube = iCube; vTint = iTint; vExt = iExt;
   float h = iCube.z + 0.06;
-  vCell = iCube.xy + position.xy * 2.0 * h;
+  vec2 lo = iCube.xy - h - iExt.xz, hi = iCube.xy + h + iExt.yw;
+  vCell = mix(lo, hi, position.xy + 0.5);
   // 浮いている立方体（持っているピース・落ちてくる途中）は、盤面の上の隣ではないので描かない
   float off = iCube.w > 0.05 ? 1.0 : 0.0;
   gl_Position = vec4((vCell - uRect.xy) / (uRect.zw - uRect.xy) * 2.0 - 1.0, 0.0, 1.0 - off * 2.0);
@@ -599,8 +611,10 @@ const NB_FRAG = /* glsl */ `
 varying vec2 vCell;
 flat varying vec4 vCube;
 flat varying vec3 vTint;
+flat varying vec4 vExt;
 void main() {
-  vec2 d = abs(vCell - vCube.xy) - vCube.z;
+  vec2 c = vCube.xy + 0.5 * (vExt.yw - vExt.xz), hh = vec2(vCube.z) + 0.5 * (vExt.xz + vExt.yw);
+  vec2 d = abs(vCell - c) - hh;
   float inside = smoothstep(0.04, -0.04, max(d.x, d.y));
   gl_FragColor = vec4(mix(vec3(1.0), pow(clamp(vTint, 0.0, 1.0), vec3(0.85)) * 0.94, inside), 1.0);
 }
@@ -774,6 +788,31 @@ export function cubeJoins(m, tint, n, out) {
   return out;
 }
 
+/**
+ * 影・光の地図用の「つなぐ」: 同じ色で辺どうし隣り合う立方体（マス単位。list の要素は [x, r, half, z0, height, tint]）の間のすき間を、
+ * ひとつの塊として扱えるよう埋める。返り値は 4 個ずつ（-x, +x, -r, +r へ伸ばす長さ）
+ */
+export function causJoins(list) {
+  const out = new Float32Array(Math.max(list.length, 1) * 4);
+  for (let i = 0; i < list.length; i++) {
+    const [x, r, half, z0, h, tint] = list[i];
+    for (let j = 0; j < list.length; j++) {
+      if (i === j) continue;
+      const [x2, r2, half2, z02, h2, tint2] = list[j];
+      if (tint[0] !== tint2[0] || tint[1] !== tint2[1] || tint[2] !== tint2[2]) continue;
+      if (Math.abs(half - half2) > half * 0.04 || Math.abs(z0 - z02) > 0.04 || Math.abs(h - h2) > h * 0.04) continue;
+      const dx = x2 - x, dr = r2 - r;
+      for (const [along, across, side] of [[dx, dr, 0], [dr, dx, 2]]) {
+        const a = Math.abs(along);
+        if (Math.abs(across) > 0.05 || a < half * 2 * 1.02 || a > 1.25) continue;
+        const k = i * 4 + side + (along > 0 ? 1 : 0);
+        out[k] = Math.max(out[k], (a - 2 * half) / 2 + 0.004);
+      }
+    }
+  }
+  return out;
+}
+
 /** 立方体の行列（列優先 16 個）: 底の中心 (x, y, z)、大きさ (sx, sy, sz)、z 軸まわりの角度 a、追加の回転（3×3 の行列。省略可） */
 function cubeMatrix(x, y, z, sx, sy, sz, a, tilt = null) {
   const c = Math.cos(a), s = Math.sin(a);
@@ -911,6 +950,8 @@ export class Cube3D {
     this.causCube = new THREE.InstancedBufferAttribute(new Float32Array(this.causCap * 4), 4);
     this.causCube2 = new THREE.InstancedBufferAttribute(new Float32Array(this.causCap * 4), 4);
     this.causTint = new THREE.InstancedBufferAttribute(new Float32Array(this.causCap * 3), 3);
+    this.causExt = new THREE.InstancedBufferAttribute(new Float32Array(this.causCap * 4), 4);
+    cg.setAttribute('iExt', this.causExt);
     cg.setAttribute('iCube', this.causCube); cg.setAttribute('iCube2', this.causCube2); cg.setAttribute('iTint', this.causTint);
     this.causMat = new THREE.ShaderMaterial({
       uniforms: { uL: { value: new THREE.Vector3() }, uRect: { value: new THREE.Vector4() } },
@@ -1624,6 +1665,9 @@ export class Cube3D {
     // マスの座標は r が下向き（B 空間の y とは向きの関係が鏡写し）なので、z の向きはそのまま
     this.causMat.uniforms.uRect.value.copy(this.causRect);
     const n = this.caus.length;
+    const ext = causJoins(this.caus);
+    this.causExt.array.set(ext, 0);
+    this.causExt.needsUpdate = true;
     for (let i = 0; i < n; i++) {
       const [x, r, half, z0, h, tint] = this.caus[i];
       this.causCube.array.set([x, r, half, z0], i * 4);

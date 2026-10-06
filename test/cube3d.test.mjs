@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
   STRETCH_Y, CUBE, BEVEL, VIEW_ANGLE, localToB, bToLocal, eyeFor, projection, apply4, projectToClient, unprojectClient,
   keyframes, cubicBezier, EASE, platePolygon,
-} from '../src/ui/cube3d-math.js?v=202610060057';
-import { roundedCube, cubeJoins } from '../src/ui/cube3d.js?v=202610060057';
-import { ROTATION } from '../src/ui/renderer.js?v=202610060057';
+} from '../src/ui/cube3d-math.js?v=202610060100';
+import { roundedCube, cubeJoins, causJoins } from '../src/ui/cube3d.js?v=202610060100';
+import { ROTATION } from '../src/ui/renderer.js?v=202610060100';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 const VIEWS = [
@@ -162,4 +162,16 @@ test('同じ色で辺どうし隣り合う立方体はつなぐ（違う色・�
   assert.ok(run([[mat(0, 0), red], [mat(1, 0.3), red]]).every((v) => v === 0));
   assert.ok(run([[mat(0, 0), red], [mat(1.5, 0), red]]).every((v) => v === 0));
   assert.ok(run([[mat(0, 0), red], [mat(1, 0, 1.12), red]]).every((v) => v === 0));
+});
+
+test('影・光の地図でも、同じ色で隣り合う立方体はひとつの塊として、すき間を埋める長さが決まる', () => {
+  const red = [1, 0.2, 0.2], blue = [0.2, 0.3, 1], half = CUBE / 2, gap = (1 - CUBE) / 2 + 0.004;
+  const c = (x, r, tint = red, z0 = 0) => [x, r, half, z0, CUBE, tint];
+  const e = causJoins([c(0.5, 0.5), c(1.5, 0.5), c(0.5, 1.5), c(2.5, 0.5, blue), c(1.5, 1.5, red, 0.5)]);
+  assert.ok(near(e[1], gap, 1e-6) && e[0] === 0);              // +x の隣
+  assert.ok(near(e[3], gap, 1e-6) && near(e[4 + 0], gap, 1e-6)); // 2 個目: -x の隣は 1 個目 / 1 個目: +r は 3 個目へ
+  assert.ok(near(e[3], gap, 1e-6));
+  assert.ok(near(e[7], 0, 1e-6) || e[7] >= 0);
+  assert.deepEqual([...e.slice(12, 16)], [0, 0, 0, 0]);          // 違う色
+  assert.deepEqual([...e.slice(16, 20)], [0, 0, 0, 0]);          // 高さが違う（浮いている）
 });
