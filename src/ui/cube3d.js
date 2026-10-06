@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610060100';
-import { SIZE } from '../core/constants.js?v=202610060100';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610060100';
+import * as THREE from './vendor/three.js?v=202610060102';
+import { SIZE } from '../core/constants.js?v=202610060102';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610060102';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -450,13 +450,13 @@ void main() {
     // 立方体の真下は、くぼみの縁を描かない（ガラスを通して縁の線が見えると、つながったブロックの継ぎ目に見える。
     // 空いているマスだけにくぼみが見えるので、空きとブロックの見分けにもなる）
     float occupied = 1.0 - smoothstep(0.82, 0.97, min(occ4.r, min(occ4.g, occ4.b)));
-    float slope = inBoard(ci) ? (1.0 - smoothstep(0.0, wb * 0.5, abs(dw + wb * 0.5))) * (1.0 - occupied) : 0.0;
+    float slope = 0.0;      // マスのくぼみ（溝）は無し: 盤面は真っ平
     vec2 tiltCell = -gw * slope * 1.25;
     // 板のふち（丸く面取り）: 外向きに傾いて、まわりの光を映す
     float rim = smoothstep(-0.075, 0.0, sd0);
     vec2 tiltRim = gradPlate(cell0) * rim * rim * 3.0;
     vec3 n = normalize(vec3(cellDirToB(tiltCell + tiltRim), 1.0));
-    float floorK = inBoard(ci) ? smoothstep(0.0, -wb, dw) : 0.0;
+    float floorK = 0.0;
     vec3 albedo = uPlate * (1.0 - 0.16 * floorK);
     vec2 cuv = (cell0 - uCausRect.xy) / (uCausRect.zw - uCausRect.xy);
     vec4 cs = texture2D(uCaustic, cuv);
