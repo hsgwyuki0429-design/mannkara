@@ -1,17 +1,17 @@
-import { Board, createBlock } from './board.js?v=202610060919';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610060919';
-import { ScoreManager } from './score.js?v=202610060919';
-import { nextActivation, lineMoves } from './mancala.js?v=202610060919';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610060919';
-import * as Sim from './sim.js?v=202610060919';
-import { tightRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610060919';
-import { bestMove } from './advisor.js?v=202610060919';
+import { Board, createBlock } from './board.js?v=202610060945';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610060945';
+import { ScoreManager } from './score.js?v=202610060945';
+import { nextActivation, lineMoves } from './mancala.js?v=202610060945';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610060945';
+import * as Sim from './sim.js?v=202610060945';
+import { tightRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610060945';
+import { bestMove } from './advisor.js?v=202610060945';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202610060919';
+} from './constants.js?v=202610060945';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -392,7 +392,7 @@ export class Game {
   }
 
   /**
-   * 条件なしの1回分の抽選。各枠、CHAIN_PIECE_RATE（20%）で置けば発動が起きる形（連鎖ピース）、残り（80%）で穴・凹みに気持ちよくはまる形。
+   * 条件なしの1回分の抽選。各枠、CHAIN_PIECE_RATE（40%）で置けば発動が起きる形（連鎖ピース）、残り（60%）で穴・凹みに気持ちよくはまる形。
    * 選んだ種類の形が今の盤面に1つも無いときは、もう一方の種類、それも無ければ重みどおりのランダム
    */
   drawTray() {
