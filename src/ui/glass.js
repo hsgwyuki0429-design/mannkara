@@ -82,6 +82,15 @@ export function glassPath(cells, inset = 0.028, radius = 0.13) {
   }).join(' ');
 }
 
+/** 板の中のマスの区切り（隣り合うマスの間だけ。外側のふちは板のふちが描く）。1 マス = 100 */
+export function gridPath(cells) {
+  const has = new Set(cells.map((c) => c.x + ',' + c.y)), out = [];
+  for (const { x, y } of cells) {
+    if (has.has((x + 1) + ',' + y)) out.push(`M${(x + 1) * 100} ${y * 100}V${(y + 1) * 100}`);
+    if (has.has(x + ',' + (y + 1))) out.push(`M${x * 100} ${(y + 1) * 100}H${(x + 1) * 100}`);
+  }
+  return out.join('');
+}
 let serial = 0;
 /** A whole piece is one surface, so neighboring cells never acquire internal rims. */
 export function glassElement(cells, color, cellSize, { plate = false } = {}) {
@@ -128,6 +137,7 @@ export function glassElement(cells, color, cellSize, { plate = false } = {}) {
     <clipPath id="${id}-clip"><path d="${path}" fill-rule="evenodd"/></clipPath>
   </defs>
   <path d="${path}" fill="url(#${id}-fill)" fill-rule="evenodd"/>
+  ${plate ? `<path d="${gridPath(local)}" fill="none" stroke="#f4eeff" stroke-width="1.6" opacity=".26" stroke-linecap="round"/>` : ''}
   <path d="${path}" fill="url(#${id}-reflection)" fill-rule="evenodd"/>
   <path d="${path}" fill="none" stroke="${rim}" stroke-width="3" opacity=".28" filter="url(#${id}-soft)"/>
   <g clip-path="url(#${id}-clip)">
