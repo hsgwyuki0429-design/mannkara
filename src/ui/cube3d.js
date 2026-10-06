@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610052342';
-import { SIZE } from '../core/constants.js?v=202610052342';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610052342';
+import * as THREE from './vendor/three.js?v=202610060057';
+import { SIZE } from '../core/constants.js?v=202610060057';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610060057';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -278,23 +278,8 @@ void main() {
   vec3 acc = vec3(0.0);
   for (int i = 0; i < 4; i++) {
     if (i >= uBounces) break;
-    // つながった面から抜ける光は、隣の同じ色のガラスへそのまま進む（曲がらず、まっすぐ奥へ）
-    vec3 dd = sign(dl) * max(abs(dl), vec3(1e-5));
-    vec3 tb = (mix(lo, hi, step(0.0, dd)) - o) / dd;
-    float tJ = 1e9;
-    if (dl.x > 0.0 && on.x > 0.0) tJ = min(tJ, tb.x);
-    if (dl.x < 0.0 && on.y > 0.0) tJ = min(tJ, tb.x);
-    if (dl.y > 0.0 && on.z > 0.0) tJ = min(tJ, tb.y);
-    if (dl.y < 0.0 && on.w > 0.0) tJ = min(tJ, tb.y);
-    if (tJ <= min(tb.x, min(tb.y, tb.z)) + 1e-5) {
-      // 隣の同じ色のガラスの中も進むが、色を重ねすぎると大きなかたまりほど暗く濁るので、この立方体の分だけ色づける
-      // （隣の色の地図も通さない。通すと同じ色を 2 回掛けて暗くなる）
-      thr *= exp(-sigma * max(tJ, 0.0));
-      vec3 pj = o + dl * tJ;
-      acc += thr * behind(vCenter + R * pj, R * dl, false);
-      thr = vec3(0.0);
-      break;
-    }
+    // つながった側は、隣の同じ色のガラスが続いているものとして、箱をその側へ長く伸ばしてある（hiV / loV）ので、光は境目で曲がらず・色づかず
+    // そのまま奥へ進む（境目の線が出ない）
     float t = boxExit(o - cv, dl, h);
     vec3 pe = o + dl * t;
     float s = sdRoundBox(pe - cv, h, rb); t -= s; pe = o + dl * t;
@@ -361,6 +346,7 @@ uniform vec4 uSdfRect;
 uniform float uThick;
 uniform float uWall;
 uniform sampler2D uCaustic;
+uniform sampler2D uOcc;     // 盤面の上の立方体の色の地図（立方体の真下は白以外）
 uniform vec4 uCausRect;
 uniform sampler2D uTints;
 uniform vec3 uKeyDir, uKeyIrr, uAmb;
@@ -460,7 +446,11 @@ void main() {
     float dw = sdRoundRect(f, vec2(0.435), 0.13);
     float wb = 0.07;
     vec2 gw = gradRoundRect(f, vec2(0.435), 0.13);
-    float slope = inBoard(ci) ? 1.0 - smoothstep(0.0, wb * 0.5, abs(dw + wb * 0.5)) : 0.0;
+    vec4 occ4 = texture2D(uOcc, (cell0 - uCausRect.xy) / (uCausRect.zw - uCausRect.xy));
+    // 立方体の真下は、くぼみの縁を描かない（ガラスを通して縁の線が見えると、つながったブロックの継ぎ目に見える。
+    // 空いているマスだけにくぼみが見えるので、空きとブロックの見分けにもなる）
+    float occupied = 1.0 - smoothstep(0.82, 0.97, min(occ4.r, min(occ4.g, occ4.b)));
+    float slope = inBoard(ci) ? (1.0 - smoothstep(0.0, wb * 0.5, abs(dw + wb * 0.5))) * (1.0 - occupied) : 0.0;
     vec2 tiltCell = -gw * slope * 1.25;
     // 板のふち（丸く面取り）: 外向きに傾いて、まわりの光を映す
     float rim = smoothstep(-0.075, 0.0, sd0);
@@ -966,7 +956,7 @@ export class Cube3D {
       uView: { value: new THREE.Vector4() }, uRes: { value: new THREE.Vector2() }, uEyeW: { value: new THREE.Vector4() },
       uImgInv: { value: new THREE.Matrix3() }, uCell: { value: 40 }, uSize: { value: SIZE }, uStretch: { value: STRETCH_Y },
       uSdf: { value: null }, uSdfRect: { value: new THREE.Vector4() },
-      uThick: { value: 10 }, uWall: { value: 60 }, uCaustic: { value: null }, uCausRect: { value: new THREE.Vector4() }, uTints: { value: this.tintTex },
+      uThick: { value: 10 }, uWall: { value: 60 }, uCaustic: { value: null }, uOcc: { value: null }, uCausRect: { value: new THREE.Vector4() }, uTints: { value: this.tintTex },
       uPlate: { value: new THREE.Vector3(...LOOK.plate) }, uPlateEdge: { value: new THREE.Vector3(...LOOK.plateEdge) }, uPlateGlow: { value: new THREE.Vector3(...LOOK.plateGlow) },
       uBackTop: { value: new THREE.Vector3(...LOOK.backTop) }, uBackMid: { value: new THREE.Vector3(...LOOK.backMid) },
       uBackBottom: { value: new THREE.Vector3(...LOOK.backBottom) }, uBackGlow: { value: new THREE.Vector3(...LOOK.backGlow) },
@@ -1253,7 +1243,7 @@ export class Cube3D {
       if (t && i !== this.dragging) bg.uTrayAt.value[i].set(t.center.x, t.center.y, t.s * Math.max(t.width, t.height) * 0.72 + t.s * 0.4);
       else bg.uTrayAt.value[i].set(-1e4, -1e4, 1);
     }
-    bg.uCaustic.value = caus.texture; bg.uCausRect.value.copy(this.causRect);
+    bg.uCaustic.value = caus.texture; bg.uOcc.value = this.nbTexture; bg.uCausRect.value.copy(this.causRect);
     const inv = img ? invertAffine(img) : [1, 0, 0, 1, 0, 0];
     bg.uImgInv.value.set(inv[0], inv[1], inv[4], inv[2], inv[3], inv[5], 0, 0, 1);
     this.pass(this.bgMat, T.bg);
