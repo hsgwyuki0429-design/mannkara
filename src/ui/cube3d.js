@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610060110';
-import { SIZE } from '../core/constants.js?v=202610060110';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon } from './cube3d-math.js?v=202610060110';
+import * as THREE from './vendor/three.js?v=202610060607';
+import { SIZE } from '../core/constants.js?v=202610060607';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon, plateFieldData, toHalf } from './cube3d-math.js?v=202610060607';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -1443,17 +1443,15 @@ export class Cube3D {
     const u = this.bgMat.uniforms, rect = [-3.5, -3.5, size + 4.5, size + 4.5];
     let t = this.sdfTargets.get(size);
     if (!t) {
-      t = new THREE.WebGLRenderTarget(512, 512, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, stencilBuffer: false });
-      const m = this.sdfMat.uniforms;
-      if (size >= 1) {
-        const poly = platePolygon(size, 0.22);
-        poly.forEach(([x, y], i) => m.uPoly.value[i].set(x, y));
-        m.uPolyN.value = poly.length;
-      } else m.uPolyN.value = 0;                       // 盤面なし（かけらの絵）
-      m.uRect.value.set(...rect);
-      const keep = this.gl.getRenderTarget();
-      this.pass(this.sdfMat, t);
-      this.gl.setRenderTarget(keep);
+      // CPU で計算して、半精度のテクスチャにする（GPU のシェーダーで多角形の内外判定をすると、一部の Android で狂うため）
+      const res = 384, data = size >= 1 ? plateFieldData(platePolygon(size, 0.22), 0.22, rect, res) : new Float32Array(res * res * 4).fill(1e3);
+      const half = new Uint16Array(data.length);
+      for (let i = 0; i < data.length; i++) half[i] = toHalf(data[i]);
+      t = { texture: new THREE.DataTexture(half, res, res, THREE.RGBAFormat, THREE.HalfFloatType), dispose() { this.texture.dispose(); } };
+      t.texture.minFilter = t.texture.magFilter = THREE.LinearFilter;
+      t.texture.generateMipmaps = false;
+      t.texture.flipY = false;
+      t.texture.needsUpdate = true;
       this.sdfTargets.set(size, t);
     }
     u.uSdf.value = t.texture;

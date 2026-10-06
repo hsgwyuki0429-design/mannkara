@@ -167,3 +167,48 @@ export function platePolygon(size = 8, inset = 0.2) {
     return [x + (n1[0] + n2[0]) * inset, y + (n1[1] + n2[1]) * inset];
   });
 }
+
+/** 点 (x, y) から多角形までの符号付き距離（内側が負） */
+export function polyDistance(poly, x, y) {
+  const n = poly.length;
+  let d = (x - poly[0][0]) ** 2 + (y - poly[0][1]) ** 2, sign = 1;
+  for (let i = 0; i < n; i++) {
+    const [vx, vy] = poly[i], [jx, jy] = poly[(i + n - 1) % n];
+    const ex = jx - vx, ey = jy - vy, wx = x - vx, wy = y - vy;
+    const t = clamp((wx * ex + wy * ey) / (ex * ex + ey * ey), 0, 1);
+    const bx = wx - ex * t, by = wy - ey * t;
+    d = Math.min(d, bx * bx + by * by);
+    const c0 = y >= vy, c1 = y < jy, c2 = ex * wy > ey * wx;
+    if ((c0 && c1 && c2) || (!c0 && !c1 && !c2)) sign = -sign;
+  }
+  return sign * Math.sqrt(d);
+}
+
+/**
+ * 盤面の板の外形の地図（距離・向き）を、CPU で 1 回だけ計算する。rect = [x0, y0, x1, y1]（マス単位）、res = 一辺の画素数。
+ * 返り値は 4 個ずつ（距離、向きの x・y、1）の Float32Array（上の行から順）。
+ * 前は GPU のシェーダーで描いていたが、一部の Android の GPU で多角形の内外判定が狂い、板が画面いっぱいに広がったので、計算は CPU でする
+ */
+export function plateFieldData(poly, round, rect, res) {
+  const [x0, y0, x1, y1] = rect, out = new Float32Array(res * res * 4), e = 0.01;
+  const sd = (x, y) => polyDistance(poly, x, y) - round;
+  for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
+    const x = x0 + (x1 - x0) * (i + 0.5) / res, y = y0 + (y1 - y0) * (j + 0.5) / res, o = (j * res + i) * 4;
+    out[o] = sd(x, y);
+    out[o + 1] = (sd(x + e, y) - sd(x - e, y)) / (2 * e);
+    out[o + 2] = (sd(x, y + e) - sd(x, y - e)) / (2 * e);
+    out[o + 3] = 1;
+  }
+  return out;
+}
+
+/** 32 ビット浮動小数点 → 16 ビット（半精度）。WebGL2 の半精度テクスチャ用（距離の大きさは ±数十まで） */
+export function toHalf(v) {
+  if (v === 0) return 0;
+  const f = new Float32Array(1), u = new Uint32Array(f.buffer);
+  f[0] = v;
+  const x = u[0], sign = (x >>> 16) & 0x8000, exp = ((x >>> 23) & 0xff) - 127 + 15, man = x & 0x7fffff;
+  if (exp >= 31) return sign | 0x7bff;
+  if (exp <= 0) return exp < -10 ? sign : sign | ((man | 0x800000) >> (14 - exp));
+  return sign | (exp << 10) | (man >> 13);
+}

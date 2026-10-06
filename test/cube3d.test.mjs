@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   STRETCH_Y, CUBE, BEVEL, VIEW_ANGLE, localToB, bToLocal, eyeFor, projection, apply4, projectToClient, unprojectClient,
-  keyframes, cubicBezier, EASE, platePolygon,
-} from '../src/ui/cube3d-math.js?v=202610060110';
-import { roundedCube, cubeJoins, causJoins } from '../src/ui/cube3d.js?v=202610060110';
-import { ROTATION } from '../src/ui/renderer.js?v=202610060110';
+  keyframes, cubicBezier, EASE, platePolygon, polyDistance, plateFieldData, toHalf,
+} from '../src/ui/cube3d-math.js?v=202610060607';
+import { roundedCube, cubeJoins, causJoins } from '../src/ui/cube3d.js?v=202610060607';
+import { ROTATION } from '../src/ui/renderer.js?v=202610060607';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 const VIEWS = [
@@ -174,4 +174,22 @@ test('影・光の地図でも、同じ色で隣り合う立方体はひとつ�
   assert.ok(near(e[7], 0, 1e-6) || e[7] >= 0);
   assert.deepEqual([...e.slice(12, 16)], [0, 0, 0, 0]);          // 違う色
   assert.deepEqual([...e.slice(16, 20)], [0, 0, 0, 0]);          // 高さが違う（浮いている）
+});
+
+test('盤面の板の外形の地図（CPU で計算）: 内側は負・外側は正で、三角形の外（斜辺の向こう）が内側にならない', () => {
+  const poly = platePolygon(8, 0.22);
+  assert.ok(polyDistance(poly, 1, 0.5) < 0);        // 板の中（最初の列）
+  assert.ok(polyDistance(poly, 7.5, 0.5) < 0);
+  assert.ok(polyDistance(poly, 0.5, 7.5) < 0);      // 最後の段
+  assert.ok(polyDistance(poly, 5, 5) > 0);          // 斜辺の向こう側（外）
+  assert.ok(polyDistance(poly, 20, 0) > 0 && polyDistance(poly, -5, -5) > 0 && polyDistance(poly, 4, -3) > 0);
+  assert.ok(near(polyDistance(poly, 4, 0.22), 0, 1e-9));   // 内側へ寄せた多角形のふちの上
+  const rect = [-3.5, -3.5, 12.5, 12.5], res = 64, d = plateFieldData(poly, 0.22, rect, res);
+  const at = (x, y) => d[(Math.floor((y - rect[1]) / (rect[3] - rect[1]) * res) * res + Math.floor((x - rect[0]) / (rect[2] - rect[0]) * res)) * 4];
+  assert.ok(at(1, 1) < 0 && at(6.5, 0.5) < 0 && at(0.5, 6.5) < 0);
+  assert.ok(at(7, 7) > 0 && at(10, 2) > 0 && at(-2, 4) > 0);
+});
+test('半精度への変換: 距離の範囲で、誤差は 0.1% ほど', () => {
+  const back = (h) => { const e = (h >> 10) & 31, m = h & 1023, sg = h & 0x8000 ? -1 : 1; return e === 0 ? sg * m * 2 ** -24 : sg * (1 + m / 1024) * 2 ** (e - 15); };
+  for (const v of [0, 1, -1, 0.22, -0.5, 3.1415, -12.75, 40, 0.01]) assert.ok(Math.abs(back(toHalf(v)) - v) <= Math.abs(v) * 0.002 + 1e-6, String(v));
 });
