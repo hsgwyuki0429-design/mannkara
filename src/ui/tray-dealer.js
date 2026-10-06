@@ -1,4 +1,4 @@
-import { DealerCore } from '../core/dealer.js?v=202610061243';
+import { DealerCore } from '../core/dealer.js?v=202610062316';
 
 /**
  * 手駒の決め方（と学習モードのおすすめの総当たり）を Web Worker（core/dealer-worker.js）で動かすための窓口。
@@ -38,7 +38,7 @@ export class TrayDealer {
   }
 
   /** 手駒を決める（cells = 埋まっているマスの番号）→ { names, planTray, lastLineup } */
-  deal(cells, rate) { return this.ask({ type: 'deal', cells, rate }); }
+  deal(cells, rate, clear) { return this.ask({ type: 'deal', cells, rate, clear }); }
   /** 学習モードのおすすめの手（names = トレイの形の名前、使った枠は null）→ { slot, ox, oy, survive } | null */
   hint(cells, names) { return this.ask({ type: 'hint', cells, names }); }
 
@@ -83,7 +83,7 @@ export class TrayDealer {
 
   runLocal(req) {
     // その場で決めると、依頼した側（置いた直後の処理）の途中で答えが返ってしまうので、次のタスクで
-    const { type, cells, names, rate } = req.msg;
-    setTimeout(() => req.resolve(type === 'deal' ? this.local.deal(cells, rate) : this.local.hint(cells, names)), 0);
+    const { type, cells, names, rate, clear } = req.msg;
+    setTimeout(() => req.resolve(type === 'deal' ? this.local.deal(cells, rate, clear) : this.local.hint(cells, names)), 0);
   }
 }

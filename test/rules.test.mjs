@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202610061243';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610061243';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610061243';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610061243';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610061243';
-import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610061243';
-import * as Sim from '../src/core/sim.js?v=202610061243';
-import { DealerCore } from '../src/core/dealer.js?v=202610061243';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610061243';
-import { ScoreManager } from '../src/core/score.js?v=202610061243';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610061243';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610061243';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610061243';
+import { Board, createBlock } from '../src/core/board.js?v=202610062316';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610062316';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610062316';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610062316';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610062316';
+import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610062316';
+import * as Sim from '../src/core/sim.js?v=202610062316';
+import { DealerCore } from '../src/core/dealer.js?v=202610062316';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610062316';
+import { ScoreManager } from '../src/core/score.js?v=202610062316';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610062316';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610062316';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610062316';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610061243';
+  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610062316';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -559,7 +559,7 @@ console.log('詰む組み合わせは「8割以上・詰まない置き方が1�
   }
 }
 
-console.log('全消しのチャンス: ブロックが残った盤面でも約50%、手順どおりに置くと全消しできる手駒');
+console.log('全消しのチャンス: ブロックが残った盤面でも約25%、手順どおりに置くと全消しできる手駒');
 {
   let seed = 41; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const seq = planAllClear(new Board(), { depth: 6, random: rnd, budgetMs: 1000 });
@@ -648,7 +648,7 @@ function findPlay(board, tray, goal) {
   eq([!!last?.refilled, g.plan, g.lastLineup.kind === 'allClear'], [true, null, false], '違う置き方をしたら次は普通の手駒');
 }
 {
-  // 確率: ブロックが残った盤面で補充するたびに約50%でチャンス（手順が見つかるまで次の補充でも探す）。埋まり具合は問わない
+  // 確率: ブロックが残った盤面で補充するたびに約25%でチャンス（手順が見つかるまで次の補充でも探す）。埋まり具合は問わない
   let seed = 59;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const g = new Game({ random: rnd }), N = 400;      // 探索は時間で打ち切るので実行ごとに少し揺れる。回数を多めに
@@ -659,7 +659,7 @@ function findPlay(board, tray, goal) {
       g.spawnTray();
       if (g.plan || g.wantAllClear) chances++;
     }
-    eq(chances / N > 0.38 && chances / N < 0.62, true, `ブロック ${lo}〜${hi} 個: 全消しのチャンスを引く割合 ${(chances / N * 100).toFixed(0)}%`);
+    eq(chances / N > 0.17 && chances / N < 0.34, true, `ブロック ${lo}〜${hi} 個: 全消しのチャンスを引く割合 ${(chances / N * 100).toFixed(0)}%`);
   }
 }
 console.log('盤面が空のときは約60%で「6個以上を手順どおりに置いた時だけ全消し」');
@@ -694,7 +694,7 @@ console.log('盤面が空のときは約60%で「6個以上を手順どおりに
     hits++;
     if (!g.plan || g.plan.rest.length < 3) strict = false;
   }
-  eq(hits / N > 0.2 && hits / N < 0.55, true, `空の盤面でも、ほかの盤面と同じ約50%のチャンスで全消しの手順になる割合 ${(hits / N * 100).toFixed(0)}%`);
+  eq(hits / N > 0.09 && hits / N < 0.3, true, `空の盤面でも、ほかの盤面と同じ約25%のチャンスで全消しの手順になる割合 ${(hits / N * 100).toFixed(0)}%`);
   eq(strict, true, '1回目の3個を配り、残り（3個以上）は計画として持つ');
 }
 {
@@ -1016,7 +1016,7 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202610061243');
+  const api = await import('../functions/api/ranking.js?v=202610062316');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');
@@ -1057,7 +1057,7 @@ console.log('世界ランキングの API（functions/api/ranking.js）');
     eq((await api.ranking(d1, C, 0, 9999)).top.length, api.PAGE_MAX, '1回に読めるのは PAGE_MAX 人まで');
     eq([...p1.top, ...p2.top].map((x) => x.rank), Array.from({ length: 100 }, (_, i) => i + 1), 'ページをつなげても順位が飛ばない');
     // 不適切な名前を隠す（作成者だけ。書き換えはできない）
-    const admin = await import('../functions/api/admin.js?v=202610061243');
+    const admin = await import('../functions/api/admin.js?v=202610062316');
     const P = '5'.repeat(32), Q = '6'.repeat(32);
     await api.submit(d1, { id: P, name: 'わるい名前', score: 700 }, 1000);
     await api.submit(d1, { id: Q, name: 'ふつう', score: 650 }, 1001);

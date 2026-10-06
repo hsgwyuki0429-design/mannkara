@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tightRateFor, TIGHT_RATE_STRUGGLING, TIGHT_RATE_AT_BEST, TIGHT_RATE_MAX, TIGHT_COOLDOWN } from '../src/core/difficulty.js?v=202610061243';
-import { TIGHT_RATE } from '../src/core/constants.js?v=202610061243';
-import { Game } from '../src/core/game.js?v=202610061243';
+import { allClearRateFor, ALL_CLEAR_RATE_MAX, ALL_CLEAR_RATE_AT_BEST, ALL_CLEAR_RATE_MIN, tightRateFor, TIGHT_RATE_STRUGGLING, TIGHT_RATE_AT_BEST, TIGHT_RATE_MAX, TIGHT_COOLDOWN } from '../src/core/difficulty.js?v=202610062316';
+import { TIGHT_RATE, ALL_CLEAR_RATE } from '../src/core/constants.js?v=202610062316';
+import { Game } from '../src/core/game.js?v=202610062316';
+
 
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 const S = (best, recent = [], games = 10) => ({ best, recent, games });
@@ -44,4 +45,28 @@ test('ひっかけを配った直後の 2 回の補充は出さない', () => {
   assert.equal(g.tightCooldown, 0);
   g.spawnTray();
   assert.equal(searched, 2);                          // その次からまた狙う
+});
+
+test('全消しのチャンス: 新しい人・うまくいっていない人は最大 40%、ふつうは 25%、ベストに近づくほど下げる（下限 10%）', () => {
+  assert.equal(ALL_CLEAR_RATE_MAX, 0.4);
+  assert.equal(allClearRateFor(0, null), ALL_CLEAR_RATE);
+  assert.equal(allClearRateFor(100, S(0)), ALL_CLEAR_RATE_MAX);
+  assert.equal(allClearRateFor(100, S(5000, [], 2)), ALL_CLEAR_RATE_MAX);
+  assert.equal(allClearRateFor(100, S(10000, [2000, 3000])), ALL_CLEAR_RATE_MAX);
+  assert.equal(allClearRateFor(1000, S(10000, [7000, 6000])), ALL_CLEAR_RATE);
+  assert.ok(near(allClearRateFor(8000, S(10000)), ALL_CLEAR_RATE));
+  assert.ok(near(allClearRateFor(9000, S(10000)), (ALL_CLEAR_RATE + ALL_CLEAR_RATE_AT_BEST) / 2));
+  assert.ok(near(allClearRateFor(10000, S(10000)), ALL_CLEAR_RATE_AT_BEST));
+  assert.equal(allClearRateFor(50000, S(10000)), ALL_CLEAR_RATE_MIN);
+  let prev = 1;
+  for (let s2 = 8000; s2 <= 14000; s2 += 100) { const r = allClearRateFor(s2, S(10000)); assert.ok(r <= prev + 1e-12); prev = r; }
+});
+test('Game は skill があれば、全消しのチャンスの確率も出来に合わせる', () => {
+  const g = new Game({ random: () => 0.5 });
+  g.skill = { best: 0, recent: [], games: 0 };
+  g.spawnTray();
+  assert.equal(g.allClearRate, ALL_CLEAR_RATE_MAX);
+  g.score.score = 20000; g.skill = { best: 10000, recent: [], games: 20 };
+  g.spawnTray();
+  assert.equal(g.allClearRate, ALL_CLEAR_RATE_MIN);
 });
