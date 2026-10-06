@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610060607';
-import { SIZE } from '../core/constants.js?v=202610060607';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon, plateFieldData, toHalf } from './cube3d-math.js?v=202610060607';
+import * as THREE from './vendor/three.js?v=202610060919';
+import { SIZE } from '../core/constants.js?v=202610060919';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon, plateFieldData, toHalf } from './cube3d-math.js?v=202610060919';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -465,6 +465,12 @@ void main() {
     vec2 sp = (cell0 - vec2(uSize * 0.62, uSize * 0.18)) / uSize;
     float spot = mix(0.72, 1.18, exp(-dot(sp, sp) * 2.2));
     vec3 lit = albedo * (uAmb * cs.a * (0.88 + 0.12 * floorK) + uKeyIrr * ndl * cs.rgb * spot);
+    // マスの区切りの、細くて薄い線（盤面の中だけ。ブロックの真下は描かない: ガラス越しに継ぎ目に見えるため）
+    if (inBoard(ci)) {
+      vec2 e = 0.5 - abs(f);
+      float gl = 1.0 - smoothstep(0.0, max(px * 1.2, 0.012), min(e.x, e.y));
+      lit = mix(lit, lit * vec3(0.78, 0.8, 0.9), gl * 0.55 * (1.0 - occupied));
+    }
     // すりガラスの板の中を回ってくる光（ほんのり）
     lit += uPlateGlow * (0.6 + 0.4 * (1.0 - floorK));
     // 発動したラインのマスに満ちる色（くぼみの底が光る）

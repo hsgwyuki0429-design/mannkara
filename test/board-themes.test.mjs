@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { outlineLoops, glassGroups, glassPath } from '../src/ui/glass.js?v=202610060607';
-import { readBoardTheme, saveBoardTheme, BOARD_THEME_KEY, BOARD_THEMES } from '../src/ui/board-themes.js?v=202610060607';
+import { outlineLoops, glassGroups, glassPath, gridPath } from '../src/ui/glass.js?v=202610060919';
+import { readBoardTheme, saveBoardTheme, BOARD_THEME_KEY, BOARD_THEMES } from '../src/ui/board-themes.js?v=202610060919';
 
 const area = (loop) => loop.reduce((sum, p, i) => {
   const q = loop[(i + 1) % loop.length];
@@ -73,4 +73,13 @@ test('unavailable storage does not prevent selecting a board', () => {
   assert.equal(readBoardTheme(), 'gem');
   assert.equal(saveBoardTheme('glass'), 'glass');
   assert.equal(saveBoardTheme('unexpected'), 'gem');
+});
+
+test('板のマスの区切り線は、隣り合うマスの間だけ（外側のふちには引かない）', () => {
+  const tri = []; for (let y = 0; y < 3; y++) for (let x = 0; x < 3 - y; x++) tri.push({ x, y });   // 6 マスの階段
+  const segs = gridPath(tri).split('M').filter(Boolean);
+  assert.equal(segs.length, 6);                      // 横の隣 3 組 + 縦の隣 3 組
+  assert.equal(gridPath([{ x: 0, y: 0 }]), '');
+  assert.equal(gridPath([{ x: 0, y: 0 }, { x: 1, y: 0 }]), 'M100 0V100');
+  assert.equal(gridPath([{ x: 0, y: 0 }, { x: 0, y: 1 }]), 'M0 100H100');
 });
