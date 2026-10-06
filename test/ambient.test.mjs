@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   Ambient, ambientLook, comboLook, comboStyle, COMBO_STYLE, nextHue, nextTone, skipOlive, hexToOklch, oklchToHex, contrastWithWhite, wrapHue, hueDelta,
   ORIGIN, BASE_HUE, TONES, MIN_CONTRAST, BOARD, BOARD_VARS, boardLook, PLATE_SETS, CALM_EVERY, CALM_MS, COMBO_MS, SNAP_MS,
-} from '../src/ui/ambient.js?v=202610060945';
+} from '../src/ui/ambient.js?v=202610060959';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const hue = (hex) => hexToOklch(hex).h;
@@ -46,7 +46,7 @@ test('色相の計算: 一周にそろえ、近い方まわりの角度を返す
 test('最初の色は今の背景（styles.css の --bg / --bg-hi と同じ #3a6adf / #4479f2）そのもの。同じ明るさ・鮮やかさの青を作っても数値が合う', () => {
   const look = ambientLook(BASE_HUE, 'base');
   assert.equal(look.lo, ORIGIN.lo); assert.equal(look.hi, ORIGIN.hi);
-  const css = readFileSync(new URL('../src/ui/styles.css?v=202610060945', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/ui/styles.css?v=202610060959', import.meta.url), 'utf8');
   assert.ok(css.includes(`--bg:${ORIGIN.lo}; --bg-hi:${ORIGIN.hi};`), 'styles.css の背景と同じ（最初の 1 枚目は CSS のまま見える）');
   for (const f of ['../index.html', '../manifest.webmanifest']) assert.ok(readFileSync(new URL(f, import.meta.url), 'utf8').includes(ORIGIN.lo), `${f} の theme-color / background_color も同じ`);
   // 元の青から読み取った明るさ・鮮やかさで同じ色相の色を作り直すと、元の青（8bit の丸め 1〜2 以内）に戻る
@@ -344,7 +344,7 @@ test('色が落ち着いている間は全面の層を使わない: 変わり始
 
 /* ---------------- 盤面の土台（プレート）も背景と一緒に変わる ---------------- */
 
-const css = readFileSync(new URL('../src/ui/styles.css?v=202610060945', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../src/ui/styles.css?v=202610060959', import.meta.url), 'utf8');
 /** 'rgba(4, 12, 60, .7)' や '#1A3EAE' を比べられる形（数値の配列・小文字）にそろえる */
 const norm = (c) => (c.startsWith('#') ? c.toLowerCase() : c.match(/[\d.]+/g).map(Number));
 
@@ -435,9 +435,9 @@ test('土台の層の z-index（色が変わるたびに増える）は #wellLay
   const rule = css.match(/#wellLayer\{([^}]*)\}/);
   assert.ok(rule, '#wellLayer の規則が要る');
   assert.match(rule[1], /isolation:\s*isolate/, '重ね合わせの文脈を閉じる（以前は filter が閉じていた）');
-  const renderer = readFileSync(new URL('../src/ui/renderer.js?v=202610060945', import.meta.url), 'utf8');
+  const renderer = readFileSync(new URL('../src/ui/renderer.js?v=202610060959', import.meta.url), 'utf8');
   assert.match(renderer, /className = 'well-set';[^}]*this\.wellLayer\.appendChild\(d\)/s, '土台の層は #wellLayer の中に作る');
-  const ambient = readFileSync(new URL('../src/ui/ambient.js?v=202610060945', import.meta.url), 'utf8');
+  const ambient = readFileSync(new URL('../src/ui/ambient.js?v=202610060959', import.meta.url), 'utf8');
   assert.match(ambient, /el\.style\.zIndex = String\(p\.z = z\)/, '層の前後は z-index で決める（だから外へ漏らさない）');
   // 土台の層に z-index を付けても、盤面の中の他の層（ブロック・プレビュー・ヒント）には付かない
   const { a, sets } = makeBoard();

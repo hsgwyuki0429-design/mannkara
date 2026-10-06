@@ -3,7 +3,7 @@
  * 端末ごとに id（32 桁の 16 進）と名前を持つ。送れなかったスコアは端末に残し、次に送る（自己ベストだけで足りる）
  * 名前はかならず本人に決めてもらう（自動では付けない）。決めるまでは named が false で、送信もしない
  */
-import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610060945';
+import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610060959';
 
 const ID_KEY = STORE_PREFIX + 'world-id';
 const NAME_KEY = STORE_PREFIX + 'world-name';
