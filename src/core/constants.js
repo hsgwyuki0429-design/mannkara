@@ -88,7 +88,7 @@ export const targetWays = (f) => Math.max(1, Math.round(Math.pow(WAYS_MAX, 1 - M
  * 手順を今の盤面から計算し、3個ずつ配る。手順どおりの盤面にならなかったら、そこで計画はおしまい。
  * 手順が見つからなかったときは、次の補充でもう一度探す（Game.stats に、引いた回数・探した回数・見つかった回数を数える）
  */
-export const ALL_CLEAR_RATE = 0.5;
+export const ALL_CLEAR_RATE = 0.25;      // 出来が分からないときの確率（ふだんは difficulty.js の allClearRateFor で出来に合わせて変える）
 export const ALL_CLEAR_PIECES = [6, 9, 12];
 /** 全消しの手順探しにかける時間の上限（ms）。見つからなければ普通の手駒にする */
 export const ALL_CLEAR_BUDGET_MS = 40;

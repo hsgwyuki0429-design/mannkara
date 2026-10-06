@@ -1,4 +1,4 @@
-import { TIGHT_RATE } from './constants.js?v=202610061243';
+import { TIGHT_RATE, ALL_CLEAR_RATE } from './constants.js?v=202610062316';
 
 /**
  * ひっかけ（置き方が1〜2通りしかない組み合わせ）の確率を、遊んでいる人の出来に合わせて変える。
@@ -31,4 +31,27 @@ export function tightRateFor(score, skill) {
   const recent = (skill.recent || []).slice(0, RECENT_GAMES);
   if (recent.length && recent.reduce((a, b) => a + b, 0) / recent.length < best * STRUGGLING) return TIGHT_RATE_STRUGGLING;
   return TIGHT_RATE;
+}
+
+/**
+ * 全消しのチャンスの確率も、出来に合わせる（上限 ALL_CLEAR_RATE_MAX = 40%）。
+ *  - 最初の NEW_GAMES ゲーム・うまくいっていない（最近の平均がベストの半分未満）→ 40%（全消しで一気に点が入り、立て直せる）
+ *  - ふつう → 25%（ALL_CLEAR_RATE）
+ *  - 今のゲームがベストの 80% → 100%: 25% → 15% へなめらかに下げる（ベストの更新は、全消しに頼りすぎず自分の力で）
+ *  - ベストを超えたら 15% から、ベストの 1.3 倍で下限 10%
+ * skill が無ければ 25%
+ */
+export const ALL_CLEAR_RATE_MAX = 0.4;
+export const ALL_CLEAR_RATE_AT_BEST = 0.15;
+export const ALL_CLEAR_RATE_MIN = 0.1;
+export function allClearRateFor(score, skill) {
+  if (!skill) return ALL_CLEAR_RATE;
+  const best = skill.best || 0;
+  if (best <= 0 || (skill.games ?? Infinity) < NEW_GAMES) return ALL_CLEAR_RATE_MAX;
+  const r = score / best;
+  if (r > 1) return Math.max(ALL_CLEAR_RATE_MIN, ALL_CLEAR_RATE_AT_BEST + (ALL_CLEAR_RATE_MIN - ALL_CLEAR_RATE_AT_BEST) * (r - 1) / OVER_BEST_SPAN);
+  if (r >= NEAR_BEST) return ALL_CLEAR_RATE + (ALL_CLEAR_RATE_AT_BEST - ALL_CLEAR_RATE) * (r - NEAR_BEST) / (1 - NEAR_BEST);
+  const recent = (skill.recent || []).slice(0, RECENT_GAMES);
+  if (recent.length && recent.reduce((a, b) => a + b, 0) / recent.length < best * STRUGGLING) return ALL_CLEAR_RATE_MAX;
+  return ALL_CLEAR_RATE;
 }
