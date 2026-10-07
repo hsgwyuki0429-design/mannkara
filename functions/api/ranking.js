@@ -13,7 +13,7 @@
  */
 export const PAGE_SIZE = 50;
 export const PAGE_MAX = 100;
-export const SCORE_MAX = 100000000;
+export const SCORE_MAX = Number.MAX_SAFE_INTEGER;
 export const NAME_MAX = 12;
 /** 作成者が隠した名前の代わりに、ほかの人へ返す表示 */
 export const HIDDEN_NAME = '＊＊＊';
@@ -40,7 +40,7 @@ export function cleanRun(body) {
   if (!body || typeof body !== 'object' || !validId(body.id)) return null;
   const name = cleanName(body.name);
   const { score } = body;
-  if (!name || !Number.isInteger(score) || score < 0 || score > SCORE_MAX) return null;
+  if (!name || !Number.isSafeInteger(score) || score < 0 || score > SCORE_MAX) return null;
   return { id: body.id, name, score };
 }
 
