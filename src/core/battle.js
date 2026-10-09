@@ -1,5 +1,5 @@
-import { SIZE, ANIM, isInside } from './constants.js?v=202610091340';
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091340';
+import { SIZE, ANIM, isInside } from './constants.js?v=202610091434';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091434';
 
 /**
  * 対戦（ぷよぷよのような、連鎖で相手におじゃまを送り合う遊び方）のルール。DOM 非依存。
@@ -94,6 +94,19 @@ export function edgeOrder() {
     cells.push({ x, r, k, d: Math.max(x, r) - k, leg: x >= r ? 0 : 1 });
   }
   return cells.sort((a, b) => a.k - b.k || a.d - b.d || a.leg - b.leg).map(({ x, r }) => ({ x, r }));
+}
+/**
+ * おじゃまを削る順番（連鎖の数ぶんの合計を当てる順。Game.chipGarbage）: **外側のおじゃまから**。
+ * 輪が小さい順（一番外側の辺から）→ 同じ輪の中は、角から一番遠い端のおじゃまが先、角に近い（内側の）おじゃまはあと（同じ距離なら x の辺が先）。
+ * 置く順番（edgeOrder = 角から外へ）の、輪の中だけを逆にしたもの
+ */
+export function chipOrder() {
+  const cells = [];
+  for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) if (isInside(x, r)) {
+    const k = Math.min(x, r);
+    cells.push({ x, r, k, d: Math.max(x, r) - k, leg: x >= r ? 0 : 1 });
+  }
+  return cells.sort((a, b) => a.k - b.k || b.d - a.d || a.leg - b.leg).map(({ x, r }) => ({ x, r }));
 }
 const EDGE_ORDER = edgeOrder();
 /**

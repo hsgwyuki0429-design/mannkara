@@ -1,18 +1,18 @@
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091340';
-import { edgeSpot, edgeOrder } from './battle.js?v=202610091340';
-import { PieceGenerator, Piece, SHAPES, seededRandom, BATTLE_SHAPES } from './pieces.js?v=202610091340';
-import { ScoreManager } from './score.js?v=202610091340';
-import { nextActivation, lineMoves } from './mancala.js?v=202610091340';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610091340';
-import * as Sim from './sim.js?v=202610091340';
-import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610091340';
-import { bestMove } from './advisor.js?v=202610091340';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091434';
+import { edgeSpot, chipOrder } from './battle.js?v=202610091434';
+import { PieceGenerator, Piece, SHAPES, seededRandom, BATTLE_SHAPES } from './pieces.js?v=202610091434';
+import { ScoreManager } from './score.js?v=202610091434';
+import { nextActivation, lineMoves } from './mancala.js?v=202610091434';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610091434';
+import * as Sim from './sim.js?v=202610091434';
+import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610091434';
+import { bestMove } from './advisor.js?v=202610091434';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202610091340';
+} from './constants.js?v=202610091434';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -200,7 +200,7 @@ export class Game {
   /**
    * 対戦: 自分が k 連鎖したので、盤面のおじゃまを削る。**合計 k**（5 連鎖なら合計 −5）を、一番外側のおじゃま 1 個から順に当てる:
    * 連鎖の 1 段ごとに −1 を、いま一番先のおじゃまに（同じおじゃまが 0 以下になって消えたら、残りの段は次のおじゃまへ）。
-   * 順番は置かれる順番と同じ（一番外側の辺から、真ん中（角）から外へ。edgeOrder）。
+   * 順番は**外側のおじゃまから**（一番外側の辺から。辺の中は、角から一番遠い端のおじゃまが先、角に近い内側のおじゃまはあと。chipOrder）。
    * hits = 段ごとの記録 [{ step, damage, block, x, r, from, n, removed }]（damage = そのおじゃまが、このターンでここまでに削られた合計 = 画面に出す「−1」「−2」…、
    * n = そのあとの数字。画面が 1 段ずつ見せる）、changed / removed = このターンで数字が減った / 消えたものの、ターンの最初からの結果
    */
@@ -208,7 +208,7 @@ export class Game {
     const hits = [], changed = [], removed = [];
     if (!(k > 0)) return { hits, changed, removed };
     const at = new Map(this.board.garbage().map((g) => [g.x + ',' + g.r, g]));
-    const list = edgeOrder().map((c) => at.get(c.x + ',' + c.r)).filter(Boolean);
+    const list = chipOrder().map((c) => at.get(c.x + ',' + c.r)).filter(Boolean);
     const first = new Map(), dealt = new Map();                  // block.id -> ターンの最初の数字 / ここまでに削られた合計
     for (let step = 1; step <= k && list.length; step++) {
       const e = list[0], { block, x, r } = e;
