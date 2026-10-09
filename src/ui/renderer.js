@@ -1,12 +1,12 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610091103';
-import { Shards } from './shards.js?v=202610091103';
-import { Sparkles } from './sparkles.js?v=202610091103';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091103';
-import { Rims } from './rims.js?v=202610091103';
-import { colorOf } from './palette.js?v=202610091103';
-import { PLATE_SETS } from './ambient.js?v=202610091103';
-import { glassElement, glassGroups } from './glass.js?v=202610091103';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610091147';
+import { Shards } from './shards.js?v=202610091147';
+import { Sparkles } from './sparkles.js?v=202610091147';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091147';
+import { Rims } from './rims.js?v=202610091147';
+import { colorOf } from './palette.js?v=202610091147';
+import { PLATE_SETS } from './ambient.js?v=202610091147';
+import { glassElement, glassGroups } from './glass.js?v=202610091147';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -1127,10 +1127,19 @@ export class Renderer {
   }
 
   /**
+   * 対戦: 連鎖が 1 つ進むごとに、盤面のおじゃまに「−k」を出す（k = ここまでの連鎖の数。このターンの終わりに、数字が k 減る: garbageChip）
+   */
+  garbageTick(chip, k) {
+    if (!chip) return;
+    for (const { block } of [...chip.changed, ...chip.removed]) showGarbageTick(this.els.get(block.id), k);
+  }
+
+  /**
    * 自分の連鎖でおじゃまの数字が減る（chip = Game.chipGarbage の結果）。数字がぽんと弾んで変わり、0 になったものは砕けて消える
    */
   garbageChip(chip) {
     if (!chip) return;
+    for (const { block } of [...chip.changed, ...chip.removed]) clearGarbageTick(this.els.get(block.id));
     for (const { block, n } of chip.changed) {
       const el = this.els.get(block.id);
       if (!el) continue;
@@ -1244,4 +1253,31 @@ export class Renderer {
     this.clearPreview();
     this.view3d?.reset();
   }
+}
+
+/**
+ * おじゃまの「−k」（連鎖の途中、このターンの終わりに減る数）。盤面と一緒に回らないよう立てた枠の中で、数字の少し上に出す。
+ * 相手の小さな盤面（mini-board.js）も同じものを使う
+ */
+export function showGarbageTick(el, k) {
+  if (!el) return;
+  let t = el.__tick;
+  if (!t) {
+    const wrap = document.createElement('i');
+    wrap.className = 'gtick-wrap';
+    t = document.createElement('b');
+    t.className = 'gtick';
+    wrap.appendChild(t);
+    el.appendChild(wrap);
+    el.__tick = t;
+    el.classList.add('ticking');
+  }
+  t.textContent = `−${k}`;
+  if (!reducedMotion()) t.animate([{ scale: '.3', opacity: 0 }, { scale: '1.3', opacity: 1, offset: 0.5 }, { scale: '1' }], { duration: 280, easing: 'cubic-bezier(.3,1.5,.5,1)' });
+}
+export function clearGarbageTick(el) {
+  if (!el?.__tick) return;
+  el.__tick.parentElement.remove();
+  el.__tick = null;
+  el.classList.remove('ticking');
 }

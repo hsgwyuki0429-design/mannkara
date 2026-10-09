@@ -243,6 +243,14 @@ button{font-family:inherit;cursor:pointer;}
 .block.garbage.wide .gnum{font-size:calc(var(--cell) * .42);letter-spacing:-.04em;}
 .block.garbage.low .gnum{color:var(--gold);}                          /* あと 1〜2 連鎖で消える */
 .block.garbage.fly .gnum{scale:0;}
+/* 連鎖の途中の「−1」「−2」…（このターンの終わりに、その数だけ減る）。立てた枠の中で、数字の上に赤いピル */
+.block.garbage.ticking{z-index:4;}
+.gtick-wrap{position:absolute;inset:0;z-index:2;rotate:-225deg;pointer-events:none;}
+.gtick{position:absolute;left:50%;bottom:72%;translate:-50% 0;padding:0 .3em;border-radius:99px;white-space:nowrap;
+  font-family:"Round One","Nunito",sans-serif;font-weight:900;font-size:max(9px,calc(var(--cell) * .4));line-height:1.25;color:#fff;
+  background:linear-gradient(180deg,#ff6f86,#e8364a);box-shadow:0 1px 2px rgba(60,0,20,.35);}
+.mini-field .gtick{font-size:max(8px,calc(var(--mcell) * .5));}
+.block.garbage.fly .gtick-wrap{display:none;}
 .block.falling{z-index:6;}
 
 /* ---- 中央テキスト ----
@@ -570,6 +578,17 @@ body.battle .stage{width:92%;margin:0 auto;}                        /* 相手の
 .mini-field{--plate:#2951c2;--well:#2d4498;--well-s1:rgba(4,12,60,.7);--well-s2:rgba(4,12,60,.45);--well-rim:rgba(96,140,245,.8);--well-hi:rgba(150,186,255,.95);}
 .mini-field .block::before{box-shadow:inset -.5px 0 0 rgba(255,255,255,.5),-1px 0 1.5px rgba(4,14,64,.35);}
 .mini-field .block.garbage .gnum{font-size:calc(var(--mcell) * .6);text-shadow:none;}
+/* スマホの縦向きなど（タブレットの横向き以外）: 相手の盤面を自分の盤面の上に、同じ大きさで並べる（半分ずつ）。
+   マスの大きさは versus.js の layout が、2 つの盤面がちょうど収まるように決める */
+@media not all and (min-width:900px) and (min-aspect-ratio:4/3){
+  body.battle .vs-head{flex-direction:row;align-items:center;gap:8px;padding:0 6px;min-height:calc(30px * 1.45);margin-top:min(6px,.8vh);}
+  body.battle .vs-head .vs-pend{flex:1;flex-wrap:nowrap;overflow:hidden;min-height:calc(30px * 1.45);}
+  body.battle .vs-opp{position:relative;top:auto;right:auto;flex-shrink:0;margin:2px auto 0;padding:4px 10px 6px;
+    display:grid;grid-template-columns:auto auto;justify-content:center;align-items:center;column-gap:8px;row-gap:2px;}
+  body.battle .vs-opp .vs-pend.small{--pend:18px;min-height:26px;justify-content:flex-start;}
+  body.battle .vs-opp-field{grid-column:1 / -1;justify-self:center;margin-top:calc(var(--mcell) * .5);}   /* 斜辺の宝石の角が名前の行にかからないように */
+  body.battle .stage{width:calc(100% + 16px);margin:0 -8px;}
+}
 /* カウントダウン（盤面のまん中に大きく。光らせず、ベタ塗りの文字が弾む） */
 .vs-count{position:fixed;left:50%;top:47%;z-index:26;translate:-50% -50%;pointer-events:none;font-weight:900;font-size:min(130px,30vw);line-height:1;
   color:#fff;text-shadow:0 6px 6px rgba(0,0,0,.22);opacity:0;}

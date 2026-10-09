@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as rk from '../functions/api/ranking.js?v=202610091103';
-import * as bt from '../functions/api/battle.js?v=202610091103';
-import * as admin from '../functions/api/admin.js?v=202610091103';
+import * as rk from '../functions/api/ranking.js?v=202610091147';
+import * as bt from '../functions/api/battle.js?v=202610091147';
+import * as admin from '../functions/api/admin.js?v=202610091147';
 
 let sqlite = null;
 try { sqlite = await import('node:sqlite'); } catch {}

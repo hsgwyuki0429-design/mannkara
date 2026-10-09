@@ -1,6 +1,6 @@
-import { SIZE, ANIM, isInside, lineCells } from '../core/constants.js?v=202610091103';
-import { ROTATION } from './renderer.js?v=202610091103';
-import { stepCells } from '../core/battle.js?v=202610091103';
+import { SIZE, ANIM, isInside, lineCells } from '../core/constants.js?v=202610091147';
+import { ROTATION, showGarbageTick, clearGarbageTick } from './renderer.js?v=202610091147';
+import { stepCells } from '../core/battle.js?v=202610091147';
 
 /**
  * 対戦で、相手の盤面を小さく映す（画面の右上）。盤面と同じ向き（直角が下の三角形）・同じブロックの塗り（.block c-色。盤面の種類の見た目もそのまま）。
@@ -147,6 +147,7 @@ export class MiniBoard {
         if (gen !== this.gen) return;
         await this.step(step);
         if (gen !== this.gen) return;
+        if (turn.chip) for (const { block } of [...turn.chip.changed, ...turn.chip.removed]) showGarbageTick(this.els.get(block.id), i + 1);
         await this.wait(ANIM.betweenChains);
       }
       if (gen !== this.gen) return;
@@ -197,6 +198,7 @@ export class MiniBoard {
   /** おじゃまの数字が減る・0 で消える */
   chip(chip) {
     if (!chip) return;
+    for (const { block } of [...chip.changed, ...chip.removed]) clearGarbageTick(this.els.get(block.id));
     for (const { block, n } of chip.changed) {
       const el = this.els.get(block.id);
       if (!el) continue;

@@ -1,11 +1,11 @@
-import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091103';
-import { Game } from '../core/game.js?v=202610091103';
-import { Piece, seedOf } from '../core/pieces.js?v=202610091103';
-import { createGarbage } from '../core/board.js?v=202610091103';
-import { SIZE, isInside } from '../core/constants.js?v=202610091103';
-import { MiniBoard, turnCost } from './mini-board.js?v=202610091103';
-import { TrayDealer } from './tray-dealer.js?v=202610091103';
-import { PROTOCOL } from './net.js?v=202610091103';
+import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091147';
+import { Game } from '../core/game.js?v=202610091147';
+import { Piece, seedOf } from '../core/pieces.js?v=202610091147';
+import { createGarbage } from '../core/board.js?v=202610091147';
+import { SIZE, isInside } from '../core/constants.js?v=202610091147';
+import { MiniBoard, turnCost } from './mini-board.js?v=202610091147';
+import { TrayDealer } from './tray-dealer.js?v=202610091147';
+import { PROTOCOL } from './net.js?v=202610091147';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
@@ -26,6 +26,8 @@ const RECORD_KEY = 'blockmancala-versus';
 const BATTLE_SPEED = 3;
 const COUNT_MS = 800;              // カウントダウンの 1 つぶん
 const PEND_SHOW = 6;               // 予告に並べる数（それより多いと +n）
+/** タブレットの横向き（styles.css と同じ条件。相手の盤面は右上に小さく） */
+const WIDE = '(min-width:900px) and (min-aspect-ratio:4/3)';
 
 /** 一時停止できる時計（CPU との対戦は一時停止できる） */
 class Clock {
@@ -158,11 +160,32 @@ export class Versus {
     }
   }
 
-  /** 相手の小さな盤面の大きさ（画面の幅に合わせる） */
+  /**
+   * 相手の盤面の大きさ。スマホの縦向きなどでは、自分の盤面の上に並べて、2 つの三角がちょうど同じ大きさで収まるマスにする
+   * （自分の盤面は renderer.js の layout が、残りの高さに収まるように決める。そちらは上のゴールと番号のぶん高い）。
+   * タブレットの横向きは、今までどおり右上に小さく
+   */
   layout() {
     const w = Math.min(window.innerWidth, 1400);
-    const cell = Math.max(8, Math.min(w >= 900 ? 22 : 15, Math.floor(w * (w >= 900 ? 0.2 : 0.36) / (SIZE * Math.SQRT2))));
-    this.mini.layout(cell);
+    if (window.matchMedia?.(WIDE).matches) {
+      this.mini.layout(Math.max(8, Math.min(22, Math.floor(w * 0.2 / (SIZE * Math.SQRT2)))));
+      return;
+    }
+    const app = this.$('app'), opp = this.$('vsOpp'), field = this.$('vsOppField');
+    const cs = getComputedStyle(app);
+    let rest = app.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    for (const el of app.children) {
+      if (el === opp || el.classList.contains('stage')) continue;
+      const st = getComputedStyle(el);
+      if (st.display === 'none' || st.position === 'absolute' || st.position === 'fixed') continue;
+      rest -= el.offsetHeight + parseFloat(st.marginTop) + parseFloat(st.marginBottom);
+    }
+    const os = getComputedStyle(opp);
+    rest -= opp.offsetHeight - field.offsetHeight - parseFloat(getComputedStyle(field).marginTop) + parseFloat(os.marginTop) + parseFloat(os.marginBottom);
+    // 自分の盤面: 縦 (8.99 + 8.55) / √2 マス + 4px・横 11.62 マス + 4px（renderer.js）。相手: 縦 8 / √2 × 1.04 マス + 2px
+    const MY_H = (8.99 + 8.55) / Math.SQRT2, OPP_H = (SIZE / Math.SQRT2) * 1.04 + 0.5;    // 相手の盤面の上の余白（styles.css）も
+    const cell = Math.floor(Math.min((app.clientWidth + 16 - 4) / 11.62, (rest - 10) / (MY_H + OPP_H)));
+    this.mini.layout(Math.max(6, cell));
   }
 
   /** オンライン: 相手とつないでいる間（始まるまで）の小さな文字 */
