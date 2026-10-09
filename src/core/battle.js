@@ -1,5 +1,5 @@
-import { SIZE, ANIM, isInside } from './constants.js?v=202610091030';
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091030';
+import { SIZE, ANIM, isInside } from './constants.js?v=202610091103';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091103';
 
 /**
  * 対戦（ぷよぷよのような、連鎖で相手におじゃまを送り合う遊び方）のルール。DOM 非依存。
@@ -7,9 +7,9 @@ import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=20261
  * - 連鎖すると、連鎖の数を書いた 1×1 の「おじゃまブロック」が相手へ飛ぶ（ATTACK_MIN_CHAIN 連鎖から。1 連鎖では送らない。
  *   ぷよぷよでも、小さな消し方ではおじゃまは送られない）。全消しは ALL_CLEAR_ATTACK を足す（ぷよぷよの全消しボーナス）
  * - 送られたおじゃまは、まず盤面の上に「予告」として並ぶ。相手の連鎖が終わるまでは落ちてこない
- * - 相手の連鎖が終わったあと、自分が次に置いたピースのすぐあとに落ちてくる（置かずに待っていても GARBAGE_GRACE_MS で落ちる）。
- *   1 回に落ちるのは DROP_MAX 個まで。ルールは置いた瞬間に確定し、画面は後から順番に再生するので、自分の連鎖の再生中に落ちると決まったおじゃまは、
- *   その連鎖が見え終わってから落ちてくる
+ * - 相手の連鎖が終わったら、すぐ落ちてくる。そのとき自分が連鎖している（再生中）なら、その連鎖が終わったらすぐ落ちてくる（busy）。
+ *   1 回に落ちるのは DROP_MAX 個まで（残りは、その落ちる動きが終わったらすぐ）。
+ *   対戦では、連鎖の再生が終わるまで次のピースは置けない（画面側）ので、盤面のルールと見えている盤面はいつもそろっている
  * - 自分が連鎖すると、盤面のおじゃまの数字が全部、連鎖の数だけ減る（0 になったら消える。Game.placePiece）。送るおじゃまは減らない（両方起きる）。
  *   予告のおじゃまは削らない（OFFSET_PENDING。ぷよぷよの相殺と同じことを 2 通りでするのは分かりにくく、シミュレーションでは決着もつかなかった）
  * - おじゃまは盤面の上から落ちてきて、三角の盤面（直角が下の V 字の入れ物）の一番低いところに積もる（dropPath）
@@ -20,7 +20,6 @@ export const ATTACK_MIN_CHAIN = 2;
 /** 自分の連鎖で、まだ落ちていない予告のおじゃまも削るか（ぷよぷよの相殺） */
 export const OFFSET_PENDING = false;
 export const ALL_CLEAR_ATTACK = 5;
-export const GARBAGE_GRACE_MS = 2500;
 export const DROP_MAX = 5;
 /**
  * マージンタイム（ぷよぷよと同じく、長引いたら送るおじゃまが増える）: MARGIN_MS を過ぎると、1 回の攻撃で送るおじゃまが 2 個になり、
@@ -160,10 +159,7 @@ export class GarbageQueue {
 /**
  * 1 人ぶんの対戦の進み方（おじゃまを送る・落とすタイミング）。画面の再生と、相手（CPU）の見えない再生のどちらでも同じ。
  * game = core/game.js の Game（setBattle(true) にしたもの。連鎖でおじゃまを削るのは Game.placePiece が置いた瞬間に行い、turn.chip に残す）。
- * now() = 時刻（ms。一時停止の間は止まる時計でもよい）。
- * このゲームはルールを置いた瞬間に最後まで確定させ、画面は後から順番に再生する。おじゃまも同じで、落ちるのは「決めた瞬間」に盤面へ入り、
- * 画面ではそれまでに置いたターンの再生が終わってから落ちてくる（使う側が再生の列に並べる）。だから自分の連鎖の再生中に届いたおじゃまは、
- * その連鎖が見え終わってから落ちる
+ * now() = 時刻（ms。一時停止の間は止まる時計でもよい）。busy() = 今、この人の連鎖（とおじゃまの落ちる動き）を再生しているか。
  * 使う側は:
  *   placed(turn, readyIn) … 置いた瞬間（readyIn = このターンの連鎖の再生が終わるまでの ms）。送るおじゃまの数字を返す
  *   receive(attack)       … 相手からおじゃまが届いた { id, n, readyIn }
@@ -171,19 +167,19 @@ export class GarbageQueue {
  * hooks: send({ id, n, readyIn }) / drop({ landed, left }) / pending() / over()
  */
 export class BattleSide {
-  constructor({ game, now = () => Date.now(), random = Math.random, hooks = {}, idPrefix = 'a', offsetPending = OFFSET_PENDING }) {
-    this.game = game; this.now = now; this.random = random; this.hooks = hooks; this.offsetPending = offsetPending;
+  constructor({ game, now = () => Date.now(), random = Math.random, hooks = {}, idPrefix = 'a', offsetPending = OFFSET_PENDING, busy = () => false }) {
+    this.game = game; this.now = now; this.random = random; this.hooks = hooks; this.offsetPending = offsetPending; this.busy = busy;
     this.idPrefix = idPrefix; this.nextId = 1;
     this.queue = new GarbageQueue();
     this.startAt = now();
-    this.placedAt = -Infinity;            // 最後に置いた時刻
+    this.stuck = false;                   // 盤面の上までふさがっていて落とせなかった（次に置いて盤面が変わるまで待つ）
     this.stats = { sent: 0, attacks: 0, chipped: 0, received: 0, landed: 0, bestAttack: 0 };
     this.over = false;
   }
   elapsed() { return this.now() - this.startAt; }
   /** 置いた。連鎖していれば相手へおじゃまを送る（送った数字を返す）。turn.chip（盤面のおじゃまを削った結果）も数える */
   placed(turn, readyIn = playDuration(turn.steps)) {
-    this.placedAt = this.now();
+    this.stuck = false;
     const k = turn.steps.length;
     this.stats.chipped += turn.chip?.removed.length ?? 0;
     if (k && this.offsetPending) {
@@ -213,16 +209,10 @@ export class BattleSide {
     this.hooks.pending?.();
     return true;
   }
-  /**
-   * 落ちてよい予告（相手の連鎖が終わったもの）があり、そのあとに自分が置いた（置いたピースのすぐあとに落ちる）か、
-   * 置かずに GARBAGE_GRACE_MS 待ったなら落とす
-   */
+  /** 落ちてよい予告（相手の連鎖が終わったもの）があり、自分が連鎖していなければ、すぐ落とす */
   shouldDrop() {
-    if (this.over || this.game.gameOver) return false;
-    const ready = this.queue.ready(this.now());
-    if (!ready.length) return false;
-    const since = Math.min(...ready.map((g) => g.readyAt));
-    return this.placedAt >= since || this.now() >= since + GARBAGE_GRACE_MS;
+    if (this.over || this.game.gameOver || this.stuck) return false;
+    return this.queue.ready(this.now()).length > 0 && !this.busy();
   }
   tick() {
     if (!this.shouldDrop()) return null;
@@ -230,9 +220,7 @@ export class BattleSide {
     const res = this.game.dropGarbage(items, this.random);
     if (res.left.length) this.queue.putBack(res.left);
     if (!res.landed.length && res.left.length) {
-      // どこにも入らなかった（上までふさがっている）: 次に置くまで待つ
-      this.placedAt = -Infinity;
-      for (const g of this.queue.items) g.readyAt = Math.max(g.readyAt, this.now());
+      this.stuck = true;                  // どこにも入らなかった（上までふさがっている）: 次に置いて盤面が変わるまで待つ
       return null;
     }
     this.stats.landed += res.landed.length;

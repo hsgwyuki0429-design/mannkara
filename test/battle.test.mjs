@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610091030';
-import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610091030';
-import * as Sim from '../src/core/sim.js?v=202610091030';
-import { Game } from '../src/core/game.js?v=202610091030';
-import { Piece } from '../src/core/pieces.js?v=202610091030';
-import { DealerCore } from '../src/core/dealer.js?v=202610091030';
-import { bestMove, evaluate } from '../src/core/advisor.js?v=202610091030';
-import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610091030';
+import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610091103';
+import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610091103';
+import * as Sim from '../src/core/sim.js?v=202610091103';
+import { Game } from '../src/core/game.js?v=202610091103';
+import { Piece, seededRandom, seedOf } from '../src/core/pieces.js?v=202610091103';
+import { DealerCore } from '../src/core/dealer.js?v=202610091103';
+import { bestMove, evaluate } from '../src/core/advisor.js?v=202610091103';
+import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610091103';
 import {
   attackFor, marginBlocks, dropPath, GarbageQueue, BattleSide, playDuration, ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK,
-  MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, GARBAGE_GRACE_MS, DROP_MAX,
-} from '../src/core/battle.js?v=202610091030';
+  MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, DROP_MAX,
+} from '../src/core/battle.js?v=202610091103';
 
 const rng = (seed) => () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const setLine = (b, kind, n, bits) => lineCells(kind, n).forEach(({ x, r }, k) => {
@@ -239,12 +239,12 @@ function battleGame(seed) {
   return g;
 }
 
-test('BattleSide: 置いて連鎖したら送る。届いたおじゃまは、相手の連鎖が終わって、次に置いたあとに落ちる', () => {
-  let t = 0;
+test('BattleSide: 置いて連鎖したら送る。届いたおじゃまは、相手の連鎖が終わったらすぐ落ちる（自分が連鎖中なら、その連鎖が終わったらすぐ）', () => {
+  let t = 0, busy = false;
   const now = () => t;
   const g = battleGame(11);
   const sent = [], drops = [];
-  const side = new BattleSide({ game: g, now, random: rng(2), hooks: { send: (a) => sent.push(a), drop: (r) => drops.push(r) } });
+  const side = new BattleSide({ game: g, now, random: rng(2), busy: () => busy, hooks: { send: (a) => sent.push(a), drop: (r) => drops.push(r) } });
   // 2 連鎖のターン
   const turn = { steps: [{}, {}], allClear: false };
   assert.equal(side.placed(turn, 1200), 2);
@@ -254,25 +254,33 @@ test('BattleSide: 置いて連鎖したら送る。届いたおじゃまは、�
   // 相手から届く（相手の連鎖はあと 1000ms）
   side.receive({ id: 'x1', n: 4, readyIn: 1000 });
   assert.equal(side.tick(), null, '相手の連鎖の最中は落ちない');
-  t = 1100;
-  assert.equal(side.tick(), null, '相手の連鎖が終わっても、まだ置いていない');
-  t = 1500; side.placed({ steps: [] }, 0);
+  t = 1000;
   const res = side.tick();
-  assert.equal(res.landed.length, 1, '置いたら、そのすぐあとに落ちる（画面では、置いたターンの再生のあと）');
+  assert.equal(res.landed.length, 1, '相手の連鎖が終わったら、置かなくてもすぐ落ちる');
   assert.equal(res.landed[0].block.garbage, 4);
   assert.deepEqual([res.landed[0].x, res.landed[0].r], [0, 0]);
   assert.equal(drops.length, 1);
+  // 自分が連鎖している間に、相手の連鎖が終わった
+  side.receive({ id: 'x2', n: 3, readyIn: 500 });
+  busy = true;
+  t = 2000;
+  assert.equal(side.tick(), null, '自分の連鎖の再生中は落ちない');
+  busy = false;
+  assert.equal(side.tick().landed.length, 1, '自分の連鎖が終わったらすぐ落ちる');
 });
 
-test('BattleSide: 置かずに待っていても、猶予が過ぎたら落ちる', () => {
+test('BattleSide: 上までふさがって落とせなかったら、次に置くまで待つ', () => {
   let t = 0;
   const g = battleGame(12);
+  g.board = new Board();
+  for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) if (isInside(x, r)) g.board.set(x, r, createBlock('x'));
   const side = new BattleSide({ game: g, now: () => t, random: rng(2) });
-  side.receive({ id: 'x1', n: 2, readyIn: 500 });
-  t = 500 + GARBAGE_GRACE_MS - 1;
+  side.receive({ id: 'x1', n: 2, readyIn: 0 });
   assert.equal(side.tick(), null);
-  t = 500 + GARBAGE_GRACE_MS;
-  assert.equal(side.tick().landed.length, 1);
+  assert.equal(side.stuck, true);
+  assert.equal(side.queue.items.length, 1, '予告に残る');
+  side.placed({ steps: [] }, 0);
+  assert.equal(side.stuck, false, '置いたら、もう一度落とせるか試す');
 });
 
 test('連鎖したら、その数だけ盤面のおじゃまが削れる（置いた瞬間に確定し、ターンの記録に残る）', () => {
@@ -329,7 +337,6 @@ test('BattleSide: 1 回に落ちるのは DROP_MAX 個まで（残りは次）',
   const g = battleGame(17);
   const side = new BattleSide({ game: g, now: () => t });
   for (let i = 0; i < DROP_MAX + 2; i++) side.receive({ id: 'x' + i, n: 3, readyIn: 0 });
-  t = GARBAGE_GRACE_MS;
   assert.equal(side.tick().landed.length, DROP_MAX);
   assert.equal(side.queue.items.length, 2);
 });
@@ -342,7 +349,6 @@ test('BattleSide: 落ちて置けなくなったら負け', () => {
   g.tray = [new Piece('Dot0'), null, null];
   const side = new BattleSide({ game: g, now: () => t, hooks: { over: () => over++ } });
   side.receive({ id: 'x', n: 3, readyIn: 0 });
-  t = GARBAGE_GRACE_MS;
   side.tick();
   assert.equal(g.gameOver, true);
   assert.equal(over, 1);
@@ -360,7 +366,7 @@ test('連鎖の再生時間の見積もり（相手の画面で、その連鎖�
 });
 
 test('盤面を短い文字にして送り、相手の画面で同じ盤面に戻せる（おじゃまの数字も）', async () => {
-  const { packBoard, unpackBoard, samePack } = await import('../src/core/battle.js?v=202610091030');
+  const { packBoard, unpackBoard, samePack } = await import('../src/core/battle.js?v=202610091103');
   const b = new Board();
   b.set(0, 0, createGarbage(12));
   b.set(3, 2, createBlock('red'));
@@ -376,7 +382,7 @@ test('盤面を短い文字にして送り、相手の画面で同じ盤面に�
 });
 
 test('相手の画面の写し（Game.mirror）は、置いた手と残りの手駒だけで、本物とまったく同じ盤面になる（連鎖・おじゃまを削るのも）', async () => {
-  const { packBoard, samePack, BattleSide: Side } = await import('../src/core/battle.js?v=202610091030');
+  const { packBoard, samePack, BattleSide: Side } = await import('../src/core/battle.js?v=202610091103');
   for (let seed = 1; seed <= 4; seed++) {
     const g = battleGame(100 + seed);
     const mirror = Game.mirror(rng(9));
@@ -386,7 +392,6 @@ test('相手の画面の写し（Game.mirror）は、置いた手と残りの手
       t += 1500;
       // ときどき、おじゃまが届いて落ちる（落ちた場所は相手へも送る）
       if (turnNo % 5 === 2) side.receive({ id: `x${turnNo}`, n: 2 + (turnNo % 7), count: 1 + (turnNo % 2), readyIn: 0 });
-      t += GARBAGE_GRACE_MS;
       const drop = side.tick();
       if (drop) for (const l of drop.landed) mirror.board.set(l.x, l.r, createGarbage(l.n, 'o' + l.block.id));
       const m = bestMove(g.board, g.tray, { budgetMs: 5 });
@@ -401,4 +406,39 @@ test('相手の画面の写し（Game.mirror）は、置いた手と残りの手
       assert.equal(samePack(packBoard(mirror.board), packBoard(g.board)), true, `盤面が同じ (seed ${seed} turn ${turnNo})`);
     }
   }
+});
+
+test('対戦の手駒: 同じ種なら 2 人とも同じ順番で出て、使った枠にすぐ次が入る', () => {
+  const seed = seedOf('room-1:0');
+  assert.equal(seed, seedOf('room-1:0'));
+  assert.notEqual(seed, seedOf('room-1:1'), '何戦目かで変わる');
+  const a = new Game({ random: rng(1), battle: { rates: null, seed } });
+  const b = new Game({ random: rng(2), battle: { rates: null, seed } });
+  const names = (g) => g.tray.map((p) => p && p.name);
+  assert.deepEqual(names(a), names(b), '最初の手駒が同じ');
+  // 置く枠も置く場所もちがっても、出てくる順番は同じ
+  const seqA = [], seqB = [];
+  for (let k = 0; k < 6; k++) {
+    for (const [g, seq, pick] of [[a, seqA, 0], [b, seqB, 2]]) {
+      const m = bestMove(g.board, g.tray, { budgetMs: 5 });
+      if (!m) continue;
+      const before = names(g);
+      const turn = g.placePiece(m.slot, m.ox, m.oy);
+      assert.equal(turn.refilled, true);
+      assert.equal(turn.refillSlot, m.slot, '使った枠に補充');
+      assert.deepEqual(names(g).filter((_, i) => i !== m.slot), before.filter((_, i) => i !== m.slot), 'ほかの枠はそのまま');
+      seq.push(g.tray[m.slot].name);
+      void pick;
+    }
+  }
+  const n = Math.min(seqA.length, seqB.length);
+  assert.ok(n >= 3);
+  assert.deepEqual(seqA.slice(0, n), seqB.slice(0, n), '補充される手駒の順番が同じ');
+  const c = new Game({ random: rng(3), battle: { rates: null, seed: seed + 1 } });
+  assert.notDeepEqual(names(c), names(a), 'ちがう種なら、ちがう手駒');
+  // 対戦をやめたら、ふだんの決め方に戻る
+  a.setBattle(false); a.reset();
+  assert.equal(a.stream, null);
+  assert.equal(a.tray.filter(Boolean).length, 3);
+  assert.equal(typeof seededRandom(5)(), 'number');
 });

@@ -1,28 +1,28 @@
-import { Game } from '../core/game.js?v=202610091030';
-import { Board, createBlock } from '../core/board.js?v=202610091030';
-import { Piece } from '../core/pieces.js?v=202610091030';
-import * as Sim from '../core/sim.js?v=202610091030';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091030';
-import { Renderer, delay, markJoins } from './renderer.js?v=202610091030';
-import { Sfx, kitForScore } from './sfx.js?v=202610091030';
-import { Scenes } from './scenes.js?v=202610091030';
-import { Ambient } from './ambient.js?v=202610091030';
-import { colorOf } from './palette.js?v=202610091030';
-import { TrayDealer } from './tray-dealer.js?v=202610091030';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091030';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091030';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091030';
-import { World, SEASON } from './world.js?v=202610091030';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091030';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610091030';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091030';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091030';
-import { softwareRendering } from './fx2d.js?v=202610091030';
-import { useSprites } from './shards.js?v=202610091030';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610091030';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091030';
-import { makeQr, drawQr } from './qr.js?v=202610091030';
-import { BattleNet } from './net.js?v=202610091030';
+import { Game } from '../core/game.js?v=202610091103';
+import { Board, createBlock } from '../core/board.js?v=202610091103';
+import { Piece } from '../core/pieces.js?v=202610091103';
+import * as Sim from '../core/sim.js?v=202610091103';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091103';
+import { Renderer, delay, markJoins } from './renderer.js?v=202610091103';
+import { Sfx, kitForScore } from './sfx.js?v=202610091103';
+import { Scenes } from './scenes.js?v=202610091103';
+import { Ambient } from './ambient.js?v=202610091103';
+import { colorOf } from './palette.js?v=202610091103';
+import { TrayDealer } from './tray-dealer.js?v=202610091103';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091103';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091103';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091103';
+import { World, SEASON } from './world.js?v=202610091103';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091103';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610091103';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091103';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091103';
+import { softwareRendering } from './fx2d.js?v=202610091103';
+import { useSprites } from './shards.js?v=202610091103';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610091103';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091103';
+import { makeQr, drawQr } from './qr.js?v=202610091103';
+import { BattleNet } from './net.js?v=202610091103';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -169,14 +169,14 @@ function planSpeeds(steps) {
 /** 連鎖の通り道に次のピースを置いたときだけ、音と動きを残して追いつく。 */
 const OVERLAP_SPEED = 8;
 const playingSpeed = () => (playingSeq && playingSeq < fastBefore ? OVERLAP_SPEED : 1);
-const desiredSpeed = () => (paused ? 0 : onlineBattle() ? ONLINE_SPEED : Math.max(playingSpeed(), drag ? catchUpSpeed(performance.now()) : 1));
+const desiredSpeed = () => (paused ? 0 : battleLock() ? BATTLE_SPEED : Math.max(playingSpeed(), drag ? catchUpSpeed(performance.now()) : 1));
 /**
- * オンライン対戦だけのルール: 連鎖の再生はいつも、ピースを持っているときと同じ速さ（ONLINE_SPEED）で、再生が終わるまで次のピースは置けない。
+ * 対戦のルール（CPU・オンラインとも）: 連鎖の再生はいつも、ピースを持っているときと同じ速さ（BATTLE_SPEED）で、再生が終わるまで次のピースは置けない。
  * どちらの画面でも連鎖の長さが同じになり、送ったおじゃま・届いたおじゃまが、順番どおりにきれいに並ぶ
  */
-const onlineBattle = () => !!versus?.active && versus.kind === 'online';
-/** オンライン対戦で、再生中は手駒を薄くして「まだ置けない」と分かるように */
-const syncLock = () => document.body.classList.toggle('vs-busy', onlineBattle() && pending > 0);
+const battleLock = () => !!versus?.active;
+/** 対戦で、再生中は手駒を薄くして「まだ置けない」と分かるように */
+const syncLock = () => document.body.classList.toggle('vs-busy', battleLock() && pending > 0);
 /**
  * 再生中にピースを持ち上げたときの再生の速さ（置くまでに表示を盤面に追いつかせる）:
  *  - 持っているだけ（盤面へ近づけていない）なら速めない
@@ -189,7 +189,7 @@ const APPROACH_MIN = 0.05, STILL_MS = 120;
 /** 見積もりより再生が長引いても（全消しの演出など）、再生中は速められるように残りをこれより少なく見ない（ms） */
 const PLAY_LEFT_MIN = 300;
 const HELD_SPEED = 3;
-const ONLINE_SPEED = HELD_SPEED;
+const BATTLE_SPEED = HELD_SPEED;
 function catchUpSpeed(now) {
   if (!drag || !pending) return 1;
   return HELD_SPEED;                                    // ブロックを持っている間は、連鎖の再生をいつも 3 倍の速さにする（以下は使わない）
@@ -233,7 +233,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091030', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091103', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -264,14 +264,14 @@ const game = new Game({
       else turn.deferPlace = true;
       dropHint();
       const refilledNow = turn.refilled && !turn.trayReady;
-      renderTray(refilledNow);
+      renderTray(refilledNow && (turn.refillSlot ?? true));          // 対戦は、使った枠にだけ次の手駒が出てくる
       if (refilledNow) sfx.refill();
       updateDebug();
       pending++;
       playback.set(turn.seq, { turn, next: 0 });
       playLeft += turnPlayCost(turn);
       startPlayTick();
-      if (inBattle()) versus.onLocalTurn(turn, playLeft / (onlineBattle() ? ONLINE_SPEED : 1));
+      if (inBattle()) versus.onLocalTurn(turn, playLeft / BATTLE_SPEED);
       syncLock();   // 対戦: 連鎖していれば相手へおじゃまを送る（届くのは、この再生が終わるころ）
       const gen = generation;
       enqueue(() => playTurn(turn)).finally(() => {
@@ -471,15 +471,17 @@ function measureSlotBox(wrap) {
   return box;
 }
 try { new ResizeObserver(() => { slotBoxCache = null; slotCenterCache = null; }).observe($('tray')); } catch {}
+/** enter = true（全部の枠）/ 枠の番号（その枠だけ）: 手駒が出てくる動き */
 function renderTray(enter = false) {
   const wrap = $('tray');
   const slotBox = measureSlotBox(wrap);                     // 中身を消す前に測る（消した後だと、その場でレイアウトの計算になる）
   wrap.innerHTML = '';
   game.tray.forEach((piece, i) => {
     const slot = document.createElement('div');
-    slot.className = 'slot' + (enter ? ' enter' : '') + (drag?.slot === i ? ' dragging' : '');
+    const anim = enter === true || enter === i;
+    slot.className = 'slot' + (anim ? ' enter' : '') + (drag?.slot === i ? ' dragging' : '');
     slot.dataset.slot = i;
-    if (enter) slot.style.setProperty('animation-delay', `${i * 50}ms`);
+    if (anim && enter === true) slot.style.setProperty('animation-delay', `${i * 50}ms`);
     if (piece) {
       const s = trayCellSize(piece, slotBox);
       const box = document.createElement('div');
@@ -489,7 +491,7 @@ function renderTray(enter = false) {
       // 形の外接四角ではなく、実際のマスが見えている範囲の中心を枠の中心に合わせる
       const mid = pieceScreenCenter(piece, s);
       box.style.translate = `${-mid.x}px ${-mid.y}px`;
-      if (enter) box.style.animationDelay = `${i * 60}ms`;
+      if (anim && enter === true) box.style.animationDelay = `${i * 60}ms`;
       const joinEls = [];
       for (const c of piece.cells) {
         const d = document.createElement('div');
@@ -503,7 +505,7 @@ function renderTray(enter = false) {
     }
     wrap.appendChild(slot);
   });
-  if (renderer.view3d) tray3d(enter);
+  if (renderer.view3d) tray3d(enter === true);
 }
 /** 手駒の枠の中心（画面座標）。測るとレイアウトの計算し直しになるので、トレイの大きさが変わったときだけ測り直す */
 let slotCenterCache = null;
@@ -679,7 +681,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   // 最初の指（isPrimary）が下りたのにまだ持っている = 前の指が離れたのを取りこぼした。持っていたピースは戻す
   // （戻すとトレイを描き直すので、触った枠は番号で探し直す）
   if (drag && e.isPrimary) cancelDrag();
-  if (!hitSlot || gameOverShown || drag || paused || inputLocked || (onlineBattle() && pending > 0)) return;   // オンライン対戦では、連鎖の再生中は置けない
+  if (!hitSlot || gameOverShown || drag || paused || inputLocked || (battleLock() && pending > 0)) return;   // 対戦では、連鎖の再生中は置けない
   const slot = Number(hitSlot.dataset.slot);
   const slotEl = document.querySelector(`.slot[data-slot="${slot}"]`);
   const piece = game.tray[slot];
@@ -792,7 +794,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610091030').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610091103').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -1517,7 +1519,7 @@ function enterBattle() {
   renderer.setPaused(false);
   document.body.classList.add('battle');
   document.body.classList.toggle('battle-online', versus.kind === 'online');
-  game.setBattle(true, BATTLE_RATES);
+  game.setBattle(true, BATTLE_RATES, { seed: versus.seed });   // 相手と同じ順番の手駒（使った枠にすぐ次が入る）
   restart();
   bestCelebrated = true;                           // 対戦ではベストスコアのお祝いはしない
 }
@@ -1532,12 +1534,13 @@ function exitBattle() {
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610091030', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610091103', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,
   lock(on) { inputLocked = on; if (on) cancelDrag(); },
   enqueueDrop,
+  busy: () => pending > 0,                         // 自分の連鎖・おじゃまの落ちる動きを再生しているか（その間はおじゃまを落とさない）
   findRated: () => openLobby('rated'),
   celebrate() { ambient.celebrate('best'); scenes.newBest($('vsResBig').getBoundingClientRect()); },
 });
