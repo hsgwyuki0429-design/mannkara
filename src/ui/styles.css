@@ -276,9 +276,6 @@ button{font-family:inherit;cursor:pointer;}
 /* 最高段階は、主な文字の色がブロックの7色を順に移っていく（説明の小さい文字は白） */
 /* 色の移り変わりは1周だけ（文字は popText の 1000ms で消えるので、それより後は見えない。
    infinite にすると、消えた後も毎フレーム色の計算と描き直しが続いて全体が重くなる） */
-/* おじゃまが落ちてくる字幕（赤。たくさん・大きいときは大きく） */
-.pop.oj{color:#ff8a8a;--tc:#ffd9b0;font-size:34px;}
-.pop.oj.heavy{font-size:40px;color:#ff6b6b;}
 .pop.t5{--tc:#fff;font-size:40px;animation:popText 1000ms cubic-bezier(.2,.9,.3,1),rainbow 1400ms linear;}
 @keyframes rainbow{0%,100%{color:#ff7a92}16%{color:#ffb35a}33%{color:#ffe45c}50%{color:#7ff0a4}66%{color:#7fe6ff}83%{color:#c29bff}}
 

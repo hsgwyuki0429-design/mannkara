@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610091214';
-import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610091214';
-import * as Sim from '../src/core/sim.js?v=202610091214';
-import { Game } from '../src/core/game.js?v=202610091214';
-import { Piece, seededRandom, seedOf } from '../src/core/pieces.js?v=202610091214';
-import { DealerCore } from '../src/core/dealer.js?v=202610091214';
-import { bestMove, evaluate } from '../src/core/advisor.js?v=202610091214';
-import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610091214';
+import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610091243';
+import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610091243';
+import * as Sim from '../src/core/sim.js?v=202610091243';
+import { Game } from '../src/core/game.js?v=202610091243';
+import { Piece, seededRandom, seedOf } from '../src/core/pieces.js?v=202610091243';
+import { DealerCore } from '../src/core/dealer.js?v=202610091243';
+import { bestMove, evaluate } from '../src/core/advisor.js?v=202610091243';
+import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610091243';
 import {
   attackFor, marginBlocks, dropPath, GarbageQueue, BattleSide, playDuration, ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK,
   MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, DROP_MAX,
-} from '../src/core/battle.js?v=202610091214';
+} from '../src/core/battle.js?v=202610091243';
 
 const rng = (seed) => () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const setLine = (b, kind, n, bits) => lineCells(kind, n).forEach(({ x, r }, k) => {
@@ -366,7 +366,7 @@ test('連鎖の再生時間の見積もり（相手の画面で、その連鎖�
 });
 
 test('盤面を短い文字にして送り、相手の画面で同じ盤面に戻せる（おじゃまの数字も）', async () => {
-  const { packBoard, unpackBoard, samePack } = await import('../src/core/battle.js?v=202610091214');
+  const { packBoard, unpackBoard, samePack } = await import('../src/core/battle.js?v=202610091243');
   const b = new Board();
   b.set(0, 0, createGarbage(12));
   b.set(3, 2, createBlock('red'));
@@ -382,7 +382,7 @@ test('盤面を短い文字にして送り、相手の画面で同じ盤面に�
 });
 
 test('相手の画面の写し（Game.mirror）は、置いた手と残りの手駒だけで、本物とまったく同じ盤面になる（連鎖・おじゃまを削るのも）', async () => {
-  const { packBoard, samePack, BattleSide: Side } = await import('../src/core/battle.js?v=202610091214');
+  const { packBoard, samePack, BattleSide: Side } = await import('../src/core/battle.js?v=202610091243');
   for (let seed = 1; seed <= 4; seed++) {
     const g = battleGame(100 + seed);
     const mirror = Game.mirror(rng(9));

@@ -1,13 +1,13 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091214';
-import { Shards } from './shards.js?v=202610091214';
-import { Sparkles } from './sparkles.js?v=202610091214';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091214';
-import { Rims } from './rims.js?v=202610091214';
-import { colorOf } from './palette.js?v=202610091214';
-import { PLATE_SETS } from './ambient.js?v=202610091214';
-import { DROP_WARN_MS, DROP_GAP_MS, DROP_FALL_MS, DROP_HOLD_MS } from '../core/battle.js?v=202610091214';
-import { glassElement, glassGroups } from './glass.js?v=202610091214';
+import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091243';
+import { Shards } from './shards.js?v=202610091243';
+import { Sparkles } from './sparkles.js?v=202610091243';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091243';
+import { Rims } from './rims.js?v=202610091243';
+import { colorOf } from './palette.js?v=202610091243';
+import { PLATE_SETS } from './ambient.js?v=202610091243';
+import { DROP_WARN_MS, DROP_GAP_MS, DROP_FALL_MS, DROP_HOLD_MS } from '../core/battle.js?v=202610091243';
+import { glassElement, glassGroups } from './glass.js?v=202610091243';
 
 /** 連鎖数ごとの褒め言葉（段階が上がるほど派手な色）。[この連鎖から, 言葉, 段階] */
 export const PRAISE = [[8, 'Unbelievable!', 5], [6, 'Amazing!', 4], [4, 'Excellent!', 3], [3, 'Great!', 2], [2, 'Good!', 1]];
@@ -1121,8 +1121,8 @@ export class Renderer {
     const gen = this.gen, c = this.cell;
     const count = landed.length, nums = landed.map((l) => l.n ?? l.block.garbage), sum = nums.reduce((a, v) => a + v, 0);
     const heavy = count >= 3 || sum >= 10;                         // たくさん・大きいおじゃま: 演出を一段強く
-    // 字幕と警告（落ち始める前の間）: 「おじゃま ×3 / 数字 7・3・3」・縁の赤い光・低い警告音
-    this.garbageWarn(count, nums, heavy);
+    // 警告（落ち始める前の間）: 縁の赤い光・盤面の小さな揺れ・低い警告音
+    this.garbageWarn(count, sum, heavy);
     await this.wait(DROP_WARN_MS);
     if (gen !== this.gen) return;
     const jobs = landed.map(({ block, x, r, n, path }, i) => (async () => {
@@ -1186,14 +1186,9 @@ export class Renderer {
     this.refreshGlass();
   }
 
-  /**
-   * おじゃまが落ちてくる直前の字幕と警告: 「おじゃま ×3」と落ちてくる数字・画面の縁の赤い光・盤面の小さな揺れ・警告音。
-   * ふつうの字幕（連鎖など）と同じ場所・同じ出方で、赤い色にする
-   */
-  garbageWarn(count, nums, heavy = false) {
-    const list = nums.length > 5 ? nums.slice(0, 5).join('・') + '…' : nums.join('・');
-    this.showText(`おじゃま ×${count}<small>数字 ${list}</small>`, heavy ? 'oj heavy' : 'oj');
-    this.sfx?.garbageIncoming?.(count, nums.reduce((a, v) => a + v, 0));
+  /** おじゃまが落ちてくる直前の警告: 画面の縁の赤い光・盤面の小さな揺れ・警告音（文字は出さない） */
+  garbageWarn(count, sum, heavy = false) {
+    this.sfx?.garbageIncoming?.(count, sum);
     if (reducedMotion()) return;
     this.ojFlash.animate([{ opacity: 0 }, { opacity: heavy ? 1 : 0.8, offset: 0.18 }, { opacity: 0.35, offset: 0.55 }, { opacity: 0 }], { duration: DROP_WARN_MS + 500, easing: 'ease-out' });
     this.shake(heavy ? 3.5 : 2, 360);
