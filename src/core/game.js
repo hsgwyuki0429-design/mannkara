@@ -1,17 +1,18 @@
-import { Board, createBlock } from './board.js?v=202610062316';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610062316';
-import { ScoreManager } from './score.js?v=202610062316';
-import { nextActivation, lineMoves } from './mancala.js?v=202610062316';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610062316';
-import * as Sim from './sim.js?v=202610062316';
-import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610062316';
-import { bestMove } from './advisor.js?v=202610062316';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610090554';
+import { dropPath } from './battle.js?v=202610090554';
+import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610090554';
+import { ScoreManager } from './score.js?v=202610090554';
+import { nextActivation, lineMoves } from './mancala.js?v=202610090554';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610090554';
+import * as Sim from './sim.js?v=202610090554';
+import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610090554';
+import { bestMove } from './advisor.js?v=202610090554';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202610062316';
+} from './constants.js?v=202610090554';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -46,6 +47,19 @@ export class Game {
     return g;
   }
 
+  /** 盤面とスコアだけの Game（対戦で、相手の盤面を写すのに使う。手駒は配らず、詰みも判定しない。手は外から置く） */
+  static mirror(random = Math.random) {
+    const g = Game.forDealing(random);
+    g.score = new ScoreManager();
+    g.tray = new Array(TRAY_SIZE).fill(null);
+    g.gameOver = false;
+    g.scripted = true;
+    g.dealSeq = 0;
+    g.dealerState = null;
+    g.setBattle(true, null);
+    return g;
+  }
+
   reset() {
     this.board = new Board();
     this.score = new ScoreManager();
@@ -60,6 +74,11 @@ export class Game {
     } else this.tray = this.spawnTray();
     this.gameOver = false;
     this.scripted = false;         // チュートリアル中（置いた手駒を補充しない・詰みを判定しない。盤面と手駒は画面側が決める）
+  }
+  /** 対戦のルール（連鎖でおじゃまを削る）を使うか。手駒の決め方は出来に合わせず、決まった確率 */
+  setBattle(on, rates = null) {
+    this.battle = !!on;
+    this.fixedRates = on ? rates : null;
   }
 
   /** 手駒の決め方の状態（全消しの計画・ループの判定の履歴など）を最初に戻す */
@@ -80,15 +99,21 @@ export class Game {
    * 今の盤面で、別スレッドに手駒を決めてもらう。届いたら tray・planTray を入れ替え、（補充なら）詰みを判定して
    * hooks.onTray を呼ぶ。返り値は届いた時に { gameOver } になる Promise（その間に新しいゲームになったら null）
    */
-  /** 遊んでいる人の出来（skill = { best, recent }。画面側が入れる）と今のスコアから決めた、ひっかけの確率 */
-  currentTightRate() { return tightRateFor(this.score?.score ?? 0, this.skill); }
-  currentAllClearRate() { return allClearRateFor(this.score?.score ?? 0, this.skill); }
+  /** 遊んでいる人の出来（skill = { best, recent }。画面側が入れる）と今のスコアから決めた、ひっかけの確率。
+   *  対戦では出来に合わせず、決まった確率（fixedRates = { tight, allClear }。画面側が入れる） */
+  currentTightRate() { return this.fixedRates ? this.fixedRates.tight : tightRateFor(this.score?.score ?? 0, this.skill); }
+  currentAllClearRate() { return this.fixedRates ? this.fixedRates.allClear : allClearRateFor(this.score?.score ?? 0, this.skill); }
+  /** 埋まっているマスの番号（r * 8 + x）の一覧。おじゃまは別の一覧（別スレッドの手駒の決め方・おすすめに渡す） */
+  cellLists() {
+    const cells = [], garbage = [];
+    for (const { x, r, block } of this.board.entries()) (isGarbage(block) ? garbage : cells).push(r * SIZE + x);
+    return { cells, garbage };
+  }
 
   dealAsync(initial) {
     const seq = this.dealSeq;
-    const cells = [];
-    for (const { x, r } of this.board.entries()) cells.push(r * SIZE + x);
-    return this.dealer.deal(cells, this.currentTightRate(), this.currentAllClearRate()).then((res) => {
+    const { cells, garbage } = this.cellLists();
+    return this.dealer.deal(cells, this.currentTightRate(), this.currentAllClearRate(), garbage).then((res) => {
       if (seq !== this.dealSeq) return null;
       this.tray = res.names.map((name) => new Piece(name));
       this.planTray = res.planTray;
@@ -106,7 +131,7 @@ export class Game {
    */
   exportState() {
     const board = [];
-    for (const { block, x, r } of this.board.entries()) board.push([x, r, block.color]);
+    for (const { block, x, r } of this.board.entries()) board.push(isGarbage(block) ? [x, r, block.color, block.garbage] : [x, r, block.color]);
     return {
       v: 1, board, tray: this.tray.map((p) => p && p.name), planTray: this.planTray, score: { ...this.score },
       gameOver: this.gameOver, dealing: this.dealingState(),
@@ -117,7 +142,7 @@ export class Game {
   importState(st) {
     this.dealSeq++;                                            // 決めている途中の手駒が後から届いても使わない
     this.board = new Board();
-    for (const [x, r, color] of st.board) this.board.set(x, r, createBlock(color));
+    for (const [x, r, color, n] of st.board) this.board.set(x, r, color === 'garbage' ? createGarbage(n) : createBlock(color));
     this.tray = st.tray.map((name) => name && new Piece(name));
     this.planTray = st.planTray ?? null;
     this.score = Object.assign(new ScoreManager(), st.score);
@@ -144,6 +169,48 @@ export class Game {
     return { plan: this.plan, history: [...this.history], wantAllClear: this.wantAllClear, wantTight: this.wantTight, tightCooldown: this.tightCooldown };
   }
 
+  /**
+   * 対戦: 送られてきたおじゃま items = [{ id, n }] を盤面に落とす（core/battle.js の dropPath。上から落ちて一番低いところに積もる）。
+   * 落ちたあと、トレイのどのピースも置けなければ詰み。{ landed: [{ block, x, r, path }], left: 入らなかった items, gameOver }
+   */
+  dropGarbage(items, random = this.generator.random) {
+    const landed = [], left = [];
+    // 手駒の入る場所だけがたまたまふさがって負けにならないよう、手駒が置けるままの場所を先に選ぶ（battle.js の pickSpot）
+    const names = this.scripted ? [] : this.tray.filter(Boolean).map((p) => p.name);
+    const safety = names.length ? (spot) => {
+      const s = Sim.fromBoard(this.board);
+      s[spot.r * SIZE + spot.x] = Sim.GARBAGE_CELL;
+      if (solvable(s, names)) return 0;
+      return names.some((n) => Sim.fits(s, new Piece(n).cells)) ? 1 : 2;
+    } : null;
+    for (const item of items) {
+      const spot = dropPath((x, r) => !!this.board.get(x, r), random, safety);
+      if (!spot) { left.push(item); continue; }
+      const block = createGarbage(item.n, item.id);
+      this.board.set(spot.x, spot.r, block);
+      landed.push({ block, x: spot.x, r: spot.r, n: block.garbage, path: spot.path });   // n = 落ちたときの数字（画面は後から再生するので、そのときの数字を残す）
+    }
+    if (landed.length && !this.gameOver && !this.scripted && this.tray.some(Boolean) && !this.hasMove()) this.gameOver = true;
+    this.chainCache = this.fitCache = null;
+    return { landed, left, gameOver: this.gameOver };
+  }
+  /**
+   * 対戦: 自分が k 連鎖したので、盤面のおじゃまの数字を全部 k 減らす（0 になったら消える）。
+   * { changed: [{ block, x, r, n, from }], removed: [{ block, x, r, from }] }
+   */
+  chipGarbage(k) {
+    const changed = [], removed = [];
+    if (!(k > 0)) return { changed, removed };
+    for (const { block, x, r } of this.board.garbage()) {
+      const from = block.garbage;
+      block.garbage = from - k;
+      if (block.garbage <= 0) { this.board.set(x, r, null); removed.push({ block, x, r, from }); }
+      else changed.push({ block, x, r, n: block.garbage, from });
+    }
+    if (removed.length) this.chainCache = this.fitCache = null;
+    return { changed, removed };
+  }
+
   canPlace(slot, ox, oy) {
     const piece = this.tray[slot];
     return !!piece && this.board.canPlace(piece, ox, oy);
@@ -159,6 +226,7 @@ export class Game {
     if (this.gameOver || !this.canPlace(slot, ox, oy)) return null;
     const piece = this.tray[slot];
     this.tray[slot] = null;
+    const rest = this.tray.filter(Boolean).map((p) => p.name);     // 置いた時点で残っている手駒（対戦で、相手の画面が同じ連鎖を再現するのに使う）
     // 全消しの手順どおりの手か（違ったら、このトレイではもう手順を教えない）
     if (this.planTray) {
       const i = this.planTray.findIndex((m) => m.name === piece.name && m.ox === ox && m.oy === oy);
@@ -172,6 +240,9 @@ export class Game {
 
     const steps = this.resolve();
     this.score.endTurn(steps.length > 0);
+    // 対戦: 連鎖したら、その数だけ盤面のおじゃまの数字を減らす（ルールは置いた瞬間に確定。画面ではこのターンの再生の最後に見せる）。
+    // 連鎖でブロックが無くなり、最後のおじゃまも消えたら全消し
+    const chip = this.battle && steps.length ? this.chipGarbage(steps.length) : null;
     const allClear = steps.length > 0 && this.board.totalBlocks() === 0;
     const allClearBonus = allClear ? this.score.addAllClear() : 0;
 
@@ -185,8 +256,8 @@ export class Game {
     if (!trayReady && !this.scripted && !this.hasMove()) this.gameOver = true;
 
     const turn = {
-      slot, piece, placed, steps, refilled, scoreAfterPlace, fit, rect, fitBonus,
-      allClear, allClearBonus,
+      slot, piece, ox, oy, rest, placed, steps, refilled, scoreAfterPlace, fit, rect, fitBonus,
+      allClear, allClearBonus, chip,
       score: this.score.score, streak: this.score.streak, boostTurns: this.score.boostTurns, gameOver: this.gameOver,
     };
     // 手駒を別スレッドで決めているときは、届いた時に解決する（その時に gameOver を入れ直す）
@@ -363,6 +434,7 @@ export class Game {
     this.plan = null;
     if (plan && Sim.keyOf(Sim.fromBoard(this.board)) === plan.key) return this.dealPlan(plan.rest);
     if (plan) return null;                                     // 手順から外れた直後は、ふつうの手駒にする
+    if (Sim.garbageCount(Sim.fromBoard(this.board))) return null;   // 対戦でおじゃまがあると全消しはできない（おじゃまは置いても消えない）
     const rolled = !this.wantAllClear && random() < this.allClearRate;
     this.wantAllClear ||= rolled;
     if (!this.wantAllClear) return null;
@@ -479,9 +551,8 @@ export class Game {
     if (this.gameOver || !this.dealer) return Promise.resolve(this.hint());
     const planned = this.planHint();
     if (planned) return Promise.resolve(planned);
-    const cells = [];
-    for (const { x, r } of this.board.entries()) cells.push(r * SIZE + x);
-    return this.dealer.hint(cells, this.tray.map((p) => p && p.name)).then((m) => m && { ...m, plan: false });
+    const { cells, garbage } = this.cellLists();
+    return this.dealer.hint(cells, this.tray.map((p) => p && p.name), garbage).then((m) => m && { ...m, plan: false });
   }
 
   hasMove() {

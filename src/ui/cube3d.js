@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610062316';
-import { SIZE } from '../core/constants.js?v=202610062316';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon, plateFieldData, toHalf } from './cube3d-math.js?v=202610062316';
+import * as THREE from './vendor/three.js?v=202610090554';
+import { SIZE } from '../core/constants.js?v=202610090554';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon, plateFieldData, toHalf } from './cube3d-math.js?v=202610090554';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -41,8 +41,12 @@ const GLASS = {
   purple: [0.62, 0.26, 1.0],
   debug: [0.6, 0.66, 0.8],
   x: [0.6, 0.66, 0.8],
+  garbage: [0.42, 0.44, 0.52],      // 対戦のおじゃま: くもった灰色のガラス（数字は 2D の盤面の文字をそのまま重ねて見せる）
 };
 const glassOf = (name) => GLASS[name] || GLASS.purple;
+/** おじゃまは 1 個ずつ数字を持つので、隣どうしでもつながない（色の値で見分ける。Float32 に入れた値とも比べられるように） */
+const LONE = GLASS.garbage.map(Math.fround);
+const lone = (r, g, b) => Math.fround(r) === LONE[0] && Math.fround(g) === LONE[1] && Math.fround(b) === LONE[2];
 /** 背景・盤面・照明（線形 RGB） */
 export const BACKDROP = { top: '#3a6adf', mid: '#4479f2', bottom: '#3a6adf', glow: '#4479f2' };
 const LOOK = {
@@ -774,6 +778,7 @@ export function cubeJoins(m, tint, n, out) {
     const o = i * 16, ax = [m[o], m[o + 1], m[o + 2]], ay = [m[o + 4], m[o + 5], m[o + 6]], az = [m[o + 8], m[o + 9], m[o + 10]];
     const sx = Math.hypot(...ax), sy = Math.hypot(...ay), sz = Math.hypot(...az);
     if (sx < 1e-6 || sy < 1e-6) continue;
+    if (lone(tint[i * 3], tint[i * 3 + 1], tint[i * 3 + 2])) continue;
     for (let j = 0; j < n; j++) {
       if (j === i || tint[i * 3] !== tint[j * 3] || tint[i * 3 + 1] !== tint[j * 3 + 1] || tint[i * 3 + 2] !== tint[j * 3 + 2]) continue;
       const q = j * 16;
@@ -803,6 +808,7 @@ export function causJoins(list) {
   const out = new Float32Array(Math.max(list.length, 1) * 4);
   for (let i = 0; i < list.length; i++) {
     const [x, r, half, z0, h, tint] = list[i];
+    if (lone(tint[0], tint[1], tint[2])) continue;
     for (let j = 0; j < list.length; j++) {
       if (i === j) continue;
       const [x2, r2, half2, z02, h2, tint2] = list[j];
@@ -1365,7 +1371,7 @@ export class Cube3D {
   /** 色ごとの、ガラスの立方体 1 個の小さな絵（かけら・紙吹雪に使う。shards.js の useSprites）。px = 絵の大きさ */
   sprites(px = 64) {
     const map = new Map();
-    for (const name of ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple']) map.set(name, this.renderPiece([[0, 0]], name, px, px));
+    for (const name of ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'garbage']) map.set(name, this.renderPiece([[0, 0]], name, px, px));
     this.invalidate();
     return map;
   }

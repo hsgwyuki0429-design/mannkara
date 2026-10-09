@@ -50,6 +50,7 @@ html[data-board-theme="glass"]{background-color:#5e4ac2 !important;}
 [data-board-theme="glass"] .c-cyan{--glass-color:#61ba7e;}
 [data-board-theme="glass"] .c-blue{--glass-color:#9eaff3;}
 [data-board-theme="glass"] :is(.c-purple,.c-debug){--glass-color:#a88cff;}
+[data-board-theme="glass"] .c-garbage{--glass-color:#8f92ad;}
 [data-board-theme="glass"] .goal{background:rgba(53,39,133,.12);border-color:#28dadd;color:#85f4f5;}
 [data-board-theme="glass"] #pauseOverlay{background:rgba(46,30,111,.64);}
 @media (prefers-reduced-motion:reduce){.board-theme-card{transition:none;}[data-board-theme="glass"] #dragLayer > .glass-surface{animation:none;}}
@@ -64,6 +65,8 @@ html[data-board-theme="glass"]{background-color:#5e4ac2 !important;}
 [data-board-theme="3d"]:not([data-gl="off"]) .tray .tray-cell,
 [data-board-theme="3d"]:not([data-gl="off"]) #dragLayer .drag-cell{visibility:hidden;}
 [data-board-theme="3d"] #pauseOverlay{background:rgba(22,24,80,.62);}
+/* おじゃまの数字は、ガラスの立方体（canvas）の上に 2D の文字をそのまま重ねる（立方体の高さのまん中の面が 2D の盤面と同じ位置に写る） */
+[data-board-theme="3d"]:not([data-gl="off"]) .playfield .block.garbage .gnum{visibility:visible;}
 .preview-3d .board-theme-preview{background:radial-gradient(ellipse at 50% 42%,#3a40b2,#232873);}
 .board-theme-shot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
 /* 3D は横いっぱいの見本（光の当たり方まで見えるように） */
@@ -122,3 +125,20 @@ html[data-board-theme="white"]{background-color:#f4f6fb !important;}
 .preview-white .j-b::before{bottom:-.5px;border-bottom-left-radius:0;border-bottom-right-radius:0;}
 .preview-white .block::after{content:none;}
 [data-board-theme="white"] #app .brand-url{color:rgba(29,35,64,.5);}
+[data-board-theme="white"] .c-garbage{--col:#a3abc0;}
+/* 対戦の相手の盤面（mini-board.js）も、盤面の種類と同じ見た目に */
+[data-board-theme="white"] .mini-field{--plate:#e8ecf4;--well:#e8ecf4;--well-s1:transparent;--well-s2:transparent;--well-rim:transparent;--well-hi:transparent;}
+[data-board-theme="white"] .mini-field .well::after{box-shadow:none;background:#dfe4ee;}
+[data-board-theme="white"] .vs-opp{background:#fff;border-color:rgba(29,35,64,.12);box-shadow:0 3px 8px rgba(29,35,64,.08);}
+[data-board-theme="white"] .vs-timer{border-color:rgba(29,35,64,.22);}
+[data-board-theme="glass"] .mini-field{--plate:rgba(255,255,255,.14);--well:rgba(255,255,255,.07);--well-s1:transparent;--well-s2:transparent;--well-rim:rgba(255,255,255,.18);--well-hi:transparent;}
+[data-board-theme="glass"] .mini-field .well::after{box-shadow:0 0 0 .5px rgba(255,255,255,.22);}
+[data-board-theme="glass"] .mini-field .block::before{
+  inset:4%;border-radius:16%;background:linear-gradient(135deg,color-mix(in srgb,var(--glass-color) 70%,transparent),color-mix(in srgb,var(--glass-color) 58%,transparent));
+  border:1px solid color-mix(in srgb,var(--glass-color),#fff 64%);box-shadow:none;}
+[data-board-theme="glass"] .mini-field .block::after{content:none;}
+[data-board-theme="glass"] .vs-opp{background:rgba(255,255,255,.08);border-color:rgba(214,196,255,.55);}
+[data-board-theme="3d"] .vs-opp{background:rgba(30,34,120,.28);}
+[data-board-theme="white"] .vs-count{color:#1d2340;text-shadow:0 4px 0 rgba(29,35,64,.08);}
+[data-board-theme="white"] .vs-count.go{color:var(--gold);}
+[data-board-theme="white"] .vs-count.wait{background:#fff;color:#1d2340;}

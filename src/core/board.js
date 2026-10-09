@@ -1,9 +1,20 @@
-import { SIZE, isInside, lineCells, KINDS, MAX_BLOCKS } from './constants.js?v=202610062316';
+import { SIZE, isInside, lineCells, KINDS, MAX_BLOCKS } from './constants.js?v=202610090554';
 
 let nextBlockId = 1;
 export function createBlock(color) {
   return { id: `b${nextBlockId++}`, color };
 }
+/**
+ * おじゃまブロック（対戦で相手から送られてくる、置けない灰色のブロック）。n = 書いてある数字。
+ * 動かない・その上には置けない・入っているラインは満杯にならない（発動しない）。流れこむブロックにとっては壁と同じ。
+ * 自分が連鎖するたびに、連鎖の数だけ n が減り、0 になると消える（core/battle.js）
+ */
+export const GARBAGE = 'garbage';
+let nextGarbageId = 1;
+export function createGarbage(n, id = `g${nextGarbageId++}`) {
+  return { id, color: GARBAGE, garbage: Math.max(1, Math.floor(n) || 1) };
+}
+export const isGarbage = (block) => !!block && block.color === GARBAGE;
 
 /**
  * 三角形の盤面。grid[r][x]。重力なし（置いた場所にそのまま残る）。
@@ -28,7 +39,8 @@ export class Board {
 
   /* ---------- ライン ---------- */
   line(kind, n) { return lineCells(kind, n).map(({ x, r }) => this.get(x, r)); }
-  count(kind, n) { return this.line(kind, n).filter(Boolean).length; }
+  /** ラインのブロックの数（おじゃまは数えない。おじゃまが入っているラインは、ほかが埋まっても満杯にならない） */
+  count(kind, n) { return this.line(kind, n).filter((b) => b && !isGarbage(b)).length; }
   isFull(kind, n) { return this.count(kind, n) === n; }
   /** 満杯のライン一覧 [{kind, n}] */
   fullLines() {
@@ -52,6 +64,8 @@ export class Board {
    *  - 手前の端が埋まっているとき（空欄が残っていれば）:
    *    一番近い空欄までのブロックを奥へ1マスずつ詰め、空いた手前の端に入る
    * 満杯で入れなかったら false（呼び出し側でゴールへ流す）。
+   * おじゃまは動かない壁: 入ったブロックはおじゃまの手前で止まり、押しこみもおじゃまの手前までしか詰められない
+   * （手前の端からおじゃままでに空欄が無ければ、満杯と同じくゴールへ流す）
    */
   insertBottom(kind, n, block) {
     const cells = lineCells(kind, n);
@@ -59,7 +73,9 @@ export class Board {
     const count = filled.filter(Boolean).length;
     if (count === n) return false;
     if (filled[0]) {
+      const wall = cells.findIndex(({ x, r }) => isGarbage(this.get(x, r)));
       const hole = filled.indexOf(false);
+      if (wall >= 0 && wall < hole) return false;
       for (let k = hole; k > 0; k--) this.set(cells[k].x, cells[k].r, this.get(cells[k - 1].x, cells[k - 1].r));
       this.set(cells[0].x, cells[0].r, block);
       return true;
@@ -104,11 +120,17 @@ export class Board {
       if (block) yield { block, x, r };
     }
   }
-  /** 全ブロックの位置 Map<id, {x, r}>（描画の再生用スナップショット） */
+  /** 全ブロックの位置 Map<id, {x, r}>（描画の再生用スナップショット。おじゃまは連鎖で動かないので入れない） */
   snapshot() {
     const m = new Map();
-    for (const { block, x, r } of this.entries()) m.set(block.id, { x, r, color: block.color });
+    for (const { block, x, r } of this.entries()) if (!isGarbage(block)) m.set(block.id, { x, r, color: block.color });
     return m;
+  }
+  /** おじゃまブロックの一覧 [{ block, x, r }] */
+  garbage() {
+    const out = [];
+    for (const e of this.entries()) if (isGarbage(e.block)) out.push(e);
+    return out;
   }
 
   clone() {

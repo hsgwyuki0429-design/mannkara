@@ -1,8 +1,8 @@
-import { Game } from './game.js?v=202610062316';
-import { Piece } from './pieces.js?v=202610062316';
-import { bestMove } from './advisor.js?v=202610062316';
-import { Board } from './board.js?v=202610062316';
-import { SIZE } from './constants.js?v=202610062316';
+import { Game } from './game.js?v=202610090554';
+import { Piece } from './pieces.js?v=202610090554';
+import { bestMove } from './advisor.js?v=202610090554';
+import { Board, createGarbage } from './board.js?v=202610090554';
+import { SIZE } from './constants.js?v=202610090554';
 
 /**
  * 手駒の決め方（Game.spawnTray）だけを受け持つ。画面では Web Worker の中で動かす（dealer-worker.js）。
@@ -28,11 +28,11 @@ export class DealerCore {
    * cells = 埋まっているマスの番号（r * 8 + x）の一覧。
    * 返り値 { names: 手駒の形の名前, planTray: 全消しの手順どおりの手（あれば）, lastLineup: 決め方（デバッグ用） }
    */
-  deal(cells, tightRate, allClearRate) {
+  deal(cells, tightRate, allClearRate, garbage = []) {
     const g = this.game;
     if (typeof tightRate === 'number') g.tightRate = tightRate;
     if (typeof allClearRate === 'number') g.allClearRate = allClearRate;
-    g.board = boardOf(cells);
+    g.board = boardOf(cells, garbage);
     g.planTray = null;                 // Game.placePiece と同じく、補充の前に消しておく
     const tray = g.spawnTray();
     const lineup = g.lastLineup && { ...g.lastLineup };
@@ -51,14 +51,16 @@ export class DealerCore {
     g.plan = st.plan ?? null; g.history = new Set(st.history ?? []); g.wantAllClear = !!st.wantAllClear; g.wantTight = !!st.wantTight; g.tightCooldown = st.tightCooldown ?? 0;
   }
 
-  /** 学習モードのおすすめの総当たり（advisor.bestMove そのまま）。names = トレイの形の名前（使った枠は null） */
-  hint(cells, names) {
-    return bestMove(boardOf(cells), names.map((n) => n && new Piece(n)));
+  /** 学習モードのおすすめ・対戦の CPU の総当たり（advisor.bestMove そのまま）。names = トレイの形の名前（使った枠は null） */
+  hint(cells, names, garbage = [], opts) {
+    return bestMove(boardOf(cells, garbage), names.map((n) => n && new Piece(n)), opts);
   }
 }
 
-function boardOf(cells) {
+/** garbage = おじゃまのマスの番号（手駒の決め方は、おじゃまのマスを「動かない壁・ラインを満杯にさせないマス」として扱う） */
+function boardOf(cells, garbage = []) {
   const board = new Board();
   for (const i of cells) board.set(i % SIZE, Math.floor(i / SIZE), FILLED);
+  for (const i of garbage || []) board.set(i % SIZE, Math.floor(i / SIZE), createGarbage(1, 'dealer-g'));
   return board;
 }

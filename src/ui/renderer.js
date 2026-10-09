@@ -1,12 +1,12 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610062316';
-import { Shards } from './shards.js?v=202610062316';
-import { Sparkles } from './sparkles.js?v=202610062316';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610062316';
-import { Rims } from './rims.js?v=202610062316';
-import { colorOf } from './palette.js?v=202610062316';
-import { PLATE_SETS } from './ambient.js?v=202610062316';
-import { glassElement, glassGroups } from './glass.js?v=202610062316';
+import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610090554';
+import { Shards } from './shards.js?v=202610090554';
+import { Sparkles } from './sparkles.js?v=202610090554';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610090554';
+import { Rims } from './rims.js?v=202610090554';
+import { colorOf } from './palette.js?v=202610090554';
+import { PLATE_SETS } from './ambient.js?v=202610090554';
+import { glassElement, glassGroups } from './glass.js?v=202610090554';
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -342,11 +342,28 @@ export class Renderer {
       el = document.createElement('div');
       el.className = `cell block c-${block.color}`;
       el.__color = block.color;
+      if (block.color === 'garbage') {
+        // おじゃま: 灰色のブロックに数字（盤面は回っているので、数字だけ立てて読めるようにする）
+        el.classList.add('garbage');
+        const num = document.createElement('b');
+        num.className = 'gnum upright';
+        el.appendChild(num);
+        el.__num = num;
+        this.setGarbageNum(el, block.garbage ?? 1);
+      }
       this.blockLayer.appendChild(el);
       this.els.set(block.id, el);
       this.view3d?.invalidate();
     }
     return el;
+  }
+  /** おじゃまの数字を書く（2 以下は「もうすぐ消える」色） */
+  setGarbageNum(el, n) {
+    if (!el?.__num) return;
+    el.__n = n;
+    el.__num.textContent = n;
+    el.classList.toggle('low', n <= 2);
+    el.classList.toggle('wide', n >= 10);
   }
   setPos(el, p, dur = 0, ease = '') {
     // 前と同じ値は書き込まない（連鎖の再生中は毎フレーム呼ばれるので、同じ値の書き込みもスタイルの計算し直しになる）
@@ -386,7 +403,7 @@ export class Renderer {
     }
     const cells = [];
     for (const [id, el] of this.els) {
-      if (!el.__pos || this.manual.has(id) || excluded.has(id) || el.classList.contains('fly')) continue;
+      if (!el.__pos || this.manual.has(id) || excluded.has(id) || el.classList.contains('fly') || el.__num) continue;   // おじゃまは 1 個ずつ（つながない）
       const x = el.__pos.x / this.cell, y = el.__pos.y / this.cell;
       if (Math.abs(x - Math.round(x)) > .001 || Math.abs(y - Math.round(y)) > .001 || !isInside(Math.round(x), Math.round(y))) continue;
       cells.push({ x: Math.round(x), y: Math.round(y), color: el.__color, el });
@@ -411,6 +428,7 @@ export class Renderer {
     for (const { block, x, r } of board.entries()) {
       alive.add(block.id);
       const el = this.ensureEl(block);
+      if (block.color === 'garbage') this.setGarbageNum(el, block.garbage);
       if (!this.manual.has(block.id)) this.setPos(el, this.pos(x, r), dur, ease);
     }
     for (const id of [...this.els.keys()]) if (!alive.has(id) && !this.manual.has(id)) this.removeEl(id);
@@ -1054,6 +1072,89 @@ export class Renderer {
     const burstAt = 40 + LIFE * 0.72;
     this.later(() => { if (this.celebration === celebration) { this.punch(0.022, 230); this.sfx?.shatter(); } }, burstAt);
     this.later(() => { if (this.celebration === celebration) this.punch(0.015, 220); }, burstAt + rings * RING);
+  }
+
+  /* ---------- 対戦: おじゃま ---------- */
+  /**
+   * おじゃまが盤面の上から落ちてきて積もる（core/battle.js の dropPath の道のり。まっすぐ落ちる・斜めにすべる）。
+   * landed = [{ block, x, r, path }]。1 個ずつ少しずらして落とし、止まるとつぶれて弾み、盤面が沈む。全部止まったら解決する
+   */
+  async garbageLand(landed) {
+    if (!landed?.length) return;
+    const gen = this.gen, c = this.cell;
+    const STEP = 62, GAP = 130;
+    const jobs = landed.map(({ block, x, r, n, path }, i) => (async () => {
+      await this.wait(i * GAP);
+      if (gen !== this.gen) return;
+      const pts = path?.length ? [...path] : [{ x, r }];
+      const top = pts[0];
+      pts.unshift({ x: top.x + 3, r: top.r + 3 });                 // もう少し上（画面の外寄り）から落ちてくる
+      const el = this.ensureEl(block);
+      this.setGarbageNum(el, n ?? block.garbage);
+      this.manual.add(block.id);
+      el.classList.add('travel', 'falling');
+      const at = (p) => ({ x: p.x * c, y: p.r * c });
+      this.setPos(el, at(pts[0]), 0);
+      const lens = [0];
+      for (let k = 1; k < pts.length; k++) lens.push(lens[k - 1] + Math.hypot(pts[k].x - pts[k - 1].x, pts[k].r - pts[k - 1].r));
+      const total = lens.at(-1) || 1, dur = Math.max(260, STEP * Math.sqrt(total) * 2.4);
+      await this.tween(dur, (t) => {
+        const u = Math.pow(Math.min(1, t / dur), 1.7) * total;    // 落ちるほど速く（重力）
+        let k = 1;
+        while (k < lens.length - 1 && lens[k] < u) k++;
+        const a = pts[k - 1], b = pts[k], f = Math.min(1, Math.max(0, (u - lens[k - 1]) / ((lens[k] - lens[k - 1]) || 1)));
+        this.setPos(el, at({ x: a.x + (b.x - a.x) * f, r: a.r + (b.r - a.r) * f }), 0);
+      });
+      if (gen !== this.gen) return;
+      this.manual.delete(block.id);
+      el.classList.remove('travel', 'falling');
+      this.setPos(el, this.pos(x, r), 0);
+      if (el.classList.contains('pop-in')) { el.classList.remove('pop-in'); void el.offsetWidth; }
+      el.style.setProperty('--d', '0ms');
+      el.classList.add('pop-in', 'fit-in');
+      this.cancelFxTimer(el.__landT);
+      el.__landT = this.later(() => el.classList.remove('pop-in', 'fit-in'), 340);
+      this.view3d?.land([{ id: block.id, delay: 0 }], true);
+      this.sfx?.garbageLand?.(i);
+      this.bounce([[0, 1], [0.2, 0.988], [0.55, 1.006], [1, 1]], 260);
+      if (!reducedMotion() && this.q >= 0.6) {
+        const p = this.cellCenter(this.pos(x, r));
+        this.shardLayer.burst(p.x, p.y, ['garbage'], 2, c * 0.22, c * 1.6, { life: 0.4 });
+      }
+    })());
+    await Promise.all(jobs);
+    this.refreshGlass();
+  }
+
+  /**
+   * 自分の連鎖でおじゃまの数字が減る（chip = Game.chipGarbage の結果）。数字がぽんと弾んで変わり、0 になったものは砕けて消える
+   */
+  garbageChip(chip) {
+    if (!chip) return;
+    for (const { block, n } of chip.changed) {
+      const el = this.els.get(block.id);
+      if (!el) continue;
+      this.setGarbageNum(el, n);
+      if (!reducedMotion()) el.__num?.animate([{ scale: '1' }, { scale: '1.6', offset: 0.35 }, { scale: '1' }], { duration: 360, easing: 'cubic-bezier(.3,1.5,.5,1)' });
+    }
+    if (chip.changed.length) this.sfx?.garbageChip?.(chip.changed.length);
+    chip.removed.forEach(({ block, x, r }, i) => {
+      const el = this.els.get(block.id);
+      if (!el) return;
+      this.setGarbageNum(el, 0);
+      this.later(() => {
+        if (this.els.get(block.id) !== el) return;
+        el.classList.add('fly');
+        this.view3d?.fly(block.id);
+        if (!reducedMotion() && this.q >= 0.5) {
+          const p = this.cellCenter(this.pos(x, r));
+          this.shardLayer.burst(p.x, p.y, ['garbage'], 4, this.cell * 0.3, this.cell * 2.6, { life: 0.55 });
+          this.sparkLayer.twinkle(p.x, p.y, { color: 'white', size: this.cell * 0.8, life: 420 });
+        }
+        this.later(() => { if (this.els.get(block.id) === el) this.removeEl(block.id); }, 220);
+      }, i * 70);
+    });
+    if (chip.removed.length) { this.sfx?.garbageBreak?.(chip.removed.length); this.later(() => this.refreshGlass(), chip.removed.length * 70 + 260); }
   }
 
   /** 盤面が揺れる（強さ px, 長さ ms） */

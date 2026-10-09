@@ -3,19 +3,20 @@
  * 端末ごとに id（32 桁の 16 進）と名前を持つ。送れなかったスコアは端末に残し、次に送る（自己ベストだけで足りる）
  * 名前はかならず本人に決めてもらう（自動では付けない）。決めるまでは named が false で、送信もしない
  */
-import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610062316';
+import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610090554';
 
 const ID_KEY = STORE_PREFIX + 'world-id';
 const NAME_KEY = STORE_PREFIX + 'world-name';
 const PENDING_KEY = STORE_PREFIX + 'world-pending';
 export const NAME_MAX = 12;
 
-/** 本番（*.pages.dev）と手元の開発ではそのサイトの API、それ以外（github.io など）からは本番の API へ */
-function apiUrl() {
+/** 本番（*.pages.dev）と手元の開発ではそのサイトの API、それ以外（github.io など）からは本番の API へ（対戦の API も同じ: net.js） */
+export function apiBase() {
   const h = location.hostname;
   const same = h.endsWith('.pages.dev') || h === 'localhost' || h === '127.0.0.1';
-  return (same ? location.origin + '/' : CANONICAL_URL) + 'api/ranking';
+  return (same ? location.origin + '/' : CANONICAL_URL) + 'api/';
 }
+const apiUrl = () => apiBase() + 'ranking';
 const get = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const set = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 
