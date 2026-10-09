@@ -1,6 +1,6 @@
-import { ANIM } from '../core/constants.js?v=202610091259';
-import { dropPlayMs } from '../core/battle.js?v=202610091259';
-import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091259';
+import { ANIM } from '../core/constants.js?v=202610091320';
+import { dropPlayMs } from '../core/battle.js?v=202610091320';
+import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091320';
 
 /**
  * 対戦で、相手の盤面を映す。自分の盤面と同じ描き方（renderer.js の Renderer をもう 1 つ。盤面の種類・土台の色・宝石・通路の番号・ゴール・
@@ -64,7 +64,7 @@ export class OppBoard {
   }
 
   /**
-   * 相手が置いたターンを再生する（自分の盤面の再生 main.js の playTurn と同じ動き・文字。点数の表示・画面全体の色は自分のものだけ）。
+   * 相手が置いたターンを再生する（自分の盤面の再生 main.js の playTurn と同じ動き・文字。得点の数字・画面全体の色は出さない）。
    * 返り値は、この再生が終わったときに解決する Promise
    */
   playTurn(turn) {
@@ -78,22 +78,20 @@ export class OppBoard {
         if (stale()) return;
         await r.playStep(step, speeds[i]);
         if (stale()) return;
-        if (turn.chip) r.garbageTick(turn.chip, i + 1);
+        for (const h of turn.chip?.hits ?? []) if (h.step === i + 1) r.garbageHit(h);   // 連鎖の 1 段ごとに、おじゃま 1 個を「−その段の数」
         const [, praise, tier] = PRAISE.find(([n]) => step.chain >= n) ?? [];
         if (step.chain >= 2) r.showText(`${step.chain} CHAIN<small>${praise}</small>`, `t${tier}`);
-        if (step.gained) r.floatScore(step.gained, step.chain);
         await r.wait(ANIM.betweenChains / speeds[i]);
         if (stale()) return;
       }
-      if (turn.chip) r.garbageChip(turn.chip);
       if (turn.allClear) {
-        r.showText(`ALL CLEAR!<small>BONUS +${(turn.allClearBonus ?? 0).toLocaleString('en-US')}</small>`, 't5');
+        r.showText('ALL CLEAR!', 't5');                  // 得点の数字は出さない（対戦では点数は使わない）
         r.allClearBlast();
       }
     });
   }
 
-  /** おじゃまが落ちてくる（landed = [{ block, x, r, n, path }]。自分の盤面と同じ落ち方） */
+  /** おじゃまが落ちてくる（landed = [{ block, x, r, n }]。自分の盤面と同じ置かれ方） */
   playDrop(landed) {
     if (!landed?.length) return this.queue;
     return this.enqueue(dropPlayMs(landed.length), () => this.r.garbageLand(landed));

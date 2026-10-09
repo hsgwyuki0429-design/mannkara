@@ -38,8 +38,8 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202610091259" />
-<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091259" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202610091320" />
+<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091320" />
 </head>
 <body>
 <div id="app">
@@ -97,19 +97,17 @@
   <div class="score-wrap">
     <div id="score" class="score">0</div>
   </div>
-  <!-- 対戦: 自分の名前・経過時間・予告（相手から飛んできた、まだ落ちていないおじゃま） -->
+  <!-- 対戦: 自分の名前・経過時間 -->
   <div id="vsHead" class="vs-head hidden">
     <div class="vs-me">
       <span id="vsMeName" class="vs-name">YOU</span>
       <span id="vsTimer" class="vs-timer">0:00</span>
       <span id="vsMargin" class="vs-margin hidden"></span>
     </div>
-    <div id="vsMyPend" class="vs-pend" aria-label="予告"></div>
   </div>
   <!-- 対戦: 相手の盤面（右上に小さく） -->
   <div id="vsOpp" class="vs-opp hidden" aria-hidden="true">
     <div class="vs-opp-head"><span id="vsOppName" class="vs-name">CPU</span><span id="vsOppTag" class="vs-tag"></span></div>
-    <div id="vsOppPend" class="vs-pend small"></div>
     <div id="vsOppField" class="vs-opp-field opp-stage"></div>
   </div>
   <div id="vsCount" class="vs-count hidden" aria-live="polite"></div>
@@ -319,9 +317,9 @@
     <ul class="rules-list">
       <li><b>2連鎖</b>以上すると、連鎖の数を書いた<b>おじゃま</b>が相手へ飛んでいきます</li>
       <li>自分と相手には、<b>同じ順番</b>でピースが出ます。使った枠には<b>すぐ次のピース</b>が入ります</li>
-      <li>おじゃまは、相手の連鎖が終わったら<b>すぐ上から落ちてきて</b>、盤面の一番下に積もります（自分が連鎖しているときは、その連鎖が終わったらすぐ）</li>
+      <li>おじゃまは、相手の連鎖が終わったら<b>すぐ</b>、盤面の<b>一番外側の辺</b>（直角をはさむ 2 辺）の空きマスに、真ん中から順に<b>ドンと置かれます</b>（自分が連鎖しているときは、その連鎖が終わったらすぐ）。外側の辺が埋まったら、次の辺へ</li>
       <li>おじゃまの上には置けず、おじゃまが入ったラインは<b>満杯になりません</b></li>
-      <li>自分が連鎖すると、盤面のおじゃまの数字が<b>連鎖の数だけ減り</b>、0 になると消えます</li>
+      <li>自分が連鎖すると、連鎖の<b>1 段ごとに、おじゃま 1 個</b>の数字が減ります（1 段目は −1、2 段目は −2 …。外側の辺の真ん中から順に）。0 になると消えます</li>
       <li>全消しすると、送るおじゃまが <b>+5</b></li>
       <li>1分30秒を過ぎると、1回に送るおじゃまの数が<b>だんだん増えます</b></li>
       <li>置ける場所がなくなったほうの負け</li>
@@ -375,6 +373,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202610091259"></script>
+<script type="module" src="./src/ui/main.js?v=202610091320"></script>
 </body>
 </html>

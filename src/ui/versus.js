@@ -1,12 +1,12 @@
-import { BattleSide, BATTLE_SPEED, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091259';
-import { Game } from '../core/game.js?v=202610091259';
-import { Piece, seedOf } from '../core/pieces.js?v=202610091259';
-import { createGarbage } from '../core/board.js?v=202610091259';
-import { isInside } from '../core/constants.js?v=202610091259';
-import { OppBoard, turnCost } from './opp-board.js?v=202610091259';
-import { TrayDealer } from './tray-dealer.js?v=202610091259';
-import { Renderer } from './renderer.js?v=202610091259';
-import { PROTOCOL } from './net.js?v=202610091259';
+import { BattleSide, BATTLE_SPEED, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091320';
+import { Game } from '../core/game.js?v=202610091320';
+import { Piece, seedOf } from '../core/pieces.js?v=202610091320';
+import { createGarbage } from '../core/board.js?v=202610091320';
+import { isInside } from '../core/constants.js?v=202610091320';
+import { OppBoard, turnCost } from './opp-board.js?v=202610091320';
+import { TrayDealer } from './tray-dealer.js?v=202610091320';
+import { Renderer } from './renderer.js?v=202610091320';
+import { PROTOCOL } from './net.js?v=202610091320';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
@@ -24,7 +24,6 @@ export const CPU_LEVELS = {
 };
 const RECORD_KEY = 'blockmancala-versus';
 const COUNT_MS = 800;              // カウントダウンの 1 つぶん
-const PEND_SHOW = 6;               // 予告に並べる数（それより多いと +n）
 /** タブレットの横向き（styles.css と同じ条件。相手の盤面は自分の盤面の右に並べる） */
 const WIDE = '(min-width:900px) and (min-aspect-ratio:4/3)';
 
@@ -125,7 +124,6 @@ export class Versus {
     this.clock = new Clock();
     this.makeSides();
     this.layout();
-    this.renderPend();
     clearInterval(this.tickTimer);
     this.tickTimer = setInterval(() => this.tick(), 100);
     if (this.kind === 'cpu') this.later(500, () => this.countdown(), true);
@@ -136,7 +134,6 @@ export class Versus {
     const me = this.me = new BattleSide({ game: api.game, now: () => this.clock.now(), idPrefix: 'm', busy: () => api.busy(), hooks: {
       send: (atk) => this.sendAttack(atk),
       drop: (res) => this.myDrop(res),
-      pending: () => this.myPendingChanged(),
     } });
     me.over = false;
     if (this.kind === 'cpu') {
@@ -144,7 +141,6 @@ export class Versus {
       this.opp = new BattleSide({ game: g, now: () => this.clock.now(), idPrefix: 'c', busy: () => this.view.playLeft() > 0, hooks: {
         send: (atk) => this.incoming(atk),
         drop: (res) => this.view.playDrop(res.landed),
-        pending: () => this.renderPend(),
         over: () => this.oppLost(this.clock.now() - (this.goAt ?? 0)),
       } });
       this.cpuBusy = false;
@@ -154,7 +150,6 @@ export class Versus {
     } else {
       this.cpu = null; this.opp = null;
       this.mirror = Game.mirror();
-      this.oppPend = [];
       this.view.reset(this.mirror.board);
     }
   }
@@ -242,7 +237,6 @@ export class Versus {
     this.me.tick();
     if (this.opp) this.opp.tick();
     if (this.cpu) this.cpuTick();
-    this.renderPend();
     const el = Math.max(0, now - this.goAt), s = Math.floor(el / 1000);   // GO! の直前に読んだ時刻だと負になる（-1:-1 と出ないように）
     const txt = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
     if (this.$('vsTimer').textContent !== txt) this.$('vsTimer').textContent = txt;
@@ -276,36 +270,28 @@ export class Versus {
   /** 自分のおじゃまが盤面に落ちた（ルールはもう確定。画面では再生の列に並べる） */
   myDrop(res) {
     this.api.enqueueDrop(res);
-    if (this.net) this.net.send({ t: 'drop', land: res.landed.map(({ block, x, r, n, path }) => ({ id: block.id, n, x, r, path })), b: packBoard(this.api.game.board) });
+    if (this.net) this.net.send({ t: 'drop', land: res.landed.map(({ block, x, r, n }) => ({ id: block.id, n, x, r })), b: packBoard(this.api.game.board) });
   }
-  myPendingChanged() {
-    this.renderPend();
-    if (this.net) {
-      clearTimeout(this.pendTimer);
-      this.pendTimer = setTimeout(() => this.net?.send({ t: 'pend', list: this.me.queue.items.map((g) => g.n) }), 60);
-    }
-  }
-  /** 自分が送った: 自分の連鎖が見え終わるころに、ゴールから相手の予告へ飛んでいく */
+  /** 自分が送った: 自分の連鎖が見え終わるころに、自分のゴールから相手のゴールへ飛んでいく（そのあと相手の盤面に置かれる） */
   sendAttack(atk) {
     if (this.opp) this.opp.receive({ ...atk });
     if (this.net) this.net.send({ t: 'atk', id: atk.id, n: atk.n, count: atk.count, readyIn: atk.readyIn });
     this.later(atk.readyIn, () => {
       if (!this.active) return;
       const g = this.api.renderer.goal.getBoundingClientRect();
-      const t = this.$('vsOppPend').getBoundingClientRect();
-      this.fly({ x: g.left + g.width / 2, y: g.top + g.height / 2 }, { x: t.left + t.width / 2, y: t.top + t.height / 2 }, atk, () => this.api.sfx.attackHit());
+      this.fly({ x: g.left + g.width / 2, y: g.top + g.height / 2 }, this.view.goalPoint(), atk, () => this.api.sfx.attackHit());
       this.api.sfx.attack(atk.n);
     });
   }
-  /** 相手から飛んできた: 予告に（薄く）並び、相手の連鎖が終わるころに飛んでくる */
+  /** 相手から飛んできた: 相手の連鎖が終わるころに、相手のゴールから自分のゴールへ飛んでくる（そのあと自分の盤面に置かれる） */
   incoming(atk) {
     const rtt = this.net?.rtt ?? 0;
     const readyIn = Math.max(0, (atk.readyIn ?? 0) - rtt / 2);
     this.me.receive({ ...atk, readyIn });
     this.later(readyIn, () => {
       if (!this.active || this.ended) return;
-      const t = this.$('vsMyPend').getBoundingClientRect();
-      this.fly(this.view.goalPoint(), { x: t.left + t.width / 2, y: t.top + t.height / 2 }, atk, () => this.api.sfx.garbageWarn(atk.n));
+      const g = this.api.renderer.goal.getBoundingClientRect();
+      this.fly(this.view.goalPoint(), { x: g.left + g.width / 2, y: g.top + g.height / 2 }, atk, () => this.api.sfx.garbageWarn(atk.n));
     });
   }
 
@@ -324,33 +310,6 @@ export class Versus {
       { transform: at(to, 0.85), opacity: 1 },
     ], { duration: 520, easing: 'cubic-bezier(.4,.1,.5,1)' });
     anim.onfinish = () => { el.remove(); done?.(); };
-  }
-
-  /** 予告（自分と相手）を描く */
-  renderPend() {
-    const now = this.clock?.now() ?? 0;
-    const draw = (box, items) => {
-      const key = items.map((g) => `${g.n}${g.ready ? 'r' : 'i'}`).join(',');
-      if (box.__key === key) return;
-      box.__key = key;
-      box.replaceChildren();
-      for (const g of items.slice(0, PEND_SHOW)) {
-        const t = document.createElement('i');
-        t.className = 'pend-tile cell block garbage c-garbage' + (g.ready ? ' ready' : ' coming');
-        const b = document.createElement('b'); b.className = 'gnum'; b.textContent = g.n;
-        t.appendChild(b);
-        box.appendChild(t);
-      }
-      if (items.length > PEND_SHOW) {
-        const more = document.createElement('span');
-        more.className = 'pend-more';
-        more.textContent = `+${items.length - PEND_SHOW}`;
-        box.appendChild(more);
-      }
-    };
-    if (this.me) draw(this.$('vsMyPend'), this.me.queue.items.map((g) => ({ n: g.n, ready: g.readyAt <= now })));
-    if (this.opp) draw(this.$('vsOppPend'), this.opp.queue.items.map((g) => ({ n: g.n, ready: g.readyAt <= now })));
-    else if (this.oppPend) draw(this.$('vsOppPend'), this.oppPend.map((n) => ({ n, ready: true })));
   }
 
   /** 自分が負けた（置ける場所がない！ が見えたところ。main.js から） */
@@ -436,7 +395,6 @@ export class Versus {
       case 'turn': this.remoteTurn(m); break;
       case 'atk': if (this.started && !this.ended) this.incoming(m); break;
       case 'drop': this.remoteDrop(m); break;
-      case 'pend': this.oppPend = (m.list || []).filter((n) => n > 0); this.renderPend(); break;
       case 'over': this.oppLost(m.at ?? 0); break;
       case 'rematch': this.rematchOpp = true; this.maybeRematch(); break;
       case 'bye': this.onGone('left'); break;

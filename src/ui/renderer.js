@@ -1,13 +1,13 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091259';
-import { Shards } from './shards.js?v=202610091259';
-import { Sparkles } from './sparkles.js?v=202610091259';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091259';
-import { Rims } from './rims.js?v=202610091259';
-import { colorOf } from './palette.js?v=202610091259';
-import { PLATE_SETS } from './ambient.js?v=202610091259';
-import { DROP_WARN_MS, DROP_GAP_MS, DROP_FALL_MS, DROP_HOLD_MS } from '../core/battle.js?v=202610091259';
-import { glassElement, glassGroups } from './glass.js?v=202610091259';
+import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091320';
+import { Shards } from './shards.js?v=202610091320';
+import { Sparkles } from './sparkles.js?v=202610091320';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091320';
+import { Rims } from './rims.js?v=202610091320';
+import { colorOf } from './palette.js?v=202610091320';
+import { PLATE_SETS } from './ambient.js?v=202610091320';
+import { DROP_WARN_MS, DROP_GAP_MS, DROP_SLAM_MS, DROP_HOLD_MS } from '../core/battle.js?v=202610091320';
+import { glassElement, glassGroups } from './glass.js?v=202610091320';
 
 /** 連鎖数ごとの褒め言葉（段階が上がるほど派手な色）。[この連鎖から, 言葉, 段階] */
 export const PRAISE = [[8, 'Unbelievable!', 5], [6, 'Amazing!', 4], [4, 'Excellent!', 3], [3, 'Great!', 2], [2, 'Good!', 1]];
@@ -1113,53 +1113,35 @@ export class Renderer {
 
   /* ---------- 対戦: おじゃま ---------- */
   /**
-   * おじゃまが盤面の上から落ちてきて積もる（core/battle.js の dropPath の道のり。まっすぐ落ちる・斜めにすべる）。
-   * landed = [{ block, x, r, path }]。1 個ずつ少しずらして落とし、止まるとつぶれて弾み、盤面が沈む。全部止まったら解決する
+   * おじゃまが盤面にドンと置かれる（置かれる場所は core/battle.js の edgeSpot。一番外側の辺の空きマス。落ちてくる動きは無く、その場に大きく現れて、ずしんと決まる）。
+   * landed = [{ block, x, r, n }]。1 個ずつ少しずらして置き、置かれるたびに盤面が沈んで弾み・画面が揺れる。全部置かれたら解決する
    */
   async garbageLand(landed) {
     if (!landed?.length) return;
     const gen = this.gen, c = this.cell;
     const count = landed.length, nums = landed.map((l) => l.n ?? l.block.garbage), sum = nums.reduce((a, v) => a + v, 0);
     const heavy = count >= 3 || sum >= 10;                         // たくさん・大きいおじゃま: 演出を一段強く
-    // 警告（落ち始める前の間）: 縁の赤い光・盤面の小さな揺れ・低い警告音
+    // 警告（置かれる前の間）: 縁の赤い光・盤面の小さな揺れ・低い警告音
     this.garbageWarn(count, sum, heavy);
     await this.wait(DROP_WARN_MS);
     if (gen !== this.gen) return;
-    const jobs = landed.map(({ block, x, r, n, path }, i) => (async () => {
+    const jobs = landed.map(({ block, x, r, n }, i) => (async () => {
       await this.wait(i * DROP_GAP_MS);
       if (gen !== this.gen) return;
-      const pts = path?.length ? [...path] : [{ x, r }];
-      const top = pts[0];
-      pts.unshift({ x: top.x + 4, r: top.r + 4 });                 // もっと上（画面の外寄り）から落ちてくる
       const el = this.ensureEl(block);
       this.setGarbageNum(el, n ?? block.garbage);
-      this.manual.add(block.id);
-      el.classList.add('travel', 'falling');
-      const at = (p) => ({ x: p.x * c, y: p.r * c });
-      this.setPos(el, at(pts[0]), 0);
-      const lens = [0];
-      for (let k = 1; k < pts.length; k++) lens.push(lens[k - 1] + Math.hypot(pts[k].x - pts[k - 1].x, pts[k].r - pts[k - 1].r));
-      const total = lens.at(-1) || 1, dur = Math.min(DROP_FALL_MS, Math.max(380, 110 * Math.sqrt(total) * 2.4));
-      let lastSpark = 0;
-      await this.tween(dur, (t) => {
-        const u = Math.pow(Math.min(1, t / dur), 1.9) * total;    // 落ちるほど速く（重力）
-        let k = 1;
-        while (k < lens.length - 1 && lens[k] < u) k++;
-        const a = pts[k - 1], b = pts[k], f = Math.min(1, Math.max(0, (u - lens[k - 1]) / ((lens[k] - lens[k - 1]) || 1)));
-        const cur = at({ x: a.x + (b.x - a.x) * f, r: a.r + (b.r - a.r) * f });
-        this.setPos(el, cur, 0);
-        // 落ちた跡の火花（かけらと星）
-        if (!reducedMotion() && this.q >= 0.5 && t - lastSpark > dur / 9 && t < dur * 0.97) {
-          lastSpark = t;
-          const p = this.localToWrap(cur.x + c / 2, cur.y + c / 2);
-          this.sparkLayer.twinkle(p.x, p.y, { color: 'white', size: c * 0.55, life: 360, rise: -c * 0.6 });
-          this.shardLayer.burst(p.x, p.y, ['garbage'], 1, c * 0.12, c * 0.9, { life: 0.3 });
-        }
+      this.setPos(el, this.pos(x, r), 0);
+      el.classList.add('falling');                                 // 前面へ
+      el.style.opacity = '0';
+      // ドン: 大きく現れて、ぎゅっと縮んで決まる
+      await this.tween(DROP_SLAM_MS, (t) => {
+        const u = Math.min(1, t / DROP_SLAM_MS), e = u * u * u;
+        el.style.scale = String(3 - 2.08 * e);
+        el.style.opacity = String(Math.min(1, u * 5));
       });
       if (gen !== this.gen) return;
-      this.manual.delete(block.id);
-      el.classList.remove('travel', 'falling');
-      this.setPos(el, this.pos(x, r), 0);
+      el.style.scale = ''; el.style.opacity = '';
+      el.classList.remove('falling');
       if (el.classList.contains('pop-in')) { el.classList.remove('pop-in'); void el.offsetWidth; }
       el.style.setProperty('--d', '0ms');
       el.classList.add('pop-in', 'fit-in');
@@ -1186,7 +1168,7 @@ export class Renderer {
     this.refreshGlass();
   }
 
-  /** おじゃまが落ちてくる直前の警告: 画面の縁の赤い光・盤面の小さな揺れ・警告音（文字は出さない） */
+  /** おじゃまが置かれる直前の警告: 画面の縁の赤い光・盤面の小さな揺れ・警告音（文字は出さない） */
   garbageWarn(count, sum, heavy = false) {
     this.sfx?.garbageIncoming?.(count, sum);
     if (reducedMotion()) return;
@@ -1203,43 +1185,32 @@ export class Renderer {
   }
 
   /**
-   * 対戦: 連鎖が 1 つ進むごとに、盤面のおじゃまに「−k」を出す（k = ここまでの連鎖の数。このターンの終わりに、数字が k 減る: garbageChip）
+   * 対戦: 連鎖の 1 段で、おじゃま 1 個が削られる（hit = Game.chipGarbage の hits の 1 つ: { damage, block, x, r, n, removed }）。
+   * そのおじゃまに赤いピルで「−1」「−2」…が出て、数字がぽんと弾んで変わり、0 になったら砕けて消える
    */
-  garbageTick(chip, k) {
-    if (!chip) return;
-    for (const { block } of [...chip.changed, ...chip.removed]) showGarbageTick(this.els.get(block.id), k);
-  }
-
-  /**
-   * 自分の連鎖でおじゃまの数字が減る（chip = Game.chipGarbage の結果）。数字がぽんと弾んで変わり、0 になったものは砕けて消える
-   */
-  garbageChip(chip) {
-    if (!chip) return;
-    for (const { block } of [...chip.changed, ...chip.removed]) clearGarbageTick(this.els.get(block.id));
-    for (const { block, n } of chip.changed) {
-      const el = this.els.get(block.id);
-      if (!el) continue;
-      this.setGarbageNum(el, n);
-      if (!reducedMotion()) el.__num?.animate([{ scale: '1' }, { scale: '1.6', offset: 0.35 }, { scale: '1' }], { duration: 360, easing: 'cubic-bezier(.3,1.5,.5,1)' });
-    }
-    if (chip.changed.length) this.sfx?.garbageChip?.(chip.changed.length);
-    chip.removed.forEach(({ block, x, r }, i) => {
-      const el = this.els.get(block.id);
-      if (!el) return;
-      this.setGarbageNum(el, 0);
-      this.later(() => {
-        if (this.els.get(block.id) !== el) return;
-        el.classList.add('fly');
-        this.view3d?.fly(block.id);
-        if (!reducedMotion() && this.q >= 0.5) {
-          const p = this.cellCenter(this.pos(x, r));
-          this.shardLayer.burst(p.x, p.y, ['garbage'], 4, this.cell * 0.3, this.cell * 2.6, { life: 0.55 });
-          this.sparkLayer.twinkle(p.x, p.y, { color: 'white', size: this.cell * 0.8, life: 420 });
-        }
-        this.later(() => { if (this.els.get(block.id) === el) this.removeEl(block.id); }, 220);
-      }, i * 70);
-    });
-    if (chip.removed.length) { this.sfx?.garbageBreak?.(chip.removed.length); this.later(() => this.refreshGlass(), chip.removed.length * 70 + 260); }
+  garbageHit(hit) {
+    const { block, x, r, n, damage, removed } = hit;
+    const el = this.els.get(block.id);
+    if (!el) return;
+    showGarbageTick(el, damage);
+    this.cancelFxTimer(el.__tickT);
+    el.__tickT = this.later(() => clearGarbageTick(el), 700);
+    this.setGarbageNum(el, n);
+    if (!reducedMotion()) el.__num?.animate([{ scale: '1' }, { scale: '1.6', offset: 0.35 }, { scale: '1' }], { duration: 360, easing: 'cubic-bezier(.3,1.5,.5,1)' });
+    if (!removed) { this.sfx?.garbageChip?.(1); return; }
+    this.later(() => {
+      if (this.els.get(block.id) !== el) return;
+      el.classList.add('fly');
+      this.view3d?.fly(block.id);
+      if (!reducedMotion() && this.q >= 0.5) {
+        const p = this.cellCenter(this.pos(x, r));
+        this.shardLayer.burst(p.x, p.y, ['garbage'], 4, this.cell * 0.3, this.cell * 2.6, { life: 0.55 });
+        this.sparkLayer.twinkle(p.x, p.y, { color: 'white', size: this.cell * 0.8, life: 420 });
+      }
+      this.later(() => { if (this.els.get(block.id) === el) this.removeEl(block.id); }, 220);
+    }, 120);
+    this.sfx?.garbageBreak?.(1);
+    this.later(() => this.refreshGlass(), 420);
   }
 
   /** 盤面が揺れる（強さ px, 長さ ms） */
