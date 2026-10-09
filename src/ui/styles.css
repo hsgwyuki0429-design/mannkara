@@ -276,6 +276,9 @@ button{font-family:inherit;cursor:pointer;}
 /* 最高段階は、主な文字の色がブロックの7色を順に移っていく（説明の小さい文字は白） */
 /* 色の移り変わりは1周だけ（文字は popText の 1000ms で消えるので、それより後は見えない。
    infinite にすると、消えた後も毎フレーム色の計算と描き直しが続いて全体が重くなる） */
+/* おじゃまが落ちてくる字幕（赤。たくさん・大きいときは大きく） */
+.pop.oj{color:#ff8a8a;--tc:#ffd9b0;font-size:34px;}
+.pop.oj.heavy{font-size:40px;color:#ff6b6b;}
 .pop.t5{--tc:#fff;font-size:40px;animation:popText 1000ms cubic-bezier(.2,.9,.3,1),rainbow 1400ms linear;}
 @keyframes rainbow{0%,100%{color:#ff7a92}16%{color:#ffb35a}33%{color:#ffe45c}50%{color:#7ff0a4}66%{color:#7fe6ff}83%{color:#c29bff}}
 
@@ -604,6 +607,14 @@ body.battle .vs-opp-field{width:100%;}
 .vs-count.wait{opacity:1;font-family:"M PLUS Rounded 1c",sans-serif;font-size:20px;padding:6px 18px;border-radius:99px;border:1.5px solid var(--line);
   background:rgba(20,40,130,.35);text-shadow:var(--ts-s);animation:waitPulse 1s ease-in-out infinite alternate;}
 @keyframes waitPulse{from{opacity:.6}to{opacity:1}}
+/* おじゃまが落ちてくる演出: 画面の縁の赤い光・着地の衝撃の輪 */
+.oj-flash{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse at 50% 52%,rgba(255,60,60,0) 38%,rgba(255,60,60,.5) 78%,rgba(200,20,40,.75) 100%);}
+.opp-stage > .oj-flash{position:absolute;z-index:6;border-radius:18px;}
+.oj-ring{position:absolute;box-sizing:border-box;border:max(2px,calc(var(--cell) * .12)) solid rgba(255,255,255,.85);border-radius:50%;pointer-events:none;
+  animation:ojRing 520ms cubic-bezier(.15,.7,.3,1) both;}
+@keyframes ojRing{from{scale:.15;opacity:.95}to{scale:1;opacity:0}}
+@media (prefers-reduced-motion:reduce){.oj-ring{animation:none;opacity:0}}
 /* 飛んでいくおじゃま（数字つきの灰色の宝石） */
 .atk-fly{position:fixed;left:0;top:0;z-index:28;pointer-events:none;width:0;height:0;}
 .atk-fly .block{position:absolute;left:-17px;top:-17px;--cell:34px;width:34px;height:34px;rotate:225deg;}

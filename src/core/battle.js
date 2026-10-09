@@ -1,5 +1,5 @@
-import { SIZE, ANIM, isInside } from './constants.js?v=202610091208';
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091208';
+import { SIZE, ANIM, isInside } from './constants.js?v=202610091214';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091214';
 
 /**
  * 対戦（ぷよぷよのような、連鎖で相手におじゃまを送り合う遊び方）のルール。DOM 非依存。
@@ -67,6 +67,16 @@ export function playDuration(steps) {
   if (!steps?.length) return 0;
   return steps.reduce((a, s) => a + stepCells(s) * ANIM.step + ANIM.betweenChains, ANIM.charge);
 }
+
+/**
+ * おじゃまが落ちる演出の長さ（速さ 1 のとき。ms）: 字幕と警告の間（DROP_WARN_MS）→ 1 個ずつ DROP_GAP_MS ずらして落ちる（落ちる動きは最長 DROP_FALL_MS ほど）→ 積もった余韻。
+ * 画面の再生（main.js の enqueueDrop）・相手の盤面（opp-board.js）・相手へ知らせる時間の見積もりが同じ数を使う
+ */
+export const DROP_WARN_MS = 700;
+export const DROP_GAP_MS = 170;
+export const DROP_FALL_MS = 820;
+export const DROP_HOLD_MS = 220;
+export const dropPlayMs = (count) => DROP_WARN_MS + DROP_FALL_MS + DROP_HOLD_MS + Math.max(0, count - 1) * DROP_GAP_MS;
 
 /* ---------- おじゃまの落ち方 ---------- */
 /**

@@ -1,4 +1,4 @@
-import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610091208';
+import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610091214';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -475,12 +475,20 @@ export class Sfx {
                   this.bell(f, { gain: 0.26, ring: 0.5, oct: 1, priority: 2 });
                   this.bell(f * 0.75, { gain: 0.24, ring: 0.6, oct: 1, at: 0.11, priority: 2 });
                   this.vibe([0, 12, 30, 12]); }
-  // おじゃまが積もった: 石が落ちたような低い「ゴトッ」（置く音を低く重く + 胴鳴り）
-  garbageLand(i = 0) { if (!this.allow('garbageLand', 0.05)) return;
+  // おじゃまが落ちてくる直前（字幕と一緒）: 低い鈴が 3 つ、下がっていく警告 + 地鳴り。数が多い・大きいほど低く長い
+  garbageIncoming(count = 1, sum = 1) { if (!this.allow('garbageIncoming', 0.3)) return;
+                  const big = count >= 3 || sum >= 10, f = 330 * (big ? 0.8 : 1);
+                  [1, 0.84, 0.7].forEach((k, i) => this.bell(f * k, { gain: 0.3, ring: 0.55, oct: 1, at: i * 0.09, priority: 3 }));
+                  this.noise({ dur: big ? 0.6 : 0.4, gain: big ? 0.22 : 0.14, from: 260, to: 70, attack: 0.05, q: 1.2, priority: 3 });
+                  this.vibe(big ? [0, 30, 40, 30] : [0, 20, 30, 16]); }
+  // おじゃまが積もった: 石が落ちたような低い「ずしん」（置く音を低く重く + 胴鳴り + 衝撃のノイズ。数字が大きいほど重い）
+  garbageLand(i = 0, n = 1) { if (!this.allow('garbageLand', 0.05)) return;
+                  const w = Math.min(1, n / 10);
                   this.glass((i + 2) % PLACE_VARIANTS, 1, this.kit);
-                  this.tone(118, { dur: 0.16, gain: 0.5, slide: 0.55, attack: 0.002, priority: 3 });
-                  this.noise({ dur: 0.06, gain: 0.16, from: 1400, to: 420, attack: 0.002, priority: 2 });
-                  this.vibe(18); }
+                  this.tone(96 - w * 18, { dur: 0.24, gain: 0.62, slide: 0.45, attack: 0.002, priority: 3 });
+                  this.tone(52, { dur: 0.3, gain: 0.35 + w * 0.2, slide: 0.6, attack: 0.002, priority: 3 });
+                  this.noise({ dur: 0.1, gain: 0.26 + w * 0.1, from: 1800, to: 300, attack: 0.001, priority: 3 });
+                  this.vibe(w > 0.5 ? [0, 34, 20, 18] : 24); }
   // 連鎖でおじゃまの数字が減った: 軽く上がる「チッ、チッ」
   garbageChip(count = 1) { if (!this.allow('garbageChip', 0.08)) return;
                   [0, 2].forEach((k, i) => this.bell(note(k + 5, 523.25), { gain: 0.16, ring: 0.3, at: i * 0.05, priority: 1 }));

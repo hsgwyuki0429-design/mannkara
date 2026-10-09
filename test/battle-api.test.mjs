@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as api from '../functions/api/battle.js?v=202610091208';
+import * as api from '../functions/api/battle.js?v=202610091214';
 
 let sqlite = null;
 try { sqlite = await import('node:sqlite'); } catch {}
@@ -156,7 +156,7 @@ test('HTTP: POST の op ごと・おかしな入力は 400', { skip }, async () 
 
 test('通信（net.js）: 中継だけでも、2 人が見つかり、メッセージが順番どおり 1 回ずつ届く', { skip }, async () => {
   globalThis.location ??= { hostname: 'localhost', origin: 'http://localhost' };
-  const { BattleNet } = await import('../src/ui/net.js?v=202610091208');
+  const { BattleNet } = await import('../src/ui/net.js?v=202610091214');
   const db = d1();
   const fetchImpl = async (url, init) => api.onRequestPost({ request: new Request('https://x.test/api/battle', { method: 'POST', body: init.body }), env: { DB: db } });
   const a = new BattleNet({ me: A, name: 'あ', fetchImpl, relayOnly: true });

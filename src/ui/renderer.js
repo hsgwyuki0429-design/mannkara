@@ -1,12 +1,13 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091208';
-import { Shards } from './shards.js?v=202610091208';
-import { Sparkles } from './sparkles.js?v=202610091208';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091208';
-import { Rims } from './rims.js?v=202610091208';
-import { colorOf } from './palette.js?v=202610091208';
-import { PLATE_SETS } from './ambient.js?v=202610091208';
-import { glassElement, glassGroups } from './glass.js?v=202610091208';
+import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091214';
+import { Shards } from './shards.js?v=202610091214';
+import { Sparkles } from './sparkles.js?v=202610091214';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091214';
+import { Rims } from './rims.js?v=202610091214';
+import { colorOf } from './palette.js?v=202610091214';
+import { PLATE_SETS } from './ambient.js?v=202610091214';
+import { DROP_WARN_MS, DROP_GAP_MS, DROP_FALL_MS, DROP_HOLD_MS } from '../core/battle.js?v=202610091214';
+import { glassElement, glassGroups } from './glass.js?v=202610091214';
 
 /** 連鎖数ごとの褒め言葉（段階が上がるほど派手な色）。[この連鎖から, 言葉, 段階] */
 export const PRAISE = [[8, 'Unbelievable!', 5], [6, 'Amazing!', 4], [4, 'Excellent!', 3], [3, 'Great!', 2], [2, 'Good!', 1]];
@@ -172,6 +173,10 @@ export class Renderer {
     this.comboPop = document.createElement('div');
     this.comboPop.className = 'combo-pop';
     this.wrap.appendChild(this.comboPop);
+    // おじゃまが落ちてくるときの、画面の縁の赤い光（自分の盤面は画面全体、相手の盤面はその枠の中）
+    this.ojFlash = document.createElement('div');
+    this.ojFlash.className = 'oj-flash';
+    (root ?? document.body).appendChild(this.ojFlash);
     // ピンチのときの画面の縁と、コンボが続くほど明るくなる背景
     // （相手の盤面は画面に出さない入れ物。背景の光・ピンチの縁は自分の盤面だけ）
     this.dangerEl = root ? document.createElement('div') : document.getElementById('danger') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'danger' }));
@@ -1114,13 +1119,18 @@ export class Renderer {
   async garbageLand(landed) {
     if (!landed?.length) return;
     const gen = this.gen, c = this.cell;
-    const STEP = 62, GAP = 130;
+    const count = landed.length, nums = landed.map((l) => l.n ?? l.block.garbage), sum = nums.reduce((a, v) => a + v, 0);
+    const heavy = count >= 3 || sum >= 10;                         // たくさん・大きいおじゃま: 演出を一段強く
+    // 字幕と警告（落ち始める前の間）: 「おじゃま ×3 / 数字 7・3・3」・縁の赤い光・低い警告音
+    this.garbageWarn(count, nums, heavy);
+    await this.wait(DROP_WARN_MS);
+    if (gen !== this.gen) return;
     const jobs = landed.map(({ block, x, r, n, path }, i) => (async () => {
-      await this.wait(i * GAP);
+      await this.wait(i * DROP_GAP_MS);
       if (gen !== this.gen) return;
       const pts = path?.length ? [...path] : [{ x, r }];
       const top = pts[0];
-      pts.unshift({ x: top.x + 3, r: top.r + 3 });                 // もう少し上（画面の外寄り）から落ちてくる
+      pts.unshift({ x: top.x + 4, r: top.r + 4 });                 // もっと上（画面の外寄り）から落ちてくる
       const el = this.ensureEl(block);
       this.setGarbageNum(el, n ?? block.garbage);
       this.manual.add(block.id);
@@ -1129,13 +1139,22 @@ export class Renderer {
       this.setPos(el, at(pts[0]), 0);
       const lens = [0];
       for (let k = 1; k < pts.length; k++) lens.push(lens[k - 1] + Math.hypot(pts[k].x - pts[k - 1].x, pts[k].r - pts[k - 1].r));
-      const total = lens.at(-1) || 1, dur = Math.max(260, STEP * Math.sqrt(total) * 2.4);
+      const total = lens.at(-1) || 1, dur = Math.min(DROP_FALL_MS, Math.max(380, 110 * Math.sqrt(total) * 2.4));
+      let lastSpark = 0;
       await this.tween(dur, (t) => {
-        const u = Math.pow(Math.min(1, t / dur), 1.7) * total;    // 落ちるほど速く（重力）
+        const u = Math.pow(Math.min(1, t / dur), 1.9) * total;    // 落ちるほど速く（重力）
         let k = 1;
         while (k < lens.length - 1 && lens[k] < u) k++;
         const a = pts[k - 1], b = pts[k], f = Math.min(1, Math.max(0, (u - lens[k - 1]) / ((lens[k] - lens[k - 1]) || 1)));
-        this.setPos(el, at({ x: a.x + (b.x - a.x) * f, r: a.r + (b.r - a.r) * f }), 0);
+        const cur = at({ x: a.x + (b.x - a.x) * f, r: a.r + (b.r - a.r) * f });
+        this.setPos(el, cur, 0);
+        // 落ちた跡の火花（かけらと星）
+        if (!reducedMotion() && this.q >= 0.5 && t - lastSpark > dur / 9 && t < dur * 0.97) {
+          lastSpark = t;
+          const p = this.localToWrap(cur.x + c / 2, cur.y + c / 2);
+          this.sparkLayer.twinkle(p.x, p.y, { color: 'white', size: c * 0.55, life: 360, rise: -c * 0.6 });
+          this.shardLayer.burst(p.x, p.y, ['garbage'], 1, c * 0.12, c * 0.9, { life: 0.3 });
+        }
       });
       if (gen !== this.gen) return;
       this.manual.delete(block.id);
@@ -1145,17 +1164,47 @@ export class Renderer {
       el.style.setProperty('--d', '0ms');
       el.classList.add('pop-in', 'fit-in');
       this.cancelFxTimer(el.__landT);
-      el.__landT = this.later(() => el.classList.remove('pop-in', 'fit-in'), 340);
+      el.__landT = this.later(() => el.classList.remove('pop-in', 'fit-in'), 420);
       this.view3d?.land([{ id: block.id, delay: 0 }], true);
-      this.sfx?.garbageLand?.(i);
-      this.bounce([[0, 1], [0.2, 0.988], [0.55, 1.006], [1, 1]], 260);
-      if (!reducedMotion() && this.q >= 0.6) {
+      this.sfx?.garbageLand?.(i, n ?? block.garbage);
+      // ずしんと着地: 盤面が沈んで弾む・画面が揺れる・衝撃の輪・かけら
+      const big = Math.min(1, ((n ?? block.garbage) + count) / 14);
+      this.bounce([[0, 1], [0.14, 0.955 - big * 0.02], [0.5, 1.014], [0.78, 0.997], [1, 1]], 360);
+      this.punch(0.012 + big * 0.02, 260);
+      this.shake(3 + big * 5 + (i === count - 1 && heavy ? 3 : 0), 280);
+      if (!reducedMotion()) {
         const p = this.cellCenter(this.pos(x, r));
-        this.shardLayer.burst(p.x, p.y, ['garbage'], 2, c * 0.22, c * 1.6, { life: 0.4 });
+        this.impactRing(p, c * (2.6 + big * 1.6));
+        if (this.q >= 0.5) {
+          this.shardLayer.burst(p.x, p.y, ['garbage'], 6 + Math.round(big * 5), c * 0.2, c * 2.4, { life: 0.5 });
+          this.sparkLayer.twinkle(p.x, p.y, { color: 'white', size: c * 1.1, life: 460, rise: -c * 0.3 });
+        }
       }
     })());
     await Promise.all(jobs);
+    await this.wait(DROP_HOLD_MS);
     this.refreshGlass();
+  }
+
+  /**
+   * おじゃまが落ちてくる直前の字幕と警告: 「おじゃま ×3」と落ちてくる数字・画面の縁の赤い光・盤面の小さな揺れ・警告音。
+   * ふつうの字幕（連鎖など）と同じ場所・同じ出方で、赤い色にする
+   */
+  garbageWarn(count, nums, heavy = false) {
+    const list = nums.length > 5 ? nums.slice(0, 5).join('・') + '…' : nums.join('・');
+    this.showText(`おじゃま ×${count}<small>数字 ${list}</small>`, heavy ? 'oj heavy' : 'oj');
+    this.sfx?.garbageIncoming?.(count, nums.reduce((a, v) => a + v, 0));
+    if (reducedMotion()) return;
+    this.ojFlash.animate([{ opacity: 0 }, { opacity: heavy ? 1 : 0.8, offset: 0.18 }, { opacity: 0.35, offset: 0.55 }, { opacity: 0 }], { duration: DROP_WARN_MS + 500, easing: 'ease-out' });
+    this.shake(heavy ? 3.5 : 2, 360);
+  }
+
+  /** 着地した場所から広がる衝撃の輪（rotWrap の座標 p を中心に、直径 size px まで） */
+  impactRing(p, size) {
+    const el = document.createElement('div');
+    el.className = 'oj-ring';
+    el.style.cssText = `left:${p.x - size / 2}px;top:${p.y - size / 2}px;width:${size}px;height:${size}px;`;
+    this.addFx(this.fx2, el, 560);
   }
 
   /**
