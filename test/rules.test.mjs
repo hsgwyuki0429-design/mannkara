@@ -849,14 +849,14 @@ console.log('スコア倍率');
 {
   eq([1, 2, 3, 4, 5, 8, 12, 13, 20, 30].map(chainMultiplier), [1, 2, 4, 6, 10, 24, 60, 72, 156, 276], '連鎖倍率（シーズン2で少し上げた。12連鎖より先も上限なしで伸びる）');
   const near = (a, b) => Math.abs(a - b) < 1e-9;
-  eq([1, 2, 3, 5, 12].map(streakMultiplier).every((v, i) => near(v, [1, 1.1, 1.2, 1.4, 2.1][i])), true, 'COMBO 倍率: 1コンボごとに +0.1（シーズン2で下げた）');
-  eq([streakMultiplier(21), streakMultiplier(50)], [3, 3], 'COMBO 倍率は ×3 まで（点数がふくらみすぎないように）');
+  eq([1, 2, 3, 5, 12].map(streakMultiplier).every((v, i) => near(v, [1, 1.1, 1.21, 1.1 ** 4, 1.1 ** 11][i])), true, 'COMBO 倍率: 1コンボごとに ×1.1（シーズン2で下げた）');
+  eq(streakMultiplier(50) > streakMultiplier(21) && near(streakMultiplier(50), 1.1 ** 49), true, 'COMBO 倍率に上限はない（×1.1 を掛け続ける）');
   const s = new ScoreManager();
   s.streak = 2;                                              // このターンで COMBO 3
   eq(SCORE_PER_GOAL, 100, 'ゴール1個の基本点は 100');
-  eq(s.addStep({ goals: 2, chain: 3 }), Math.round(2 * SCORE_PER_GOAL * 4 * 1.2), '3連鎖目・COMBO 3 のゴール2個'); 
+  eq(s.addStep({ goals: 2, chain: 3 }), Math.round(2 * SCORE_PER_GOAL * 4 * 1.21), '3連鎖目・COMBO 3 のゴール2個'); 
   s.endTurn(true);
-  eq(s.addAllClear(), Math.round(ALL_CLEAR_BONUS * 1.2), '全消しボーナスにも COMBO 倍率');
+  eq(s.addAllClear(), Math.round(ALL_CLEAR_BONUS * 1.21), '全消しボーナスにも COMBO 倍率');
   eq(ALL_CLEAR_BONUS, 5000, '全消しボーナスは 5,000');
   const t = new ScoreManager(); t.endTurn(true);
   eq(t.addAllClear(), ALL_CLEAR_BONUS, 'COMBO 1 の全消しはボーナスそのまま');
