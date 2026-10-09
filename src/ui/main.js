@@ -1,29 +1,29 @@
-import { Game } from '../core/game.js?v=202610091500';
-import { Board, createBlock } from '../core/board.js?v=202610091500';
-import { Piece } from '../core/pieces.js?v=202610091500';
-import * as Sim from '../core/sim.js?v=202610091500';
-import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610091500';
-import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091500';
-import { Sfx, kitForScore } from './sfx.js?v=202610091500';
-import { Scenes } from './scenes.js?v=202610091500';
-import { Ambient } from './ambient.js?v=202610091500';
-import { colorOf } from './palette.js?v=202610091500';
-import { TrayDealer } from './tray-dealer.js?v=202610091500';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091500';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091500';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091500';
-import { World, SEASON } from './world.js?v=202610091500';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091500';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610091500';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091500';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091500';
-import { softwareRendering } from './fx2d.js?v=202610091500';
-import { useSprites } from './shards.js?v=202610091500';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610091500';
-import { BATTLE_SPEED } from '../core/battle.js?v=202610091500';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091500';
-import { makeQr, drawQr } from './qr.js?v=202610091500';
-import { BattleNet } from './net.js?v=202610091500';
+import { Game } from '../core/game.js?v=202610091551';
+import { Board, createBlock } from '../core/board.js?v=202610091551';
+import { Piece } from '../core/pieces.js?v=202610091551';
+import * as Sim from '../core/sim.js?v=202610091551';
+import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610091551';
+import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091551';
+import { Sfx, kitForScore } from './sfx.js?v=202610091551';
+import { Scenes } from './scenes.js?v=202610091551';
+import { Ambient } from './ambient.js?v=202610091551';
+import { colorOf } from './palette.js?v=202610091551';
+import { TrayDealer } from './tray-dealer.js?v=202610091551';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091551';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091551';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091551';
+import { World, SEASON } from './world.js?v=202610091551';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091551';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610091551';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091551';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091551';
+import { softwareRendering } from './fx2d.js?v=202610091551';
+import { useSprites } from './shards.js?v=202610091551';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610091551';
+import { BATTLE_SPEED } from '../core/battle.js?v=202610091551';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091551';
+import { makeQr, drawQr } from './qr.js?v=202610091551';
+import { BattleNet } from './net.js?v=202610091551';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -216,7 +216,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091500', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091551', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -779,7 +779,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610091500').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610091551').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -971,7 +971,7 @@ function renderLocal() {
 }
 /** 世界ランキング: 最下位まで、スクロールで続きを読み足していく（1回に数十人ずつ） */
 let worldPage = null;                              // { token, next: 次に読む順位 - 1, total, loading, failed, season, kind }
-const subOf = (kind, r) => (kind === 'total' ? `${fmtNum(r.games || 0)}ゲーム` : kind === 'rate' ? `${r.wins ?? 0}勝${(r.games || 0) - (r.wins ?? 0)}敗` : null);
+const subOf = (kind, r) => (kind === 'rate' ? `${r.wins ?? 0}勝${(r.games || 0) - (r.wins ?? 0)}敗` : null);
 async function renderWorld() {
   const token = ++rankToken, season = rankSeason, kind = rankKind;
   worldPage = null;
@@ -1386,8 +1386,36 @@ function stopTutorial() {
 function endTutorial() { sfx.unlock(); stopTutorial(); startOrResume(); }
 $('tutStart').addEventListener('click', endTutorial);
 $('tutSkip').addEventListener('click', endTutorial);
-$('btnHowto').addEventListener('click', () => { sfx.unlock(); setPaused(false); startTutorial(); });
-$('btnOverHowto').addEventListener('click', () => { sfx.unlock(); startTutorial(); });
+/* ---------- 説明書（「遊び方」。ホーム・一時停止・ゲームオーバーから開く。中身は manual-content.js を初めて開くときに読みこむ） ---------- */
+let manualReady = null;
+async function openManual() {
+  sfx.unlock();
+  cancelDrag();
+  manualReady ??= import('./manual-content.js?v=202610091551').then(({ MANUAL_HTML }) => { $('manual').innerHTML = MANUAL_HTML; }).catch((e) => { manualReady = null; throw e; });
+  try { await manualReady; } catch { $('manual').textContent = '説明書を読みこめませんでした。通信のよいところで、もう一度ためしてください'; }
+  $('manualOverlay').classList.remove('hidden');
+  $('manualOverlay').scrollTop = 0;
+}
+function closeManual() { $('manualOverlay').classList.add('hidden'); }
+$('manualClose').addEventListener('click', () => { sfx.unlock(); closeManual(); });
+/** 「れんしゅうする」: 説明書を閉じて、チュートリアル（動かして覚える数手）へ */
+$('manualPractice').addEventListener('click', () => {
+  sfx.unlock();
+  closeManual();
+  hideHome();
+  setPaused(false);
+  startTutorial();
+});
+// もくじ・「もくじへ」: ページの中を滑らかに移動する（アドレスは変えない）
+$('manual').addEventListener('click', (e) => {
+  const a = e.target.closest?.('a[data-go]');
+  if (!a) return;
+  e.preventDefault();
+  const to = document.getElementById(a.dataset.go);
+  if (to) to.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+});
+$('btnHowto').addEventListener('click', openManual);
+$('btnOverHowto').addEventListener('click', openManual);
 
 /* ---------- ゲーム名と遊べる場所・結果のシェア ---------- */
 $('brandUrl').textContent = displayUrl();
@@ -1512,7 +1540,7 @@ function exitBattle() {
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610091500', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610091551', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,
@@ -1590,7 +1618,7 @@ $('homeRoomJoin').addEventListener('click', () => { sfx.unlock(); openLobby('joi
 $('homeRank').addEventListener('click', () => { sfx.unlock(); openRanking(); });
 $('homeRate')?.addEventListener('click', () => { sfx.unlock(); openRanking('rate'); });
 $('homeDesign').addEventListener('click', () => { sfx.unlock(); openDesign(); });
-$('homeHowto').addEventListener('click', () => { sfx.unlock(); hideHome(); startTutorial(); });
+$('homeHowto').addEventListener('click', openManual);
 $('homeSound').addEventListener('click', () => { sfx.unlock(); sfx.enabled = !sfx.enabled; updateSoundButton(); updateHomeSound(); });
 $('btnOverHome')?.addEventListener('click', () => { sfx.unlock(); saveBest(); showHome(); });
 

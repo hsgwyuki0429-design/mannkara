@@ -1,5 +1,5 @@
-import { ANIM } from '../core/constants.js?v=202610091500';
-import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091500';
+import { ANIM } from '../core/constants.js?v=202610091551';
+import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091551';
 
 /**
  * 対戦で、相手の盤面を映す。自分の盤面と同じ描き方（renderer.js の Renderer をもう 1 つ。盤面の種類・土台の色・宝石・通路の番号・ゴール・
