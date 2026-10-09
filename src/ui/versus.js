@@ -1,12 +1,12 @@
-import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091243';
-import { Game } from '../core/game.js?v=202610091243';
-import { Piece, seedOf } from '../core/pieces.js?v=202610091243';
-import { createGarbage } from '../core/board.js?v=202610091243';
-import { isInside } from '../core/constants.js?v=202610091243';
-import { OppBoard, turnCost } from './opp-board.js?v=202610091243';
-import { TrayDealer } from './tray-dealer.js?v=202610091243';
-import { Renderer } from './renderer.js?v=202610091243';
-import { PROTOCOL } from './net.js?v=202610091243';
+import { BattleSide, BATTLE_SPEED, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091259';
+import { Game } from '../core/game.js?v=202610091259';
+import { Piece, seedOf } from '../core/pieces.js?v=202610091259';
+import { createGarbage } from '../core/board.js?v=202610091259';
+import { isInside } from '../core/constants.js?v=202610091259';
+import { OppBoard, turnCost } from './opp-board.js?v=202610091259';
+import { TrayDealer } from './tray-dealer.js?v=202610091259';
+import { Renderer } from './renderer.js?v=202610091259';
+import { PROTOCOL } from './net.js?v=202610091259';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
@@ -23,8 +23,6 @@ export const CPU_LEVELS = {
   hard: { name: 'つよい', think: [1000, 1700], best: 1, spread: 0, budget: 60 },
 };
 const RECORD_KEY = 'blockmancala-versus';
-/** 対戦の連鎖の再生の速さ（main.js の BATTLE_SPEED と同じ。ピースを持っているときの速さ。CPU 対戦も同じ） */
-const BATTLE_SPEED = 3;
 const COUNT_MS = 800;              // カウントダウンの 1 つぶん
 const PEND_SHOW = 6;               // 予告に並べる数（それより多いと +n）
 /** タブレットの横向き（styles.css と同じ条件。相手の盤面は自分の盤面の右に並べる） */

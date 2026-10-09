@@ -1,29 +1,29 @@
-import { Game } from '../core/game.js?v=202610091243';
-import { Board, createBlock } from '../core/board.js?v=202610091243';
-import { Piece } from '../core/pieces.js?v=202610091243';
-import * as Sim from '../core/sim.js?v=202610091243';
-import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610091243';
-import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091243';
-import { Sfx, kitForScore } from './sfx.js?v=202610091243';
-import { Scenes } from './scenes.js?v=202610091243';
-import { Ambient } from './ambient.js?v=202610091243';
-import { colorOf } from './palette.js?v=202610091243';
-import { TrayDealer } from './tray-dealer.js?v=202610091243';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091243';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091243';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091243';
-import { World, SEASON } from './world.js?v=202610091243';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091243';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610091243';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091243';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091243';
-import { softwareRendering } from './fx2d.js?v=202610091243';
-import { useSprites } from './shards.js?v=202610091243';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610091243';
-import { dropPlayMs } from '../core/battle.js?v=202610091243';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091243';
-import { makeQr, drawQr } from './qr.js?v=202610091243';
-import { BattleNet } from './net.js?v=202610091243';
+import { Game } from '../core/game.js?v=202610091259';
+import { Board, createBlock } from '../core/board.js?v=202610091259';
+import { Piece } from '../core/pieces.js?v=202610091259';
+import * as Sim from '../core/sim.js?v=202610091259';
+import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610091259';
+import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091259';
+import { Sfx, kitForScore } from './sfx.js?v=202610091259';
+import { Scenes } from './scenes.js?v=202610091259';
+import { Ambient } from './ambient.js?v=202610091259';
+import { colorOf } from './palette.js?v=202610091259';
+import { TrayDealer } from './tray-dealer.js?v=202610091259';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091259';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091259';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091259';
+import { World, SEASON } from './world.js?v=202610091259';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091259';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610091259';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091259';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091259';
+import { softwareRendering } from './fx2d.js?v=202610091259';
+import { useSprites } from './shards.js?v=202610091259';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610091259';
+import { dropPlayMs, BATTLE_SPEED } from '../core/battle.js?v=202610091259';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091259';
+import { makeQr, drawQr } from './qr.js?v=202610091259';
+import { BattleNet } from './net.js?v=202610091259';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -177,7 +177,6 @@ const APPROACH_MIN = 0.05, STILL_MS = 120;
 /** 見積もりより再生が長引いても（全消しの演出など）、再生中は速められるように残りをこれより少なく見ない（ms） */
 const PLAY_LEFT_MIN = 300;
 const HELD_SPEED = 3;
-const BATTLE_SPEED = HELD_SPEED;
 function catchUpSpeed(now) {
   if (!drag || !pending) return 1;
   return HELD_SPEED;                                    // ブロックを持っている間は、連鎖の再生をいつも 3 倍の速さにする（以下は使わない）
@@ -217,7 +216,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091243', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091259', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -781,7 +780,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610091243').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610091259').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -1521,7 +1520,7 @@ function exitBattle() {
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610091243', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610091259', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,
