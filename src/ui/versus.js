@@ -1,11 +1,11 @@
-import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS } from '../core/battle.js?v=202610062316';
-import { Game } from '../core/game.js?v=202610062316';
-import { Piece } from '../core/pieces.js?v=202610062316';
-import { Board, createBlock, createGarbage, isGarbage } from '../core/board.js?v=202610062316';
-import { SIZE, isInside } from '../core/constants.js?v=202610062316';
-import { MiniBoard, turnCost } from './mini-board.js?v=202610062316';
-import { TrayDealer } from './tray-dealer.js?v=202610062316';
-import { PROTOCOL } from './net.js?v=202610062316';
+import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610090554';
+import { Game } from '../core/game.js?v=202610090554';
+import { Piece } from '../core/pieces.js?v=202610090554';
+import { createGarbage } from '../core/board.js?v=202610090554';
+import { SIZE, isInside } from '../core/constants.js?v=202610090554';
+import { MiniBoard, turnCost } from './mini-board.js?v=202610090554';
+import { TrayDealer } from './tray-dealer.js?v=202610090554';
+import { PROTOCOL } from './net.js?v=202610090554';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
@@ -32,34 +32,6 @@ class Clock {
   pause() { if (this.pausedAt == null) this.pausedAt = performance.now(); }
   resume() { if (this.pausedAt != null) { this.offset += performance.now() - this.pausedAt; this.pausedAt = null; } }
 }
-
-/** 盤面を短い文字にする（相手の盤面と食い違っていないか確かめる・食い違ったら直す） */
-const LETTER = { red: 'r', orange: 'o', yellow: 'y', green: 'g', cyan: 'c', blue: 'b', purple: 'p' };
-const COLOR_OF = Object.fromEntries(Object.entries(LETTER).map(([k, v]) => [v, k]));
-export function packBoard(board) {
-  let s = '';
-  const g = [];
-  for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) {
-    if (!isInside(x, r)) continue;
-    const b = board.get(x, r);
-    if (!b) s += '.';
-    else if (isGarbage(b)) { s += '#'; g.push(b.garbage); }
-    else s += LETTER[b.color] ?? 'x';
-  }
-  return { s, g };
-}
-export function unpackBoard({ s, g }) {
-  const board = new Board();
-  let i = 0, k = 0;
-  for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) {
-    if (!isInside(x, r)) continue;
-    const ch = s[i++];
-    if (ch === '#') board.set(x, r, createGarbage(g[k++] ?? 1));
-    else if (ch && ch !== '.') board.set(x, r, createBlock(COLOR_OF[ch] ?? 'x'));
-  }
-  return board;
-}
-const samePack = (a, b) => a.s === b.s && a.g.join(',') === b.g.join(',');
 
 export function readRecords() {
   try { return { cpu: {}, online: { w: 0, l: 0 }, ...JSON.parse(localStorage.getItem(RECORD_KEY) || '{}') }; } catch { return { cpu: {}, online: { w: 0, l: 0 } }; }
@@ -116,6 +88,7 @@ export class Versus {
     net.onGone = (reason) => this.onGone(reason);
     net.onTransport = (t) => { this.transport = t; };
     this.begin();
+    this.waitText();
     net.send({ t: 'hello', name: this.api.myName(), v: PROTOCOL });
     net.start();
     if (room.seat === 1) this.later(2600, () => this.maybeStart(), true);    // じかにつながるのを少し待ってから
@@ -180,9 +153,16 @@ export class Versus {
 
   /** 相手の小さな盤面の大きさ（画面の幅に合わせる） */
   layout() {
-    const w = Math.min(window.innerWidth, 900);
-    const cell = Math.max(8, Math.min(15, Math.floor(w * 0.36 / (SIZE * Math.SQRT2))));
+    const w = Math.min(window.innerWidth, 1400);
+    const cell = Math.max(8, Math.min(w >= 900 ? 22 : 15, Math.floor(w * (w >= 900 ? 0.2 : 0.36) / (SIZE * Math.SQRT2))));
     this.mini.layout(cell);
+  }
+
+  /** オンライン: 相手とつないでいる間（始まるまで）の小さな文字 */
+  waitText() {
+    const el = this.$('vsCount');
+    el.textContent = 'じゅんび中…';
+    el.className = 'vs-count wait';
   }
 
   /* ---------- カウントダウン ---------- */
@@ -356,7 +336,8 @@ export class Versus {
       // 相手もほぼ同時に負けていたら、その知らせを少し待つ（先に置けなくなったほうの負け・ほぼ同時なら引き分け）
       if (this.oppOverAt != null) this.decide();
       else this.later(1200, () => this.decide(), true);
-    } else this.finish('lose');
+    } else if (this.oppOverAt != null) this.decide();        // CPU のほうが先に置けなくなっていた（まだ再生中で見えていなかった）
+    else this.finish('lose');
   }
   oppLost(at) {
     if (!this.active || this.ended || this.oppOverAt != null) return;
@@ -535,6 +516,7 @@ export class Versus {
     const series = this.series;
     this.helloSeen = true; this.startSent = false;
     this.begin();
+    this.waitText();
     this.series = series;
     if (this.room.seat === 1) { this.startSent = true; this.later(600, () => { this.net.send({ t: 'start' }); this.startRound(); }, true); }
   }

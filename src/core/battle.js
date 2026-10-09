@@ -1,4 +1,5 @@
-import { SIZE, ANIM, lineCells } from './constants.js?v=202610062316';
+import { SIZE, ANIM, isInside } from './constants.js?v=202610090554';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610090554';
 
 /**
  * 対戦（ぷよぷよのような、連鎖で相手におじゃまを送り合う遊び方）のルール。DOM 非依存。
@@ -6,10 +7,11 @@ import { SIZE, ANIM, lineCells } from './constants.js?v=202610062316';
  * - 連鎖すると、連鎖の数を書いた 1×1 の「おじゃまブロック」が相手へ飛ぶ（ATTACK_MIN_CHAIN 連鎖から。1 連鎖では送らない。
  *   ぷよぷよでも、小さな消し方ではおじゃまは送られない）。全消しは ALL_CLEAR_ATTACK を足す（ぷよぷよの全消しボーナス）
  * - 送られたおじゃまは、まず盤面の上に「予告」として並ぶ。相手の連鎖が終わるまでは落ちてこない
- * - 自分が連鎖すると、予告のおじゃまも、もう盤面に落ちたおじゃまも、全部の数字が連鎖の数だけ減る（0 になったら消える）。
- *   ぷよぷよの「相殺」と同じく、連鎖の途中に届いたおじゃまも、その連鎖が終わったときに削る。送るおじゃまは減らない（両方起きる）
- * - 予告のおじゃまは、相手の連鎖が終わったあと、自分が次に置いたピースの再生が終わったときに落ちてくる
- *   （置かずに待っていても GARBAGE_GRACE_MS で落ちる。自分の連鎖の再生中は落ちない）。1 回に落ちるのは DROP_MAX 個まで
+ * - 相手の連鎖が終わったあと、自分が次に置いたピースのすぐあとに落ちてくる（置かずに待っていても GARBAGE_GRACE_MS で落ちる）。
+ *   1 回に落ちるのは DROP_MAX 個まで。ルールは置いた瞬間に確定し、画面は後から順番に再生するので、自分の連鎖の再生中に落ちると決まったおじゃまは、
+ *   その連鎖が見え終わってから落ちてくる
+ * - 自分が連鎖すると、盤面のおじゃまの数字が全部、連鎖の数だけ減る（0 になったら消える。Game.placePiece）。送るおじゃまは減らない（両方起きる）。
+ *   予告のおじゃまは削らない（OFFSET_PENDING。ぷよぷよの相殺と同じことを 2 通りでするのは分かりにくく、シミュレーションでは決着もつかなかった）
  * - おじゃまは盤面の上から落ちてきて、三角の盤面（直角が下の V 字の入れ物）の一番低いところに積もる（dropPath）
  * - おじゃまは動かない・その上には置けない・入っているラインは満杯にならない（発動しない）
  * - 置けるピースが無くなったほうの負け。長引いたら（MARGIN_MS から）1 回に送るおじゃまの個数が増えていく（ぷよぷよのマージンタイム）
@@ -246,7 +248,31 @@ export class BattleSide {
   }
 }
 
-/** ライン(kind, n) にあるおじゃま（盤面の）の数。表示・テスト用 */
-export function garbageInLine(board, kind, n) {
-  return lineCells(kind, n).filter(({ x, r }) => board.get(x, r)?.color === 'garbage').length;
+
+/** 盤面を短い文字にする（相手の盤面と食い違っていないか確かめる・食い違ったら直す） */
+const LETTER = { red: 'r', orange: 'o', yellow: 'y', green: 'g', cyan: 'c', blue: 'b', purple: 'p' };
+const COLOR_OF = Object.fromEntries(Object.entries(LETTER).map(([k, v]) => [v, k]));
+export function packBoard(board) {
+  let s = '';
+  const g = [];
+  for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) {
+    if (!isInside(x, r)) continue;
+    const b = board.get(x, r);
+    if (!b) s += '.';
+    else if (isGarbage(b)) { s += '#'; g.push(b.garbage); }
+    else s += LETTER[b.color] ?? 'x';
+  }
+  return { s, g };
 }
+export function unpackBoard({ s, g }) {
+  const board = new Board();
+  let i = 0, k = 0;
+  for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) {
+    if (!isInside(x, r)) continue;
+    const ch = s[i++];
+    if (ch === '#') board.set(x, r, createGarbage(g[k++] ?? 1));
+    else if (ch && ch !== '.') board.set(x, r, createBlock(COLOR_OF[ch] ?? 'x'));
+  }
+  return board;
+}
+export const samePack = (a, b) => a.s === b.s && a.g.join(',') === b.g.join(',');

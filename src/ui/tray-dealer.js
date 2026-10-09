@@ -1,4 +1,4 @@
-import { DealerCore } from '../core/dealer.js?v=202610062316';
+import { DealerCore } from '../core/dealer.js?v=202610090554';
 
 /**
  * 手駒の決め方（と学習モードのおすすめの総当たり）を Web Worker（core/dealer-worker.js）で動かすための窓口。

@@ -8,7 +8,7 @@
  *     まだ届いたと言われていないものを新しい道で送り直す。重なって届いたものは捨てる）
  * 相手からのメッセージは onMessage(msg)。相手がいなくなったら onGone(reason)（'left' 出ていった / 'lost' 通信が途切れた）
  */
-import { apiBase } from './world.js?v=202610062316';
+import { apiBase } from './world.js?v=202610090554';
 
 export const PROTOCOL = 1;
 const ICE_SERVERS = [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }];
@@ -16,7 +16,7 @@ const GATHER_MS = 2500;          // つなぐ候補を集める時間の上限
 const P2P_GIVE_UP_MS = 9000;     // これまでにじかにつながらなければ、中継のまま
 const PING_P2P_MS = 1000, PING_RELAY_MS = 3000;
 const LOST_MS = 15000;           // これだけ何も届かなければ、通信が途切れた
-const WAIT_MS = 8000;            // 中継の poll が待つ時間
+const WAIT_MS = 6000;            // 中継の poll が待つ時間
 
 export class BattleNet {
   /** me = 端末の id（32 けたの 16 進）、name = なまえ。fetchImpl / RTC はテスト用に差し替えられる */
@@ -170,7 +170,7 @@ export class BattleNet {
     while (!this.closed && this.room) {
       let res;
       try {
-        res = await this.call({ op: 'poll', key: this.room.key, after: this.lastSeq, wait: WAIT_MS, interval: this.transport === 'p2p' ? 2500 : 300 });
+        res = await this.call({ op: 'poll', key: this.room.key, after: this.lastSeq, wait: WAIT_MS, interval: this.transport === 'p2p' ? 2500 : 450 });
       } catch (e) {
         if (this.closed) return;
         if (e.status === 404) { this.gone('left'); return; }

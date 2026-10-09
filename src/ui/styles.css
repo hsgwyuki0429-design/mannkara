@@ -3,9 +3,9 @@
    数字の「1」だけは足のない M PLUS Rounded 1c の字形を使う（Round One）。 */
 @font-face{font-family:"Nunito";font-weight:800 900;font-display:swap;src:url(./fonts/nunito-latin.woff2) format("woff2");
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
-@font-face{font-family:"M PLUS Rounded 1c";font-weight:700;font-display:swap;src:url(./fonts/mplus-ui-700.woff2?v=20261004-3d) format("woff2");}
-@font-face{font-family:"M PLUS Rounded 1c";font-weight:800;font-display:swap;src:url(./fonts/mplus-ui-800.woff2?v=20261004-3d) format("woff2");}
-@font-face{font-family:"M PLUS Rounded 1c";font-weight:900;font-display:swap;src:url(./fonts/mplus-ui-900.woff2?v=20261004-3d) format("woff2");}
+@font-face{font-family:"M PLUS Rounded 1c";font-weight:700;font-display:swap;src:url(./fonts/mplus-ui-700.woff2?v=20261009-vs) format("woff2");}
+@font-face{font-family:"M PLUS Rounded 1c";font-weight:800;font-display:swap;src:url(./fonts/mplus-ui-800.woff2?v=20261009-vs) format("woff2");}
+@font-face{font-family:"M PLUS Rounded 1c";font-weight:900;font-display:swap;src:url(./fonts/mplus-ui-900.woff2?v=20261009-vs) format("woff2");}
 @font-face{font-family:"Round One";font-weight:800;src:url(./fonts/one-800.woff2) format("woff2");unicode-range:U+31;}
 @font-face{font-family:"Round One";font-weight:900;src:url(./fonts/one-900.woff2) format("woff2");unicode-range:U+31;}
 :root{
@@ -46,6 +46,8 @@ button{font-family:inherit;cursor:pointer;}
   #app .tray{grid-column:1;grid-row:3;grid-template-columns:1fr;grid-template-rows:repeat(3,minmax(0,1fr));
     height:100%;min-height:0;padding:12px 6px;}
   #app .brand{grid-column:1;grid-row:4;font-size:10px;gap:4px;}
+  #app .vs-head{grid-column:1;grid-row:2;margin:0;padding-right:6px;}
+  body.battle #app .stage{width:100%;}
 }
 
 /* ---- HUD ---- */
@@ -580,6 +582,9 @@ body.battle .stage{width:92%;margin:0 auto;}                        /* 相手の
 .vs-count{position:fixed;left:50%;top:47%;z-index:26;translate:-50% -50%;pointer-events:none;font-weight:900;font-size:min(130px,30vw);line-height:1;
   color:#fff;text-shadow:0 6px 6px rgba(0,0,0,.22);opacity:0;}
 .vs-count.go{color:var(--gold);font-size:min(96px,22vw);}
+.vs-count.wait{opacity:1;font-family:"M PLUS Rounded 1c",sans-serif;font-size:20px;padding:6px 18px;border-radius:99px;border:1.5px solid var(--line);
+  background:rgba(20,40,130,.35);text-shadow:var(--ts-s);animation:waitPulse 1s ease-in-out infinite alternate;}
+@keyframes waitPulse{from{opacity:.6}to{opacity:1}}
 /* 飛んでいくおじゃま（数字つきの灰色の宝石） */
 .atk-fly{position:fixed;left:0;top:0;z-index:28;pointer-events:none;width:0;height:0;}
 .atk-fly .block{position:absolute;left:-17px;top:-17px;--cell:34px;width:34px;height:34px;rotate:225deg;}
@@ -622,7 +627,7 @@ body.battle .stage{width:92%;margin:0 auto;}                        /* 相手の
   font-family:"M PLUS Rounded 1c",sans-serif;font-size:17px;font-weight:900;}
 .home-btn svg{width:22px;height:22px;fill:currentColor;flex-shrink:0;}
 .home-btn.home-vs{color:#fff;background:linear-gradient(180deg,rgba(255,154,214,.36),rgba(255,154,214,.16));border-color:rgba(255,184,226,.75);}
-.home-btn.small{min-height:44px;font-size:14px;padding:8px 10px;}
+.home-btn.small{min-height:44px;font-size:clamp(12px,3.7vw,14px);padding:8px 6px;white-space:nowrap;}
 .home-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .home-sec{margin:2px 0 -4px;font-size:12px;font-weight:900;letter-spacing:.08em;color:var(--dim);}
 .home-levels{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
@@ -667,3 +672,5 @@ body.battle .stage{width:92%;margin:0 auto;}                        /* 相手の
 [data-board-theme="3d"] :is(.home,.lobby){--go-card:rgba(30,34,120,.6);--go-edge:rgba(170,176,255,.55);}
 [data-board-theme="white"] :is(.home,.lobby){--go-card:rgba(29,35,64,.84);--go-edge:rgba(255,255,255,.35);}
 .lobby-box{background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 38%),var(--go-card);border-color:var(--go-edge);}
+/* 対戦中の一時停止（CPU）: 記録と遊び方は出さない（ふだんのゲームのもの） */
+body.battle :is(#pauseRecords,#btnHowto){display:none;}

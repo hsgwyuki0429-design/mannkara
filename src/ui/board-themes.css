@@ -141,3 +141,4 @@ html[data-board-theme="white"]{background-color:#f4f6fb !important;}
 [data-board-theme="3d"] .vs-opp{background:rgba(30,34,120,.28);}
 [data-board-theme="white"] .vs-count{color:#1d2340;text-shadow:0 4px 0 rgba(29,35,64,.08);}
 [data-board-theme="white"] .vs-count.go{color:var(--gold);}
+[data-board-theme="white"] .vs-count.wait{background:#fff;color:#1d2340;}

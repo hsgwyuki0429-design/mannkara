@@ -22,7 +22,7 @@ export { cleanName, NAME_MAX };
 export const MSG_MAX = 8000;           // 1 つのメッセージの大きさ（JSON の文字数）
 export const BATCH_MAX = 40;           // 1 回に送れるメッセージの数
 export const ROOM_EVENTS_MAX = 20000;  // 1 部屋のメッセージの数の上限
-export const WAIT_MAX = 8000;          // poll が待つ時間の上限（ms）
+export const WAIT_MAX = 6000;          // poll が待つ時間の上限（ms。待つ間も D1 を見直すので、1 回の呼び出しの CPU 時間を小さく保つ）
 export const FRESH_MS = 12000;         // これより長く poll が来ない人は、もういないものとする
 export const STALE_MS = 2 * 3600 * 1000;   // これより古い部屋は消す
 export const SEEN_EVERY = 3000;        // 「まだいる」の書き込みは、これより間をあける（D1 への書き込みを減らす）
@@ -133,10 +133,8 @@ export async function join(db, { me, name, code }, now = Date.now()) {
 /** key から部屋と自分の席を探す */
 export async function roomOf(db, key) {
   if (!validHex(key, 32)) return null;
-  let row = await db.prepare('SELECT * FROM battle_rooms WHERE p1_key = ?1').bind(key).first();
-  if (row) return { row, seat: 1 };
-  row = await db.prepare('SELECT * FROM battle_rooms WHERE p2_key = ?1').bind(key).first();
-  return row ? { row, seat: 2 } : null;
+  const row = await db.prepare('SELECT * FROM battle_rooms WHERE p1_key = ?1 OR p2_key = ?1 LIMIT 1').bind(key).first();
+  return row ? { row, seat: row.p1_key === key ? 1 : 2 } : null;
 }
 
 /** 相手へのメッセージを足す */
@@ -177,7 +175,7 @@ export async function poll(db, { key, after = 0, wait = 0, interval = 400 }, now
   const startStatus = found.row.status, startOpp = found.row[`p${found.seat === 1 ? 2 : 1}_name`] ?? null;
   const deadline = now() + Math.min(WAIT_MAX, Math.max(0, Number(wait) || 0));
   after = Math.max(0, Math.floor(Number(after) || 0));
-  interval = Math.min(3000, Math.max(250, Number(interval) || 400));
+  interval = Math.min(3000, Math.max(400, Number(interval) || 500));
   for (;;) {
     const { row, seat } = found;
     await touch(db, row, seat, now());

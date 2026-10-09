@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610062316';
-import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610062316';
-import * as Sim from '../src/core/sim.js?v=202610062316';
-import { Game } from '../src/core/game.js?v=202610062316';
-import { Piece } from '../src/core/pieces.js?v=202610062316';
-import { DealerCore } from '../src/core/dealer.js?v=202610062316';
-import { bestMove, evaluate } from '../src/core/advisor.js?v=202610062316';
-import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610062316';
+import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610090554';
+import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610090554';
+import * as Sim from '../src/core/sim.js?v=202610090554';
+import { Game } from '../src/core/game.js?v=202610090554';
+import { Piece } from '../src/core/pieces.js?v=202610090554';
+import { DealerCore } from '../src/core/dealer.js?v=202610090554';
+import { bestMove, evaluate } from '../src/core/advisor.js?v=202610090554';
+import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610090554';
 import {
   attackFor, marginBlocks, dropPath, GarbageQueue, BattleSide, playDuration, ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK,
   MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, GARBAGE_GRACE_MS, DROP_MAX,
-} from '../src/core/battle.js?v=202610062316';
+} from '../src/core/battle.js?v=202610090554';
 
 const rng = (seed) => () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const setLine = (b, kind, n, bits) => lineCells(kind, n).forEach(({ x, r }, k) => {
@@ -357,4 +357,48 @@ test('連鎖の再生時間の見積もり（相手の画面で、その連鎖�
   const steps = g.resolve();
   assert.ok(steps.length >= 2);
   assert.ok(playDuration(steps) > 1000);
+});
+
+test('盤面を短い文字にして送り、相手の画面で同じ盤面に戻せる（おじゃまの数字も）', async () => {
+  const { packBoard, unpackBoard, samePack } = await import('../src/core/battle.js?v=202610090554');
+  const b = new Board();
+  b.set(0, 0, createGarbage(12));
+  b.set(3, 2, createBlock('red'));
+  b.set(7, 0, createBlock('purple'));
+  b.set(1, 0, createGarbage(2));
+  const p = packBoard(b);
+  assert.equal(p.s.length, 36);
+  assert.deepEqual(p.g, [12, 2]);
+  const c = unpackBoard(JSON.parse(JSON.stringify(p)));
+  assert.equal(samePack(packBoard(c), p), true);
+  assert.equal(c.get(0, 0).garbage, 12);
+  assert.equal(c.get(3, 2).color, 'red');
+});
+
+test('相手の画面の写し（Game.mirror）は、置いた手と残りの手駒だけで、本物とまったく同じ盤面になる（連鎖・おじゃまを削るのも）', async () => {
+  const { packBoard, samePack, BattleSide: Side } = await import('../src/core/battle.js?v=202610090554');
+  for (let seed = 1; seed <= 4; seed++) {
+    const g = battleGame(100 + seed);
+    const mirror = Game.mirror(rng(9));
+    let t = 0;
+    const side = new Side({ game: g, now: () => t, random: rng(seed) });
+    for (let turnNo = 0; turnNo < 60 && !g.gameOver; turnNo++) {
+      t += 1500;
+      // ときどき、おじゃまが届いて落ちる（落ちた場所は相手へも送る）
+      if (turnNo % 5 === 2) side.receive({ id: `x${turnNo}`, n: 2 + (turnNo % 7), count: 1 + (turnNo % 2), readyIn: 0 });
+      t += GARBAGE_GRACE_MS;
+      const drop = side.tick();
+      if (drop) for (const l of drop.landed) mirror.board.set(l.x, l.r, createGarbage(l.n, 'o' + l.block.id));
+      const m = bestMove(g.board, g.tray, { budgetMs: 5 });
+      if (!m) break;
+      const msg = { p: g.tray[m.slot].name, ox: m.ox, oy: m.oy };
+      const turn = g.placePiece(m.slot, m.ox, m.oy);
+      msg.rest = turn.rest;
+      mirror.tray = [new Piece(msg.p), ...msg.rest.map((n) => new Piece(n))].concat([null, null]).slice(0, 3);
+      const mt = mirror.placePiece(0, msg.ox, msg.oy);
+      assert.ok(mt, `写しにも置ける (seed ${seed} turn ${turnNo})`);
+      assert.equal(mt.steps.length, turn.steps.length, '連鎖の数が同じ');
+      assert.equal(samePack(packBoard(mirror.board), packBoard(g.board)), true, `盤面が同じ (seed ${seed} turn ${turnNo})`);
+    }
+  }
 });
