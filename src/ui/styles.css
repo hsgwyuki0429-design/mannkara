@@ -617,6 +617,60 @@ body.battle .vs-opp-field{width:100%;}
 #vsResult .primary:disabled{opacity:.45;}
 .vs-wait{margin:8px 0 0;font-size:13px;font-weight:800;color:var(--dim);}
 
+/* ======== 説明書（ホーム・一時停止・ゲームオーバーの「遊び方」。中身は src/ui/manual-content.js。scripts/build-manual.mjs が作る） ======== */
+.manual-overlay{z-index:38;display:block;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;-webkit-overflow-scrolling:touch;padding:0;
+  background:linear-gradient(180deg,#3a6adf,#244aa8);}
+.manual-bar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:max(10px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 18px max(14px,env(safe-area-inset-left));
+  background:linear-gradient(180deg,#3a6adf 62%,rgba(58,106,223,0));}
+.manual-btn{height:38px;padding:0 16px;border-radius:99px;font-family:inherit;font-size:14.5px;font-weight:900;color:#fff;border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.12);}
+.manual-btn.go{color:#3a2600;border-color:#b87b00;background:linear-gradient(180deg,#fff0a0,#ffd54a 55%,#f2b11e);}
+.manual{--card:rgba(255,255,255,.1);--mline:rgba(255,255,255,.28);--mdim:#cfe0ff;max-width:620px;margin:-6px auto 0;padding:0 16px max(64px,env(safe-area-inset-bottom));
+  color:#fff;line-height:1.75;text-align:left;font-family:"M PLUS Rounded 1c","Nunito",sans-serif;scroll-padding-top:60px;}
+.manual *{box-sizing:border-box}
+.manual .hero{text-align:center;padding:4px 0 8px}
+.manual .logo{display:inline-flex;align-items:center;gap:10px}
+.manual .logo svg{width:40px;height:40px}
+.manual .mn-title{font-size:30px;letter-spacing:.02em;font-weight:900}
+.manual .sub{margin:4px 0 0;color:var(--mdim);font-weight:700;font-size:15px}
+.manual .lead{margin:16px 0 4px;padding:14px 16px;border-radius:16px;background:var(--card);border:1.5px solid var(--mline);font-weight:700}
+.manual nav.toc{margin:16px 0 4px;padding:14px 14px 10px;border-radius:16px;background:var(--card);border:1.5px solid var(--mline)}
+.manual nav.toc b{display:block;margin-bottom:6px;color:var(--gold);font-size:14px}
+.manual nav.toc ol{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}
+.manual nav.toc a{display:block;padding:3px 6px;border-radius:10px;color:#fff;text-decoration:none;font-weight:800;font-size:14.5px;line-height:1.4}
+.manual nav.toc a:active{background:rgba(255,255,255,.14)}
+.manual nav.toc a span{display:inline-block;min-width:1.5em;color:var(--gold)}
+.manual section{margin:22px 0 0;padding:18px 16px 16px;border-radius:20px;background:var(--card);border:1.5px solid var(--mline)}
+.manual section>h2{margin:0 0 10px;font-size:21px;font-weight:900;display:flex;align-items:center;gap:10px;line-height:1.3;text-align:left}
+.manual h2 .no{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--gold);color:#3a2600;font-size:17px}
+.manual h3{margin:18px 0 6px;font-size:16.5px;font-weight:900;color:var(--gold)}
+.manual p{margin:8px 0}
+.manual ul,.manual ol.steps{margin:8px 0;padding-left:1.3em}
+.manual li{margin:4px 0}
+.manual b,.manual strong{font-weight:900}
+.manual .gold{color:var(--gold)}
+.manual .note{margin:12px 0;padding:10px 12px;border-radius:12px;background:rgba(255,210,63,.14);border:1.5px solid rgba(255,210,63,.5);font-weight:700;font-size:14.5px}
+.manual .note::before{content:"POINT";display:inline-block;margin-right:8px;padding:0 8px;border-radius:99px;background:var(--gold);color:#3a2600;font-size:11px;font-weight:900;letter-spacing:.06em;vertical-align:1px}
+.manual figure{margin:12px 0;padding:10px 6px 8px;border-radius:14px;background:rgba(10,24,90,.28);text-align:center}
+.manual figure svg{width:100%;height:auto;max-width:430px}
+.manual figcaption{margin:2px 8px 0;color:var(--mdim);font-size:13.5px;font-weight:700;line-height:1.55;text-align:left}
+.manual .figs{display:grid;gap:8px}
+.manual .step-label{display:inline-block;margin:4px 0 0;padding:1px 12px;border-radius:99px;background:#fff;color:#1e3a8a;font-weight:900;font-size:13px}
+.manual .chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.manual .chips span{padding:4px 10px;border-radius:99px;background:rgba(10,24,90,.28);border:1px solid var(--mline);font-weight:900;font-size:14.5px;white-space:nowrap}
+.manual .chips i{font-style:normal;margin-right:6px;color:var(--gold);font-size:12.5px}
+.manual table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14.5px}
+.manual th,.manual td{padding:7px 8px;border-bottom:1px solid var(--mline);text-align:left;vertical-align:top}
+.manual th{color:var(--gold);font-weight:900;font-size:13px;white-space:nowrap}
+.manual .cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:420px){.manual .cols{grid-template-columns:1fr}}
+.manual .card{padding:10px 12px;border-radius:14px;background:rgba(10,24,90,.28)}
+.manual .card h4{margin:0 0 4px;font-size:15px;font-weight:900}
+.manual .card p{margin:4px 0;font-size:14.5px}
+.manual dl{margin:8px 0}.manual dt{margin-top:10px;font-weight:900;color:var(--gold)}.manual dd{margin:2px 0 0 0;font-size:14.5px}
+.manual .top{margin-top:26px;text-align:center}
+.manual .top a{color:var(--mdim);font-weight:800;text-decoration:none;font-size:14px}
+
 /* ======== ホーム ======== */
 .home{z-index:32;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;
   padding:max(20px,env(safe-area-inset-top)) 18px max(20px,env(safe-area-inset-bottom));

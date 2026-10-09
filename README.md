@@ -230,8 +230,16 @@
   （説明などは出さない。置くたび・手駒が届いたとき・アプリを閉じる/隠れるときに残す。ゲームオーバー・もう一度で消える。モードごとに別）
 - 1手戻す機能は無い
 
-## チュートリアル（はじめて遊ぶ人向け）
-- はじめて開いたとき（ベストスコアも途中の保存も無い）に、遊びながらルールを覚える5手が始まる。一時停止の「遊び方」からもう一度見られる
+## 説明書（「遊び方」）
+- ホーム・一時停止・ゲームオーバーの「遊び方」は、**説明書**（読み物のページ）をゲーム内の画面で開く（`#manualOverlay`。中身の HTML は `src/ui/manual-content.js` で、開くときに初めて読みこむ）。
+  もくじ（10 の節）から飛べて、「とじる」で元の画面に戻る。上の「れんしゅうする」を押すと、下のチュートリアルが始まる
+- 内容: ゲームの目的・盤面の見かた・ピースを置く・発動（ラインが満杯になると）・連鎖とコンボ・スコア・ボーナス・ホームと記録・対戦（おじゃま）・コツ。図は 7 つ（盤面の見かた・発動の流れ 3 コマ・おじゃまの置かれる順/削られる順/合計の当たり方）
+- **図はゲームのエンジンで実際に盤面を計算して描く**（`scripts/build-manual.mjs`）。ルールを変えたら、このスクリプトの文章を直して `node scripts/build-manual.mjs` で `manual-content.js` を作り直す。
+  `node --test test/manual.test.mjs` が、書き出した内容が最新か・id が画面と重ならないか・文章の数字（連鎖の倍率・コンボの倍率・ボーナス・全消し・マージンタイム・おじゃまの数字など）が今のルールの定数と合っているかを確かめる
+- 見た目は `src/ui/styles.css` の `.manual`（ゲームの盤面の種類に関係なく、いつも青い背景）
+
+## チュートリアル（動かして覚える数手）
+- はじめて開いたとき（ベストスコアも途中の保存も無い）に、遊びながらルールを覚える5手が始まる。説明書の「れんしゅうする」からもう一度見られる
   1. ピースをつかんで置く
   2. ラインは番号の数だけ入ると満杯 → 発動。1個は GOAL、残りは小さい番号のラインへ1個ずつ流れこむ（縦3。2連鎖）
   3. ブロックの動き方: 横のラインも同じルール。流れこんだブロックは奥へ進み、ブロックか壁の手前で止まる（横5）
@@ -249,7 +257,7 @@
 - 置く場所は金色の枠で示し、指の絵がトレイのピースを運んで見せる。決めた場所にしか置けない（近くで離せば吸い付く）
 - 盤面と手駒は `src/ui/tutorial-steps.js` で決めている（前の手の結果に足りないブロックを足してつなぐ。連鎖数・押しこみが起きることはテストで確認）。
   チュートリアル中は補充・詰みの判定・ベストスコア・途中の保存は無し（`Game.scripted`）。説明はスコアの場所に出す
-- 「スキップ」か「はじめる」で終わる。遊んでいる途中に「遊び方」を見たときは、そのゲームの続きに戻る
+- 「スキップ」か「はじめる」で終わる。遊んでいる途中に説明書から始めたときは、終わったらそのゲームの続きに戻る
 - LINE・Instagram・Facebook などのアプリ内ブラウザで開かれたら、Safari / Chrome で開き直す
   （LINE は `openExternalBrowser=1`、iOS は `x-safari-https://`、Android は Chrome の intent）
 
@@ -257,7 +265,7 @@
 - 開くと最初にホーム画面（盤面とトレイをぼかした上に、ゲームの部品と同じ作りのカードを浮かべる。色は盤面の種類に合わせる）。
   ゲームの途中の盤面は後ろにそのまま残っていて、「ひとりで あそぶ」でその続きから（途中の保存があれば「つづきから」と出る）
 - **ひとりで あそぶ**（金色）/ **対戦**（CPU・オンライン（レート戦・だれかと・あいことば）。下の「対戦」）
-- 下の 4 つ: **ランキング**（今までと同じ画面）・**デザイン**（盤面の種類。一時停止の画面と同じ一覧をこちらへ移して出す）・**遊び方**（チュートリアル）・**サウンド**
+- 下の 4 つ: **ランキング**（今までと同じ画面）・**デザイン**（盤面の種類。一時停止の画面と同じ一覧をこちらへ移して出す）・**遊び方**（説明書）・**サウンド**
 - 左上のホームのボタンで、いつでもホーム画面へ（ひとりでのときはそのまま盤面を残す。対戦中は「もう一度押すと 対戦をやめて ホームへ」）。
   ゲームオーバー画面の下にも「ホーム」
 
@@ -346,7 +354,7 @@
 - ゲームオーバー画面に、このゲームの最大連鎖・最大コンボと、これまでの記録（超えたら `NEW RECORD!`）
 - 一時停止画面にも記録を出す
 - **ランキング**: 右上のトロフィーのボタン（ゲームオーバー画面の「ランキングを見る」・ホーム画面からも）。**世界** と **この端末** を選べる。**シーズン制**（今はシーズン2）
-  - 世界は **ベスト**（このシーズンの自己ベスト）/ **累計**（このシーズンに遊んだゲームのスコアの合計とゲーム数）/ **レート**（オンライン対戦の「レート戦」。勝ち負けの数も）
+  - 世界は **ベスト**（このシーズンの自己ベスト）/ **累計**（このシーズンに遊んだゲームのスコアの合計。プレイ数（ゲーム数）は表示しない。サーバーには今までどおり数を残す）/ **レート**（オンライン対戦の「レート戦」。勝ち負けの数も）
   - 下の「シーズン1の結果を見る」で、同じ画面のままシーズン1の結果（世界のベストスコア・この端末）を見られる（もう記録は増えない）
 - **世界ランキング**（`functions/api/ranking.js`。Cloudflare Pages Functions + D1）: **最下位まで**スクロールで見られる（50人ずつ、下の端が近づくと続きを読み足す）。自分の順位と参加人数も出す
   - シーズン1 は前からある表 `players`（そのまま残して見るだけ）。シーズン2〜は表 `season_players`（シーズン × 端末で 1 行。ベスト・累計・レート）。表と列は初めて使うときに API が作る（追加の準備は無し）
@@ -460,6 +468,7 @@
 - 対戦のルール（おじゃまの置かれる場所・削る順番と量・送る/置かれるタイミング・マージンタイム・相手の画面の写しが本物と同じになること）のテスト: `node --test test/battle.test.mjs`
 - オンライン対戦のサーバーと通信（相手探し・あいことば・メッセージの順番・出ていった相手・中継だけでの通信）のテスト: `node --test test/battle-api.test.mjs`
 - シーズン・累計・レート（和が 0・1 回だけ反映・食い違いは数えない・シーズン1の表）のテスト: `node --test test/season-api.test.mjs`
+- 説明書（最新か・id・文章の数字が今のルールと合っている）のテスト: `node --test test/manual.test.mjs`
 - QR コード（Python の qrcode と同じ行列）のテスト: `node --test test/qr.test.mjs`（正解の行列 `test/qr-reference.json` は `pip install qrcode` で作った）
 - 対戦の数値の調整（CPU 同士のシミュレーション）: `node scripts/sim-battle.mjs n=8 think=2500`
 - ローカル: `python3 -m http.server` で `index.html` を開く。世界ランキング・オンライン対戦も試すときは `node scripts/dev-server.mjs`
@@ -483,11 +492,12 @@ src/ui/     renderer.js scenes.js shards.js palette.js main.js sfx.js styles.css
             brand.js share-card.js                                       … ゲーム名・URL・端末の記録の名前 / 結果カード
             tray-dealer.js                                               … Web Worker（dealer-worker.js）との窓口
             tutorial-steps.js                                            … チュートリアルの盤面・手駒・説明
+            manual-content.js                                            … 説明書の中身（scripts/build-manual.mjs が作る）
             versus.js opp-board.js net.js                                … 対戦の画面（CPU・オンライン・レート戦）・相手の盤面・オンラインの通信
             qr.js                                                        … QR コード（このゲームの URL のカード）
 functions/  api/ranking.js api/admin.js api/battle.js                           … 世界ランキングの API・名前を隠す管理 API・オンライン対戦（Cloudflare Pages Functions + D1）
-test/       rules.test.mjs feedback.test.mjs ambient.test.mjs synth.test.mjs fx2d.test.mjs board-themes.test.mjs cube3d.test.mjs battle.test.mjs battle-api.test.mjs season-api.test.mjs qr.test.mjs
-scripts/    stamp.mjs build-allclear.mjs subset-fonts.py build-three.mjs dev-server.mjs sim-battle.mjs
+test/       rules.test.mjs feedback.test.mjs ambient.test.mjs synth.test.mjs fx2d.test.mjs board-themes.test.mjs cube3d.test.mjs battle.test.mjs battle-api.test.mjs season-api.test.mjs qr.test.mjs manual.test.mjs
+scripts/    stamp.mjs build-allclear.mjs subset-fonts.py build-three.mjs dev-server.mjs sim-battle.mjs build-manual.mjs
 ```
 
 ## ライセンス

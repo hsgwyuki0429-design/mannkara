@@ -38,8 +38,8 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202610091500" />
-<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091500" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202610091551" />
+<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091551" />
 </head>
 <body>
 <div id="app">
@@ -342,6 +342,14 @@
     <p id="qrNote" class="qr-note">カメラで読みこむと、すぐ遊べます</p>
   </div>
 </div>
+<!-- 説明書（「遊び方」。中身は src/ui/manual-content.js を開くときに入れる） -->
+<div id="manualOverlay" class="overlay manual-overlay hidden" role="dialog" aria-label="説明書">
+  <div class="manual-bar">
+    <button id="manualPractice" class="manual-btn go">れんしゅうする</button>
+    <button id="manualClose" class="manual-btn">とじる</button>
+  </div>
+  <div id="manual" class="manual"></div>
+</div>
 <div id="pauseOverlay" class="overlay hidden">
   <div class="overlay-box pause-box">
     <p class="over-title">一時停止中</p>
@@ -373,6 +381,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202610091500"></script>
+<script type="module" src="./src/ui/main.js?v=202610091551"></script>
 </body>
 </html>
