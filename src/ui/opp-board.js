@@ -1,5 +1,6 @@
-import { ANIM } from '../core/constants.js?v=202610091208';
-import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091208';
+import { ANIM } from '../core/constants.js?v=202610091214';
+import { dropPlayMs } from '../core/battle.js?v=202610091214';
+import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091214';
 
 /**
  * 対戦で、相手の盤面を映す。自分の盤面と同じ描き方（renderer.js の Renderer をもう 1 つ。盤面の種類・土台の色・宝石・通路の番号・ゴール・
@@ -95,7 +96,7 @@ export class OppBoard {
   /** おじゃまが落ちてくる（landed = [{ block, x, r, n, path }]。自分の盤面と同じ落ち方） */
   playDrop(landed) {
     if (!landed?.length) return this.queue;
-    return this.enqueue(320 + landed.length * 130, () => this.r.garbageLand(landed));
+    return this.enqueue(dropPlayMs(landed.length), () => this.r.garbageLand(landed));
   }
 
   /** ゴールの画面の座標（攻撃が飛び立つ場所） */
