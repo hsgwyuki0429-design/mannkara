@@ -1,12 +1,12 @@
-import { ANIM } from '../core/constants.js?v=202610091320';
-import { dropPlayMs } from '../core/battle.js?v=202610091320';
-import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091320';
+import { ANIM } from '../core/constants.js?v=202610091340';
+import { dropPlayMs } from '../core/battle.js?v=202610091340';
+import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091340';
 
 /**
  * 対戦で、相手の盤面を映す。自分の盤面と同じ描き方（renderer.js の Renderer をもう 1 つ。盤面の種類・土台の色・宝石・通路の番号・ゴール・
  * 連鎖の動き・おじゃまの落ち方と「−1」まで、まったく同じ見た目）。音は鳴らさない。
  * 相手が置いたターン（core/game.js の turn と同じ形）を、相手の画面と同じ速さ・同じ長さで再生する（速さは base。対戦では 3 倍）。
- * 再生が溜まったら少し速めて、相手の画面より遅れすぎないようにする
+ * 再生が溜まっても早送りしない（自分の盤面の連鎖と、いつも同じ速さ）
  */
 export class OppBoard {
   /** root = 盤面を作る入れ物（.stage と同じ役目） */
@@ -48,8 +48,8 @@ export class OppBoard {
     this.r.setPaused(this.paused);
     this.sync();
   }
-  /** 再生の速さ: base。溜まっていたら少し速める */
-  speed() { return this.base * (1 + Math.min(3, Math.max(0, this.left / this.base - 4000) / 3000)); }
+  /** 再生の速さ: いつも base（自分の盤面と同じ。再生が溜まっても早送りしない） */
+  speed() { return this.base; }
   sync() { this.r.timeScale = this.paused ? 0 : this.speed(); }
 
   /** 再生の列に並べる（順番に 1 つずつ） */

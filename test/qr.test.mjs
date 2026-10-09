@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { makeQr } from '../src/ui/qr.js?v=202610091320';
+import { makeQr } from '../src/ui/qr.js?v=202610091340';
 
 // 正解は Python の qrcode（pip install qrcode）で作った行列（型番・誤り訂正・マスクを決め打ち。バイトモード）
 const REF = JSON.parse(readFileSync(new URL('./qr-reference.json', import.meta.url), 'utf8'));

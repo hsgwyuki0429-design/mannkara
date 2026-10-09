@@ -1,5 +1,5 @@
-import { SIZE, ANIM, isInside } from './constants.js?v=202610091320';
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091320';
+import { SIZE, ANIM, isInside } from './constants.js?v=202610091340';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091340';
 
 /**
  * 対戦（ぷよぷよのような、連鎖で相手におじゃまを送り合う遊び方）のルール。DOM 非依存。
@@ -22,7 +22,7 @@ export const ATTACK_MIN_CHAIN = 2;
 export const OFFSET_PENDING = false;
 export const ALL_CLEAR_ATTACK = 5;
 /** 対戦の連鎖の再生の速さ（CPU・オンラインとも。ふつうの再生を 1 とした倍率。画面・相手の盤面・シミュレーションが同じ数を使う） */
-export const BATTLE_SPEED = 0.9;
+export const BATTLE_SPEED = 1.8;
 export const DROP_MAX = 5;
 /**
  * マージンタイム（ぷよぷよと同じく、長引いたら送るおじゃまが増える）: MARGIN_MS を過ぎると、1 回の攻撃で送るおじゃまが 2 個になり、

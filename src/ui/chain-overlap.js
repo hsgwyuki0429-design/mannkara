@@ -1,4 +1,4 @@
-import { SIZE, lineCells } from '../core/constants.js?v=202610091320';
+import { SIZE, lineCells } from '../core/constants.js?v=202610091340';
 
 /** 連鎖の残りでブロックが占める・通過するマスと、新しく置くマスが重なるか。 */
 export function chainTouchesPlacement(steps, placed) {

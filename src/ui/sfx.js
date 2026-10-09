@@ -1,4 +1,4 @@
-import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610091320';
+import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610091340';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
