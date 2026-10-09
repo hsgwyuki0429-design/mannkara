@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610091243';
-import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610091243';
-import * as Sim from '../src/core/sim.js?v=202610091243';
-import { Game } from '../src/core/game.js?v=202610091243';
-import { Piece, seededRandom, seedOf } from '../src/core/pieces.js?v=202610091243';
-import { DealerCore } from '../src/core/dealer.js?v=202610091243';
-import { bestMove, evaluate } from '../src/core/advisor.js?v=202610091243';
-import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610091243';
+import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610091320';
+import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610091320';
+import * as Sim from '../src/core/sim.js?v=202610091320';
+import { Game } from '../src/core/game.js?v=202610091320';
+import { Piece, seededRandom, seedOf } from '../src/core/pieces.js?v=202610091320';
+import { DealerCore } from '../src/core/dealer.js?v=202610091320';
+import { bestMove, evaluate } from '../src/core/advisor.js?v=202610091320';
+import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610091320';
 import {
-  attackFor, marginBlocks, dropPath, GarbageQueue, BattleSide, playDuration, ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK,
+  attackFor, marginBlocks, edgeOrder, edgeSpot, GarbageQueue, BattleSide, playDuration, ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK,
   MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, DROP_MAX,
-} from '../src/core/battle.js?v=202610091243';
+} from '../src/core/battle.js?v=202610091320';
 
 const rng = (seed) => () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const setLine = (b, kind, n, bits) => lineCells(kind, n).forEach(({ x, r }, k) => {
@@ -128,40 +128,52 @@ test('マージンタイムを過ぎると、同じ数字のおじゃまが何�
   assert.deepEqual(b.queue.items.map((q) => q.n), [3, 3]);
 });
 
-test('おじゃまは V 字の盤面の一番低いところ（直角の角）から積もる', () => {
+test('おじゃまは、一番外側の辺（直角をはさむ 2 辺）の真ん中（角）から、外へ向かって置かれる', () => {
   const b = new Board();
-  const random = rng(3);
-  const at = () => { const p = dropPath((x, r) => !!b.get(x, r), random); b.set(p.x, p.r, createGarbage(1)); return p; };
-  const p1 = at();
-  assert.deepEqual([p1.x, p1.r], [0, 0], '空の盤面では一番下の角');
-  const p2 = at(), p3 = at();
-  assert.deepEqual([[p2.x, p2.r], [p3.x, p3.r]].map(([x, r]) => x + r).sort(), [1, 1], '次は 1 段上の 2 マス');
-  const p4 = at();
-  assert.equal(p4.x + p4.r, 2);
-  // 道のりは盤面の上から始まり、1 歩ずつ下（x + r が減る）へ進んで、空いているマスだけを通る
-  for (const p of [p1, p2, p3, p4]) {
-    assert.ok(p.path[0].x + p.path[0].r >= SIZE, '盤面の上から落ちてくる');
-    for (let i = 1; i < p.path.length; i++) {
-      const a = p.path[i - 1], c = p.path[i];
-      assert.ok(c.x + c.r < a.x + a.r, '下へ進む');
-      assert.ok(Math.abs(c.x - a.x) <= 1 && Math.abs(c.r - a.r) <= 1);
-    }
-    const last = p.path.at(-1);
-    assert.deepEqual([last.x, last.r], [p.x, p.r]);
-  }
+  const put = (random) => { const p = edgeSpot((x, r) => !!b.get(x, r), random); if (p) b.set(p.x, p.r, createGarbage(1)); return p; };
+  assert.deepEqual(put(), { x: 0, r: 0 }, '空の盤面では角から');
+  assert.deepEqual([put(), put()], [{ x: 1, r: 0 }, { x: 0, r: 1 }], '次は角の両隣（左右の辺）');
+  assert.deepEqual([put(), put()], [{ x: 2, r: 0 }, { x: 0, r: 2 }]);
+  // 一番外側の辺（輪 0 = x が 0 か r が 0 の 15 マス）がすべて埋まるまで、次の辺（輪 1）には置かない
+  const ring = (p) => Math.min(p.x, p.r);
+  while (b.garbage().length < 15) assert.equal(ring(put()), 0);
+  assert.equal(b.garbage().length, 15);
+  const next = put();
+  assert.deepEqual(next, { x: 1, r: 1 }, '外側が埋まったら、次の辺の角から');
+  assert.equal(ring(next), 1);
+  // random を渡すと、同じ距離の左右どちらを先にするかが変わる（置くマスの集まりは同じ）
+  const c = new Board();
+  const seen = new Set();
+  for (let seed = 1; seed < 20; seed++) { c.set(0, 0, createGarbage(1)); const p = edgeSpot((x, r) => !!c.get(x, r), rng(seed)); seen.add(p.x + ',' + p.r); }
+  assert.deepEqual([...seen].sort(), ['0,1', '1,0']);
 });
 
-test('おじゃまはブロックをすり抜けない（上からふさがれた穴には入らない）', () => {
+test('おじゃまは上にブロックがあっても関係なく、外側の辺の空きマスに置かれる。ブロックのあるマスには置かない', () => {
   const b = new Board();
-  // 一番上の段（斜辺に沿った 8 マス）を全部埋めると、上から落ちてくる道が無い
-  for (let x = 0; x < SIZE; x++) b.set(x, SIZE - 1 - x, createBlock('x'));
-  assert.equal(dropPath((x, r) => !!b.get(x, r), rng(1)), null);
-  // 1 か所だけ空けると、その下へ落ちていく
-  b.set(3, 4, null);
-  const p = dropPath((x, r) => !!b.get(x, r), rng(1));
-  assert.ok(p && p.x + p.r <= 7);
-  for (const q of p.path) if (isInside(q.x, q.r)) assert.equal(b.get(q.x, q.r), null, '通るマスは空いている');
+  // 角（0,0）の真上の列（画面で同じ縦の列）をブロックでふさいでも、角は空いているので角に置く
+  for (const [x, r] of [[1, 1], [2, 2], [3, 3]]) b.set(x, r, createBlock('x'));
+  assert.deepEqual(edgeSpot((x, r) => !!b.get(x, r)), { x: 0, r: 0 });
+  // 角がブロックなら、そこは飛ばして次の空きマス
+  b.set(0, 0, createBlock('x'));
+  assert.deepEqual(edgeSpot((x, r) => !!b.get(x, r)), { x: 1, r: 0 });
+  // 一番外側の辺がおじゃまとブロックだけで埋まったら、次の辺へ
+  for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) if (isInside(x, r) && Math.min(x, r) === 0 && !b.get(x, r)) b.set(x, r, createBlock('x'));
+  assert.deepEqual(edgeSpot((x, r) => !!b.get(x, r)), { x: 2, r: 1 }, '次の辺の角（1,1）もブロックなら、その次の空き');
 });
+
+test('盤面が全部埋まっていれば置く場所は無い', () => {
+  const b = new Board();
+  for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) if (isInside(x, r)) b.set(x, r, createBlock('x'));
+  assert.equal(edgeSpot((x, r) => !!b.get(x, r)), null);
+  assert.equal(edgeOrder().length, 36);
+});
+
+/** 対戦のルールの Game（手駒は同期で決める） */
+function battleGame(seed) {
+  const g = new Game({ random: rng(seed) });
+  g.setBattle(true, { tight: 0, allClear: 0 });
+  return g;
+}
 
 test('Game.dropGarbage: 落としたあと、どのピースも置けなければ詰み', () => {
   const g = new Game({ random: rng(5) });
@@ -179,111 +191,42 @@ test('Game.dropGarbage: 落としたあと、どのピースも置けなけれ�
   assert.equal(g.gameOver, true, '置ける場所が無くなったら詰み');
 });
 
-test('Game.chipGarbage: 連鎖の数だけ数字が減り、0 で消える', () => {
+test('Game.chipGarbage: 連鎖の 1 段ごとに、おじゃま 1 個だけを「−その段の数」。外側の辺の真ん中から順に。0 で消える', () => {
   const g = new Game({ random: rng(9) });
   g.board = new Board();
-  g.board.set(0, 0, createGarbage(5));
-  g.board.set(1, 0, createGarbage(2));
-  const res = g.chipGarbage(3);
-  assert.deepEqual(res.changed.map((c) => [c.x, c.r, c.n, c.from]), [[0, 0, 2, 5]]);
-  assert.deepEqual(res.removed.map((c) => [c.x, c.r, c.from]), [[1, 0, 2]]);
-  assert.equal(g.board.get(1, 0), null);
-  assert.equal(g.board.get(0, 0).garbage, 2);
+  g.board.set(0, 0, createGarbage(5));      // 角（いちばん先）
+  g.board.set(1, 0, createGarbage(5));
+  g.board.set(0, 1, createGarbage(2));
+  const res = g.chipGarbage(3);              // 1 段目: 角を −1 → 4 / 2 段目: (1,0) を −2 → 3 / 3 段目: (0,1) を −3 → 消える
+  assert.deepEqual(res.hits.map((h) => [h.step, h.damage, h.x, h.r, h.from, h.n, h.removed]),
+    [[1, 1, 0, 0, 5, 4, false], [2, 2, 1, 0, 5, 3, false], [3, 3, 0, 1, 2, 0, true]]);
+  assert.deepEqual(res.changed.map((c) => [c.x, c.r, c.n, c.from]), [[0, 0, 4, 5], [1, 0, 3, 5]]);
+  assert.deepEqual(res.removed.map((c) => [c.x, c.r, c.from]), [[0, 1, 2]]);
+  assert.equal(g.board.get(0, 1), null);
+  assert.equal(g.board.get(0, 0).garbage, 4);
+  assert.equal(g.board.get(1, 0).garbage, 3);
 });
 
-test('途中の保存にも、おじゃまの数字が残る', () => {
+test('Game.chipGarbage: おじゃまが連鎖の段より少なければ、残ったものを順番にもう一度。消えたらその次へ', () => {
   const g = new Game({ random: rng(9) });
+  g.board = new Board();
   g.board.set(0, 0, createGarbage(6));
-  const st = JSON.parse(JSON.stringify(g.exportState()));
-  const h = new Game({ random: rng(10) });
-  h.importState(st);
-  assert.equal(isGarbage(h.board.get(0, 0)), true);
-  assert.equal(h.board.get(0, 0).garbage, 6);
+  g.board.set(1, 0, createGarbage(9));
+  const res = g.chipGarbage(4);              // 角 −1 → 5 / (1,0) −2 → 7 / 角 −3 → 2 / (1,0) −4 → 3
+  assert.deepEqual(res.hits.map((h) => [h.x, h.r, h.n]), [[0, 0, 5], [1, 0, 7], [0, 0, 2], [1, 0, 3]]);
+  assert.deepEqual(res.changed.map((c) => [c.x, c.r, c.n, c.from]), [[0, 0, 2, 6], [1, 0, 3, 9]]);
+  // 消えた分は、あとの段が次のおじゃまへ進む
+  const h = new Game({ random: rng(9) });
+  h.board = new Board();
+  h.board.set(0, 0, createGarbage(1));
+  h.board.set(1, 0, createGarbage(4));
+  const r2 = h.chipGarbage(3);               // 角 −1 → 消える / (1,0) −2 → 2 / (1,0) −3 → 消える
+  assert.deepEqual(r2.hits.map((x) => [x.x, x.r, x.n, x.removed]), [[0, 0, 0, true], [1, 0, 2, false], [1, 0, 0, true]]);
+  assert.equal(h.board.garbage().length, 0);
+  assert.deepEqual(new Game({ random: rng(1) }).chipGarbage(0), { hits: [], changed: [], removed: [] });
 });
 
-test('手駒の決め方・おすすめも、おじゃまを動かない壁として読む', () => {
-  const core = new DealerCore(rng(4));
-  const garbage = [0, 1, 8];                // (0,0) (1,0) (0,1)
-  const res = core.deal([], 0, 0, garbage);
-  assert.equal(res.names.length, 3);
-  const m = core.hint([], ['O0', null, null], garbage);
-  assert.ok(m);
-  const cells = new Piece('O0').cells.map((c) => (m.oy + c.y) * SIZE + m.ox + c.x);
-  for (const i of garbage) assert.equal(cells.includes(i), false, 'おじゃまの上には置かない');
-});
-
-test('おすすめの盤面の良さ: おじゃまが入ったラインは「あと 1 個」に数えない', () => {
-  const b = new Board();
-  setLine(b, 'col', 3, [1, 'g', 0]);
-  const c = new Board();
-  setLine(c, 'col', 3, [1, 1, 0]);
-  assert.ok(evaluate(Sim.fromBoard(c)) > evaluate(Sim.fromBoard(b)));
-});
-
-test('予告: 自分の連鎖で全部が削れ、0 になったら消える。落ちるのは相手の連鎖が終わってから', () => {
-  const q = new GarbageQueue();
-  q.add({ id: 'a', n: 5, readyAt: 100 });
-  q.add({ id: 'b', n: 2, readyAt: 300 });
-  assert.equal(q.add({ id: 'a', n: 9 }), false, '同じおじゃまは 2 回入れない');
-  assert.deepEqual(q.offset(2), { changed: [{ id: 'a', n: 3, from: 5 }], removed: [{ id: 'b', from: 2 }] });
-  assert.equal(q.total, 3);
-  assert.deepEqual(q.ready(50), []);
-  assert.deepEqual(q.take(150).map((g) => g.id), ['a']);
-  assert.equal(q.items.length, 0);
-});
-
-/** 対戦のルールの Game（手駒は同期で決める） */
-function battleGame(seed) {
-  const g = new Game({ random: rng(seed) });
-  g.setBattle(true, { tight: 0, allClear: 0 });
-  return g;
-}
-
-test('BattleSide: 置いて連鎖したら送る。届いたおじゃまは、相手の連鎖が終わったらすぐ落ちる（自分が連鎖中なら、その連鎖が終わったらすぐ）', () => {
-  let t = 0, busy = false;
-  const now = () => t;
-  const g = battleGame(11);
-  const sent = [], drops = [];
-  const side = new BattleSide({ game: g, now, random: rng(2), busy: () => busy, hooks: { send: (a) => sent.push(a), drop: (r) => drops.push(r) } });
-  // 2 連鎖のターン
-  const turn = { steps: [{}, {}], allClear: false };
-  assert.equal(side.placed(turn, 1200), 2);
-  assert.deepEqual(sent, [{ id: 'a1', n: 2, count: 1, readyIn: 1200 }]);
-  assert.deepEqual(turn.attack, sent[0], 'ターンの記録にも残す（画面で飛ばす）');
-  assert.equal(side.placed({ steps: [{}] }, 0), 0, '1 連鎖では送らない');
-  // 相手から届く（相手の連鎖はあと 1000ms）
-  side.receive({ id: 'x1', n: 4, readyIn: 1000 });
-  assert.equal(side.tick(), null, '相手の連鎖の最中は落ちない');
-  t = 1000;
-  const res = side.tick();
-  assert.equal(res.landed.length, 1, '相手の連鎖が終わったら、置かなくてもすぐ落ちる');
-  assert.equal(res.landed[0].block.garbage, 4);
-  assert.deepEqual([res.landed[0].x, res.landed[0].r], [0, 0]);
-  assert.equal(drops.length, 1);
-  // 自分が連鎖している間に、相手の連鎖が終わった
-  side.receive({ id: 'x2', n: 3, readyIn: 500 });
-  busy = true;
-  t = 2000;
-  assert.equal(side.tick(), null, '自分の連鎖の再生中は落ちない');
-  busy = false;
-  assert.equal(side.tick().landed.length, 1, '自分の連鎖が終わったらすぐ落ちる');
-});
-
-test('BattleSide: 上までふさがって落とせなかったら、次に置くまで待つ', () => {
-  let t = 0;
-  const g = battleGame(12);
-  g.board = new Board();
-  for (let r = 0; r < SIZE; r++) for (let x = 0; x < SIZE; x++) if (isInside(x, r)) g.board.set(x, r, createBlock('x'));
-  const side = new BattleSide({ game: g, now: () => t, random: rng(2) });
-  side.receive({ id: 'x1', n: 2, readyIn: 0 });
-  assert.equal(side.tick(), null);
-  assert.equal(side.stuck, true);
-  assert.equal(side.queue.items.length, 1, '予告に残る');
-  side.placed({ steps: [] }, 0);
-  assert.equal(side.stuck, false, '置いたら、もう一度落とせるか試す');
-});
-
-test('連鎖したら、その数だけ盤面のおじゃまが削れる（置いた瞬間に確定し、ターンの記録に残る）', () => {
+test('連鎖したら、盤面のおじゃまが 1 段ごとに削れる（置いた瞬間に確定し、ターンの記録に残る）', () => {
   const g = battleGame(13);
   g.board = Board.fromHeights([0, 2, 0, 0, 0, 0, 0, 0]);       // 縦2 にあと 0 個 → 置いて連鎖させる
   g.board.set(0, 0, createGarbage(5));
@@ -293,9 +236,11 @@ test('連鎖したら、その数だけ盤面のおじゃまが削れる（置�
   g.tray = [new Piece('Dot0'), new Piece('Dot0'), new Piece('Dot0')];
   const turn = g.placePiece(0, 6, 1);
   assert.equal(turn.steps.length, 2, '縦2 → 縦1 の 2 連鎖');
-  assert.deepEqual(turn.chip.changed.map((c) => [c.x, c.r, c.n]), [[0, 0, 3]]);
+  // 1 段目: 角 (0,0) を −1 → 4 / 2 段目: (0,1) を −2 → 消える（1 → 0）
+  assert.deepEqual(turn.chip.hits.map((h) => [h.step, h.x, h.r, h.n, h.removed]), [[1, 0, 0, 4, false], [2, 0, 1, 0, true]]);
+  assert.deepEqual(turn.chip.changed.map((c) => [c.x, c.r, c.n]), [[0, 0, 4]]);
   assert.deepEqual(turn.chip.removed.map((c) => [c.x, c.r]), [[0, 1]]);
-  assert.equal(g.board.get(0, 0).garbage, 3);
+  assert.equal(g.board.get(0, 0).garbage, 4);
 });
 
 test('連鎖でブロックが無くなり、最後のおじゃまも消えたら全消し', () => {
@@ -366,7 +311,7 @@ test('連鎖の再生時間の見積もり（相手の画面で、その連鎖�
 });
 
 test('盤面を短い文字にして送り、相手の画面で同じ盤面に戻せる（おじゃまの数字も）', async () => {
-  const { packBoard, unpackBoard, samePack } = await import('../src/core/battle.js?v=202610091243');
+  const { packBoard, unpackBoard, samePack } = await import('../src/core/battle.js?v=202610091320');
   const b = new Board();
   b.set(0, 0, createGarbage(12));
   b.set(3, 2, createBlock('red'));
@@ -382,7 +327,7 @@ test('盤面を短い文字にして送り、相手の画面で同じ盤面に�
 });
 
 test('相手の画面の写し（Game.mirror）は、置いた手と残りの手駒だけで、本物とまったく同じ盤面になる（連鎖・おじゃまを削るのも）', async () => {
-  const { packBoard, samePack, BattleSide: Side } = await import('../src/core/battle.js?v=202610091243');
+  const { packBoard, samePack, BattleSide: Side } = await import('../src/core/battle.js?v=202610091320');
   for (let seed = 1; seed <= 4; seed++) {
     const g = battleGame(100 + seed);
     const mirror = Game.mirror(rng(9));

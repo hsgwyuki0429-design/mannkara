@@ -1,18 +1,18 @@
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091243';
-import { dropPath } from './battle.js?v=202610091243';
-import { PieceGenerator, Piece, SHAPES, seededRandom, BATTLE_SHAPES } from './pieces.js?v=202610091243';
-import { ScoreManager } from './score.js?v=202610091243';
-import { nextActivation, lineMoves } from './mancala.js?v=202610091243';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610091243';
-import * as Sim from './sim.js?v=202610091243';
-import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610091243';
-import { bestMove } from './advisor.js?v=202610091243';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091320';
+import { edgeSpot, edgeOrder } from './battle.js?v=202610091320';
+import { PieceGenerator, Piece, SHAPES, seededRandom, BATTLE_SHAPES } from './pieces.js?v=202610091320';
+import { ScoreManager } from './score.js?v=202610091320';
+import { nextActivation, lineMoves } from './mancala.js?v=202610091320';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610091320';
+import * as Sim from './sim.js?v=202610091320';
+import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610091320';
+import { bestMove } from './advisor.js?v=202610091320';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202610091243';
+} from './constants.js?v=202610091320';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -181,45 +181,50 @@ export class Game {
   }
 
   /**
-   * 対戦: 送られてきたおじゃま items = [{ id, n }] を盤面に落とす（core/battle.js の dropPath。上から落ちて一番低いところに積もる）。
-   * 落ちたあと、トレイのどのピースも置けなければ詰み。{ landed: [{ block, x, r, path }], left: 入らなかった items, gameOver }
+   * 対戦: 送られてきたおじゃま items = [{ id, n }] を盤面に置く（core/battle.js の edgeSpot。一番外側の辺の空きマスに、真ん中から順に）。
+   * 置いたあと、トレイのどのピースも置けなければ詰み。{ landed: [{ block, x, r, n }], left: 置けなかった items, gameOver }
    */
   dropGarbage(items, random = this.generator.random) {
     const landed = [], left = [];
-    // 手駒の入る場所だけがたまたまふさがって負けにならないよう、手駒が置けるままの場所を先に選ぶ（battle.js の pickSpot）
-    const names = this.scripted ? [] : this.tray.filter(Boolean).map((p) => p.name);
-    const safety = names.length ? (spot) => {
-      const s = Sim.fromBoard(this.board);
-      s[spot.r * SIZE + spot.x] = Sim.GARBAGE_CELL;
-      if (solvable(s, names)) return 0;
-      return names.some((n) => Sim.fits(s, new Piece(n).cells)) ? 1 : 2;
-    } : null;
     for (const item of items) {
-      const spot = dropPath((x, r) => !!this.board.get(x, r), random, safety);
+      const spot = edgeSpot((x, r) => !!this.board.get(x, r), random);
       if (!spot) { left.push(item); continue; }
       const block = createGarbage(item.n, item.id);
       this.board.set(spot.x, spot.r, block);
-      landed.push({ block, x: spot.x, r: spot.r, n: block.garbage, path: spot.path });   // n = 落ちたときの数字（画面は後から再生するので、そのときの数字を残す）
+      landed.push({ block, x: spot.x, r: spot.r, n: block.garbage });   // n = 置かれたときの数字（画面は後から再生するので、そのときの数字を残す）
     }
     if (landed.length && !this.gameOver && !this.scripted && this.tray.some(Boolean) && !this.hasMove()) this.gameOver = true;
     this.chainCache = this.fitCache = null;
     return { landed, left, gameOver: this.gameOver };
   }
   /**
-   * 対戦: 自分が k 連鎖したので、盤面のおじゃまの数字を全部 k 減らす（0 になったら消える）。
-   * { changed: [{ block, x, r, n, from }], removed: [{ block, x, r, from }] }
+   * 対戦: 自分が k 連鎖したので、盤面のおじゃまを削る。**連鎖の 1 段ごとに、おじゃま 1 個だけ**を「−その段の数」（1 段目は −1、2 段目は −2 …）。
+   * 削る順番は置かれる順番と同じ（一番外側の辺から、真ん中から外へ）。おじゃまの数が連鎖の段より少なければ、残ったものを順番にもう一度。0 以下になったら消える。
+   * hits = 段ごとの記録 [{ step, damage, block, x, r, from, n, removed }]（n = そのあとの数字。画面が 1 段ずつ見せる）、
+   * changed / removed = このターンで数字が減った / 消えたものの、ターンの最初からの結果
    */
   chipGarbage(k) {
-    const changed = [], removed = [];
-    if (!(k > 0)) return { changed, removed };
-    for (const { block, x, r } of this.board.garbage()) {
+    const hits = [], changed = [], removed = [];
+    if (!(k > 0)) return { hits, changed, removed };
+    const at = new Map(this.board.garbage().map((g) => [g.x + ',' + g.r, g]));
+    const list = edgeOrder().map((c) => at.get(c.x + ',' + c.r)).filter(Boolean);
+    const first = new Map();                                    // block.id -> ターンの最初の数字
+    let idx = 0;
+    for (let step = 1; step <= k && list.length; step++) {
+      const i = idx % list.length, e = list[i], { block, x, r } = e;
       const from = block.garbage;
-      block.garbage = from - k;
-      if (block.garbage <= 0) { this.board.set(x, r, null); removed.push({ block, x, r, from }); }
-      else changed.push({ block, x, r, n: block.garbage, from });
+      first.has(block.id) || first.set(block.id, { e, from });
+      block.garbage = from - step;
+      const gone = block.garbage <= 0;
+      hits.push({ step, damage: step, block, x, r, from, n: Math.max(0, block.garbage), removed: gone });
+      if (gone) { this.board.set(x, r, null); list.splice(i, 1); idx = i; } else idx = i + 1;
+    }
+    for (const { e, from } of first.values()) {
+      if (e.block.garbage <= 0) removed.push({ block: e.block, x: e.x, r: e.r, from });
+      else changed.push({ block: e.block, x: e.x, r: e.r, n: e.block.garbage, from });
     }
     if (removed.length) this.chainCache = this.fitCache = null;
-    return { changed, removed };
+    return { hits, changed, removed };
   }
 
   canPlace(slot, ox, oy) {
