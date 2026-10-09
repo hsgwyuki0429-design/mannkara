@@ -5,7 +5,7 @@
  * （送ったのに返事が届かなかった分は、同じ seq のまま送り直す）。
  * 名前はかならず本人に決めてもらう（自動では付けない）。決めるまでは named が false で、送信もしない
  */
-import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610091214';
+import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610091243';
 
 /** 今のシーズン（サーバーの CURRENT_SEASON と同じ） */
 export const SEASON = 2;
