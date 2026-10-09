@@ -1,13 +1,13 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091446';
-import { Shards } from './shards.js?v=202610091446';
-import { Sparkles } from './sparkles.js?v=202610091446';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091446';
-import { Rims } from './rims.js?v=202610091446';
-import { colorOf } from './palette.js?v=202610091446';
-import { PLATE_SETS } from './ambient.js?v=202610091446';
-import { DROP_WARN_MS, DROP_GAP_MS, DROP_SLAM_MS, DROP_HOLD_MS } from '../core/battle.js?v=202610091446';
-import { glassElement, glassGroups } from './glass.js?v=202610091446';
+import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091500';
+import { Shards } from './shards.js?v=202610091500';
+import { Sparkles } from './sparkles.js?v=202610091500';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091500';
+import { Rims } from './rims.js?v=202610091500';
+import { colorOf } from './palette.js?v=202610091500';
+import { PLATE_SETS } from './ambient.js?v=202610091500';
+import { DROP_WARN_MS, DROP_GAP_MS, DROP_SLAM_MS, DROP_HOLD_MS } from '../core/battle.js?v=202610091500';
+import { glassElement, glassGroups } from './glass.js?v=202610091500';
 
 /** 連鎖数ごとの褒め言葉（段階が上がるほど派手な色）。[この連鎖から, 言葉, 段階] */
 export const PRAISE = [[8, 'Unbelievable!', 5], [6, 'Amazing!', 4], [4, 'Excellent!', 3], [3, 'Great!', 2], [2, 'Good!', 1]];
@@ -1123,10 +1123,20 @@ export class Renderer {
     const heavy = count >= 3 || sum >= 10;                         // たくさん・大きいおじゃま: 演出を一段強く
     // 警告（置かれる前の間）: 縁の赤い光・盤面の小さな揺れ・低い警告音
     this.garbageWarn(count, sum, heavy);
+    // 置かれる予定のマスに赤い枠（ルールの上ではもう置かれているので、そこへピースは置けない。警告の間はまだ見えていないので、枠で示す）
+    const marks = landed.map(({ x, r }) => {
+      const m = document.createElement('div');
+      m.className = 'cell oj-mark';
+      const p = this.pos(x, r);
+      m.style.transform = `translate(${p.x}px,${p.y}px)`;
+      this.fxLayer.appendChild(m);
+      return m;
+    });
     await this.wait(DROP_WARN_MS);
-    if (gen !== this.gen) return;
+    if (gen !== this.gen) { for (const m of marks) m.remove(); return; }
     const jobs = landed.map(({ block, x, r, n }, i) => (async () => {
       await this.wait(i * DROP_GAP_MS);
+      marks[i].remove();
       if (gen !== this.gen) return;
       const el = this.ensureEl(block);
       this.setGarbageNum(el, n ?? block.garbage);
