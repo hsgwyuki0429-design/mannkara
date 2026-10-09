@@ -639,6 +639,8 @@ body.battle .stage{width:92%;margin:0 auto;}                        /* 相手の
 @media (prefers-reduced-motion:reduce){.home-logo-mark{animation:none}}
 /* オンライン対戦: 相手を探している間 */
 .lobby{z-index:34;}
+/* ランキングはホーム（32）・対戦をさがす画面（34）の上から開く（ゲームオーバーの画面からも） */
+#rankOverlay{z-index:36;}
 .lobby-box{width:min(calc(100% - 40px),340px);padding:24px 18px 14px;border-radius:30px;border:1.5px solid rgba(160,196,255,.55);
   background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 38%),rgba(30,58,170,.6);box-shadow:0 18px 40px rgba(4,10,50,.4);}
 .lobby-box .over-title{margin-bottom:12px;font-size:20px;}

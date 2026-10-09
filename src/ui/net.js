@@ -8,7 +8,7 @@
  *     まだ届いたと言われていないものを新しい道で送り直す。重なって届いたものは捨てる）
  * 相手からのメッセージは onMessage(msg)。相手がいなくなったら onGone(reason)（'left' 出ていった / 'lost' 通信が途切れた）
  */
-import { apiBase } from './world.js?v=202610090639';
+import { apiBase } from './world.js?v=202610091030';
 
 export const PROTOCOL = 1;
 const ICE_SERVERS = [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }];
@@ -82,6 +82,7 @@ export class BattleNet {
 
   async waitFor({ room }) {
     this.room = room;
+    if (this.closed) { this.call({ op: 'leave', key: room.key }).catch(() => {}); return null; }   // 探している途中でやめた（できた部屋に人が入らないように）
     if (room.opponent) return room;
     this.onWaiting?.(room);
     while (!this.closed) {

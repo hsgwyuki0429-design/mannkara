@@ -1,11 +1,11 @@
-import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610090639';
-import { Game } from '../core/game.js?v=202610090639';
-import { Piece } from '../core/pieces.js?v=202610090639';
-import { createGarbage } from '../core/board.js?v=202610090639';
-import { SIZE, isInside } from '../core/constants.js?v=202610090639';
-import { MiniBoard, turnCost } from './mini-board.js?v=202610090639';
-import { TrayDealer } from './tray-dealer.js?v=202610090639';
-import { PROTOCOL } from './net.js?v=202610090639';
+import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091030';
+import { Game } from '../core/game.js?v=202610091030';
+import { Piece } from '../core/pieces.js?v=202610091030';
+import { createGarbage } from '../core/board.js?v=202610091030';
+import { SIZE, isInside } from '../core/constants.js?v=202610091030';
+import { MiniBoard, turnCost } from './mini-board.js?v=202610091030';
+import { TrayDealer } from './tray-dealer.js?v=202610091030';
+import { PROTOCOL } from './net.js?v=202610091030';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
@@ -221,7 +221,7 @@ export class Versus {
     if (this.opp) this.opp.tick();
     if (this.cpu) this.cpuTick();
     this.renderPend();
-    const el = now - this.goAt, s = Math.floor(el / 1000);
+    const el = Math.max(0, now - this.goAt), s = Math.floor(el / 1000);   // GO! の直前に読んだ時刻だと負になる（-1:-1 と出ないように）
     const txt = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
     if (this.$('vsTimer').textContent !== txt) this.$('vsTimer').textContent = txt;
     const m = this.$('vsMargin'), blocks = marginBlocks(el);
@@ -477,16 +477,17 @@ export class Versus {
     this.api.lock(true);
     if (this.cpu) this.cpuSeq = (this.cpuSeq ?? 0) + 1;
     const $ = this.$;
-    const win = result === 'win' || result === 'gone';
-    if (result === 'win' || result === 'gone') this.series.me++;
+    // 始まる前に相手がいなくなったときは、勝ちにしない（戦績・連勝の数にも入れない）
+    const win = result === 'win' || (result === 'gone' && this.started);
+    if (win) this.series.me++;
     else if (result === 'lose') this.series.opp++;
-    if (result === 'win' || result === 'lose' || result === 'gone') saveRecord(this.kind, this.level, win ? 'win' : 'lose');
-    const big = { win: 'WIN!', lose: 'LOSE…', draw: 'DRAW', gone: 'WIN!', version: '—' }[result];
+    if (win || result === 'lose') saveRecord(this.kind, this.level, win ? 'win' : 'lose');
+    const big = { win: 'WIN!', lose: 'LOSE…', draw: 'DRAW', gone: win ? 'WIN!' : '—', version: '—' }[result];
     const title = { win: 'あなたの勝ち！', lose: '置ける場所がない！', draw: '引き分け', version: 'バージョンがちがいます',
       gone: this.netGone === 'left' ? '相手が対戦をやめました' : '相手との通信が切れました' }[result];
     $('vsResTitle').textContent = title;
     $('vsResBig').textContent = big;
-    $('vsResBig').className = `vs-res-big ${result}`;
+    $('vsResBig').className = `vs-res-big ${result === 'gone' && !win ? 'version' : result}`;
     $('vsResVs').textContent = `vs ${this.oppName}${this.kind === 'cpu' || this.rated ? `（${this.oppTag}）` : ''}`;
     $('vsResSeries').textContent = `${this.series.me} - ${this.series.opp}`;
     $('vsResSeries').classList.toggle('hidden', !!this.rated);
