@@ -1,33 +1,29 @@
-import { SIZE, ANIM, isInside } from './constants.js?v=202610091434';
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091434';
+import { SIZE, ANIM, isInside } from './constants.js?v=202610091446';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091446';
 
 /**
  * 対戦（ぷよぷよのような、連鎖で相手におじゃまを送り合う遊び方）のルール。DOM 非依存。
  *
- * - 連鎖すると、連鎖の数を書いた 1×1 の「おじゃまブロック」が相手へ飛ぶ（ATTACK_MIN_CHAIN 連鎖から。1 連鎖では送らない。
- *   ぷよぷよでも、小さな消し方ではおじゃまは送られない）。全消しは ALL_CLEAR_ATTACK を足す（ぷよぷよの全消しボーナス）
- * - 送られたおじゃまは、まず盤面の上に「予告」として並ぶ。相手の連鎖が終わるまでは落ちてこない
- * - 相手の連鎖が終わったら、すぐ落ちてくる。そのとき自分が連鎖している（再生中）なら、その連鎖が終わったらすぐ落ちてくる（busy）。
- *   1 回に落ちるのは DROP_MAX 個まで（残りは、その落ちる動きが終わったらすぐ）。
+ * - 連鎖すると、連鎖の数を書いた 1×1 の「おじゃまブロック」が相手へ飛ぶ（ATTACK_MIN_CHAIN = 1 連鎖から。1 連鎖なら数字 1）。全消しは ALL_CLEAR_ATTACK を足す
+ * - 相手の連鎖が終わったら、すぐ盤面に置かれる。そのとき自分が連鎖している（再生中）なら、その連鎖が終わったらすぐ（busy）。1 回に置かれる個数に上限は無い。
+ *   予告（まだ置かれていないおじゃまを盤面の上に並べる）は画面には出さない。相殺もしない（OFFSET_PENDING）。
  *   対戦では、連鎖の再生が終わるまで次のピースは置けない（画面側）ので、盤面のルールと見えている盤面はいつもそろっている
- * - 自分が連鎖すると、盤面のおじゃまの数字が全部、連鎖の数だけ減る（0 になったら消える。Game.placePiece）。送るおじゃまは減らない（両方起きる）。
- *   予告のおじゃまは削らない（OFFSET_PENDING。ぷよぷよの相殺と同じことを 2 通りでするのは分かりにくく、シミュレーションでは決着もつかなかった）
- * - おじゃまは、三角の盤面の一番外側の辺（直角をはさむ 2 辺）の空きマスに、真ん中から順に置かれる（上にブロックがあっても関係ない）。
+ * - 自分が連鎖すると、連鎖の数ぶんの合計が、外側のおじゃま 1 個から順に当たる（5 連鎖なら合計 −5。Game.chipGarbage・chipOrder）。送るおじゃまは減らない（両方起きる）
+ * - おじゃまは、三角の盤面の一番外側の辺（直角をはさむ 2 辺）の空きマスに、真ん中（角）から外へ置かれる（上にブロックがあっても関係ない）。
  *   外側の辺が埋まったら（おじゃまかブロックだけになったら）次の辺へ（edgeSpot）
  * - おじゃまは動かない・その上には置けない・入っているラインは満杯にならない（発動しない）
  * - 置けるピースが無くなったほうの負け。長引いたら（MARGIN_MS から）1 回に送るおじゃまの個数が増えていく（ぷよぷよのマージンタイム）
  */
-export const ATTACK_MIN_CHAIN = 2;
+export const ATTACK_MIN_CHAIN = 1;
 /** 自分の連鎖で、まだ落ちていない予告のおじゃまも削るか（ぷよぷよの相殺） */
 export const OFFSET_PENDING = false;
 export const ALL_CLEAR_ATTACK = 5;
 /** 対戦の連鎖の再生の速さ（CPU・オンラインとも。ふつうの再生を 1 とした倍率。画面・相手の盤面・シミュレーションが同じ数を使う） */
 export const BATTLE_SPEED = 1.8;
-export const DROP_MAX = 5;
 /**
  * マージンタイム（ぷよぷよと同じく、長引いたら送るおじゃまが増える）: MARGIN_MS を過ぎると、1 回の攻撃で送るおじゃまが 2 個になり、
  * そこから MARGIN_STEP_MS ごとに 1 個ずつ増える（MARGIN_MAX 個まで。どれにも同じ連鎖の数を書く）。
- * 連鎖のたびに盤面のおじゃまが全部削れるので、数字を大きくするより、個数を増やすほうが盤面が埋まっていく
+ * 個数が増えた瞬間は、画面にそれを示す（versus.js。「おじゃま ×2」と、何分何秒を過ぎたか）。marginStartOf(n) = 個数が n 個になる時刻
  */
 export let MARGIN_MS = 90000;
 export let MARGIN_STEP_MS = 20000;
@@ -41,6 +37,9 @@ export function tuneMargin({ start, step, max } = {}) {
 /** 対戦の手駒の決め方（遊んでいる人の出来には合わせず、決まった確率） */
 export const BATTLE_TIGHT_RATE = 0.03;
 export const BATTLE_ALL_CLEAR_RATE = 0.12;
+
+/** 1 回の攻撃で送るおじゃまの個数が n 個（2 以上）になる時刻（対戦が始まってからの ms） */
+export const marginStartOf = (n) => MARGIN_MS + Math.max(0, n - 2) * MARGIN_STEP_MS;
 
 /** 1 回の攻撃で送るおじゃまの個数（elapsed = 対戦が始まってからの ms） */
 export function marginBlocks(elapsed) {
@@ -157,7 +156,7 @@ export class GarbageQueue {
   /** 落ちてよい（相手の連鎖が終わった）もの */
   ready(now) { return this.items.filter((g) => g.readyAt <= now); }
   /** 落ちてよいものを古い順に max 個まで取り出す */
-  take(now, max = DROP_MAX) {
+  take(now, max = Infinity) {
     const out = this.ready(now).slice(0, max);
     const ids = new Set(out.map((g) => g.id));
     this.items = this.items.filter((g) => !ids.has(g.id));
@@ -229,7 +228,7 @@ export class BattleSide {
   }
   tick() {
     if (!this.shouldDrop()) return null;
-    const items = this.queue.take(this.now(), DROP_MAX);
+    const items = this.queue.take(this.now());
     const res = this.game.dropGarbage(items, this.random);
     if (res.left.length) this.queue.putBack(res.left);
     if (!res.landed.length && res.left.length) {

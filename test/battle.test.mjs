@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610091434';
-import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610091434';
-import * as Sim from '../src/core/sim.js?v=202610091434';
-import { Game } from '../src/core/game.js?v=202610091434';
-import { Piece, seededRandom, seedOf } from '../src/core/pieces.js?v=202610091434';
-import { DealerCore } from '../src/core/dealer.js?v=202610091434';
-import { bestMove, evaluate } from '../src/core/advisor.js?v=202610091434';
-import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610091434';
+import { Board, createBlock, createGarbage, isGarbage } from '../src/core/board.js?v=202610091446';
+import { resolveChains, resolveLine } from '../src/core/mancala.js?v=202610091446';
+import * as Sim from '../src/core/sim.js?v=202610091446';
+import { Game } from '../src/core/game.js?v=202610091446';
+import { Piece, seededRandom, seedOf } from '../src/core/pieces.js?v=202610091446';
+import { DealerCore } from '../src/core/dealer.js?v=202610091446';
+import { bestMove, evaluate } from '../src/core/advisor.js?v=202610091446';
+import { lineCells, isInside, SIZE } from '../src/core/constants.js?v=202610091446';
 import {
   attackFor, marginBlocks, edgeOrder, chipOrder, edgeSpot, GarbageQueue, BattleSide, playDuration, ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK,
-  MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, DROP_MAX,
-} from '../src/core/battle.js?v=202610091434';
+  MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, marginStartOf,
+} from '../src/core/battle.js?v=202610091446';
 
 const rng = (seed) => () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const setLine = (b, kind, n, bits) => lineCells(kind, n).forEach(({ x, r }, k) => {
@@ -100,13 +100,14 @@ test('連鎖のスナップショットにおじゃまは入らない（動か�
   assert.equal(b.garbage().length, 1);
 });
 
-test('攻撃: 2 連鎖から、連鎖の数を書いたおじゃまを 1 個。全消しは +5。マージンタイムで個数が増える', () => {
-  assert.equal(ATTACK_MIN_CHAIN, 2);
-  assert.equal(attackFor(0), 0);
-  assert.equal(attackFor(1), 0);
+test('攻撃: 1 連鎖から、連鎖の数を書いたおじゃまを 1 個（1 連鎖なら数字 1）。全消しは +5。マージンタイムで個数が増える', () => {
+  assert.equal(ATTACK_MIN_CHAIN, 1);
+  assert.equal(attackFor(0), 0, '連鎖していなければ送らない');
+  assert.equal(attackFor(1), 1, '1 連鎖でも、数字 1 のおじゃまを送る');
   assert.equal(attackFor(2), 2);
   assert.equal(attackFor(5), 5);
-  assert.equal(attackFor(1, true), ALL_CLEAR_ATTACK);
+  assert.equal(attackFor(1, true), 1 + ALL_CLEAR_ATTACK);
+  assert.equal(attackFor(0, true), ALL_CLEAR_ATTACK);
   assert.equal(attackFor(3, true), 3 + ALL_CLEAR_ATTACK);
   assert.equal(marginBlocks(0), 1);
   assert.equal(marginBlocks(MARGIN_MS - 1), 1);
@@ -304,13 +305,29 @@ test('相殺（予告も削る）を使うときは、置いた瞬間に予告�
   assert.equal(turn.offset.removed.length, 1);
 });
 
-test('BattleSide: 1 回に落ちるのは DROP_MAX 個まで（残りは次）', () => {
+test('BattleSide: 1 回に置かれる個数に上限は無い（届いて準備ができたものは全部いっぺんに）', () => {
   let t = 0;
   const g = battleGame(17);
   const side = new BattleSide({ game: g, now: () => t });
-  for (let i = 0; i < DROP_MAX + 2; i++) side.receive({ id: 'x' + i, n: 3, readyIn: 0 });
-  assert.equal(side.tick().landed.length, DROP_MAX);
-  assert.equal(side.queue.items.length, 2);
+  for (let i = 0; i < 12; i++) side.receive({ id: 'x' + i, n: 3, readyIn: 0 });
+  assert.equal(side.tick().landed.length, 12);
+  assert.equal(side.queue.items.length, 0);
+});
+
+test('BattleSide: 1 連鎖でも数字 1 のおじゃまを送る', () => {
+  const sent = [];
+  const side = new BattleSide({ game: battleGame(19), now: () => 0, hooks: { send: (a) => sent.push(a) } });
+  assert.equal(side.placed({ steps: [{}] }, 300), 1);
+  assert.deepEqual(sent.map((a) => [a.n, a.count]), [[1, 1]]);
+  assert.equal(side.placed({ steps: [] }, 0), 0, '連鎖しなければ送らない');
+});
+
+test('マージンタイム: 個数が n 個になる時刻', () => {
+  assert.equal(marginStartOf(2), MARGIN_MS);
+  assert.equal(marginStartOf(3), MARGIN_MS + MARGIN_STEP_MS);
+  assert.equal(marginStartOf(MARGIN_MAX), MARGIN_MS + (MARGIN_MAX - 2) * MARGIN_STEP_MS);
+  assert.equal(marginBlocks(marginStartOf(4) - 1), 3);
+  assert.equal(marginBlocks(marginStartOf(4)), 4);
 });
 
 test('BattleSide: 落ちて置けなくなったら負け', () => {
@@ -338,7 +355,7 @@ test('連鎖の再生時間の見積もり（相手の画面で、その連鎖�
 });
 
 test('盤面を短い文字にして送り、相手の画面で同じ盤面に戻せる（おじゃまの数字も）', async () => {
-  const { packBoard, unpackBoard, samePack } = await import('../src/core/battle.js?v=202610091434');
+  const { packBoard, unpackBoard, samePack } = await import('../src/core/battle.js?v=202610091446');
   const b = new Board();
   b.set(0, 0, createGarbage(12));
   b.set(3, 2, createBlock('red'));
@@ -354,7 +371,7 @@ test('盤面を短い文字にして送り、相手の画面で同じ盤面に�
 });
 
 test('相手の画面の写し（Game.mirror）は、置いた手と残りの手駒だけで、本物とまったく同じ盤面になる（連鎖・おじゃまを削るのも）', async () => {
-  const { packBoard, samePack, BattleSide: Side } = await import('../src/core/battle.js?v=202610091434');
+  const { packBoard, samePack, BattleSide: Side } = await import('../src/core/battle.js?v=202610091446');
   for (let seed = 1; seed <= 4; seed++) {
     const g = battleGame(100 + seed);
     const mirror = Game.mirror(rng(9));
