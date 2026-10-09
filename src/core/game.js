@@ -1,23 +1,23 @@
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091030';
-import { dropPath } from './battle.js?v=202610091030';
-import { PieceGenerator, Piece, SHAPES } from './pieces.js?v=202610091030';
-import { ScoreManager } from './score.js?v=202610091030';
-import { nextActivation, lineMoves } from './mancala.js?v=202610091030';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610091030';
-import * as Sim from './sim.js?v=202610091030';
-import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610091030';
-import { bestMove } from './advisor.js?v=202610091030';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091103';
+import { dropPath } from './battle.js?v=202610091103';
+import { PieceGenerator, Piece, SHAPES, seededRandom, BATTLE_SHAPES } from './pieces.js?v=202610091103';
+import { ScoreManager } from './score.js?v=202610091103';
+import { nextActivation, lineMoves } from './mancala.js?v=202610091103';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610091103';
+import * as Sim from './sim.js?v=202610091103';
+import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610091103';
+import { bestMove } from './advisor.js?v=202610091103';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202610091030';
+} from './constants.js?v=202610091103';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
  * 流れ: 置く → 満杯のライン(縦/横)のうち最小番号を1本発動、を発動が無くなるまで繰り返す
- *       → スコア確定 → トレイ補充（3つ使い切ったら）→ ゲームオーバー判定
+ *       → スコア確定 → トレイ補充（3つ使い切ったら。対戦は使った枠にすぐ）→ ゲームオーバー判定
  */
 const now = () => (globalThis.performance?.now?.() ?? Date.now());
 
@@ -28,11 +28,12 @@ export class Game {
    * 置いたピースの表示も連鎖の再生も止まるので、画面では別スレッドに任せる。決め方のコードは同じ（dealer.js が
    * このクラスの spawnTray をそのまま使う）。無ければ今までどおり、このスレッドで同期的に決める（テストなど）
    */
-  constructor({ random = Math.random, hooks = {}, dealer = null } = {}) {
+  constructor({ random = Math.random, hooks = {}, dealer = null, battle = null } = {}) {
     this.generator = new PieceGenerator(random);
     this.hooks = hooks;
     this.dealer = dealer;
     this.dealSeq = 0;             // 新しいゲームにするたびに増やす（前のゲームの手駒が後から届いても使わない）
+    if (battle) this.setBattle(true, battle.rates ?? null, battle);    // 対戦（battle = { rates, seed }）。最初の手駒から対戦の出し方で
     this.reset();
   }
 
@@ -66,7 +67,13 @@ export class Game {
     this.resetDealing();
     this.dealerState = null;      // dealer（別スレッド）が持っている手駒の決め方の状態の写し（途中から再開用）
     this.dealSeq++;
-    if (this.dealer) {
+    this.stream = null;
+    if (this.pieceSeed != null) {
+      // 対戦: 種から決まる順番で 1 つずつ出す（2 人とも同じ種なので、同じ順番の手駒になる）。使った枠には、すぐ次が入る
+      this.stream = new PieceGenerator(seededRandom(this.pieceSeed), BATTLE_SHAPES);
+      this.tray = this.stream.spawnTray(TRAY_SIZE);
+      this.trayReady = null;
+    } else if (this.dealer) {
       // 最初の手駒も別スレッドで決める（決まるまでトレイは空。届いたら hooks.onTray）
       this.dealer.reset();
       this.tray = new Array(TRAY_SIZE).fill(null);
@@ -75,10 +82,14 @@ export class Game {
     this.gameOver = false;
     this.scripted = false;         // チュートリアル中（置いた手駒を補充しない・詰みを判定しない。盤面と手駒は画面側が決める）
   }
-  /** 対戦のルール（連鎖でおじゃまを削る）を使うか。手駒の決め方は出来に合わせず、決まった確率 */
-  setBattle(on, rates = null) {
+  /**
+   * 対戦のルール（連鎖でおじゃまを削る）を使うか。手駒の決め方は出来に合わせず、決まった確率。
+   * seed を渡すと、手駒は種から決まる順番で 1 つずつ出し、使った枠にすぐ次を入れる（2 人に同じ順番の手駒。次の reset から）
+   */
+  setBattle(on, rates = null, { seed = null } = {}) {
     this.battle = !!on;
     this.fixedRates = on ? rates : null;
+    this.pieceSeed = on && seed != null ? seed >>> 0 : null;
   }
 
   /** 手駒の決め方の状態（全消しの計画・ループの判定の履歴など）を最初に戻す */
@@ -247,7 +258,10 @@ export class Game {
     const allClearBonus = allClear ? this.score.addAllClear() : 0;
 
     let refilled = false, trayReady = null;
-    if (this.tray.every((p) => !p) && !this.scripted) {
+    if (this.stream && !this.scripted) {
+      this.tray[slot] = this.stream.next();                    // 対戦: 使った枠に、すぐ次の手駒（連鎖を決めたあとに入れる。相手の画面も同じ順で再現できる）
+      refilled = true;
+    } else if (this.tray.every((p) => !p) && !this.scripted) {
       this.planTray = null;
       if (this.dealer) trayReady = this.dealAsync(false);     // 別スレッドで決める（詰みの判定は届いてから）
       else this.tray = this.spawnTray();
@@ -256,7 +270,7 @@ export class Game {
     if (!trayReady && !this.scripted && !this.hasMove()) this.gameOver = true;
 
     const turn = {
-      slot, piece, ox, oy, rest, placed, steps, refilled, scoreAfterPlace, fit, rect, fitBonus,
+      slot, piece, ox, oy, rest, placed, steps, refilled, refillSlot: this.stream && refilled ? slot : null, scoreAfterPlace, fit, rect, fitBonus,
       allClear, allClearBonus, chip,
       score: this.score.score, streak: this.score.streak, boostTurns: this.score.boostTurns, gameOver: this.gameOver,
     };

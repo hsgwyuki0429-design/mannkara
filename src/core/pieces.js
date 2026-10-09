@@ -62,6 +62,31 @@ export class Piece {
   get size() { return this.cells.length; }
 }
 
+/** 種（seed）から決まる乱数（mulberry32。0 以上 1 未満）。対戦で、2 人に同じ順番の手駒を出すのに使う */
+export function seededRandom(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/** 文字列から種を作る（オンライン対戦: 部屋の id と何戦目か。2 人とも同じ種になる） */
+export function seedOf(text) {
+  let h = 2166136261;
+  for (const c of String(text)) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/**
+ * 対戦の手駒の出やすさ（種類ごとに掛ける）。対戦は使った枠にすぐ次が入るので、置きにくい大きな形は枠に残りつづけて詰まりやすい。
+ * 大きな形を少なめにする（CPU 同士のシミュレーション scripts/sim-battle.mjs で、ふだんの手駒の決め方と同じくらいの長さになるように）
+ */
+export const BATTLE_TYPE_SCALE = { O3: 0, V5: 0.3, X: 0.3, R: 0.5, I5: 0.5, W: 0.5 };
+export const BATTLE_SHAPES = SHAPES.map((s) => ({ ...s, weight: s.weight * (BATTLE_TYPE_SCALE[s.type] ?? 1) })).filter((s) => s.weight > 0);
+
 /** 手駒生成（独立。重みや袋方式へ差し替えやすい） */
 export class PieceGenerator {
   constructor(random = Math.random, shapes = SHAPES) {

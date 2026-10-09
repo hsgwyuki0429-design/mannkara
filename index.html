@@ -38,8 +38,8 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202610091030" />
-<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091030" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202610091103" />
+<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091103" />
 </head>
 <body>
 <div id="app">
@@ -318,13 +318,14 @@
     <p class="over-title">対戦のルール</p>
     <ul class="rules-list">
       <li><b>2連鎖</b>以上すると、連鎖の数を書いた<b>おじゃま</b>が相手へ飛んでいきます</li>
-      <li>おじゃまは、相手の連鎖が終わってから、自分が次に置いたあとに<b>上から落ちてきて</b>、盤面の一番下に積もります</li>
+      <li>自分と相手には、<b>同じ順番</b>でピースが出ます。使った枠には<b>すぐ次のピース</b>が入ります</li>
+      <li>おじゃまは、相手の連鎖が終わったら<b>すぐ上から落ちてきて</b>、盤面の一番下に積もります（自分が連鎖しているときは、その連鎖が終わったらすぐ）</li>
       <li>おじゃまの上には置けず、おじゃまが入ったラインは<b>満杯になりません</b></li>
       <li>自分が連鎖すると、盤面のおじゃまの数字が<b>連鎖の数だけ減り</b>、0 になると消えます</li>
       <li>全消しすると、送るおじゃまが <b>+5</b></li>
       <li>1分30秒を過ぎると、1回に送るおじゃまの数が<b>だんだん増えます</b></li>
       <li>置ける場所がなくなったほうの負け</li>
-      <li>オンライン対戦では、連鎖はいつも速く再生され、<b>連鎖のあいだは次のピースを置けません</b>（おじゃまが順番どおりに届くように）</li>
+      <li>連鎖はいつも速く再生され、<b>連鎖のあいだは次のピースを持てません</b>（連鎖が終わってから置きます）</li>
       <li><b>レート戦</b>は 1000 から。勝つと増え、負けると同じだけ減ります（2人の増減を足すと 0）。途中でやめると負けです</li>
     </ul>
     <button id="vsRulesClose" class="primary">とじる</button>
@@ -374,6 +375,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202610091030"></script>
+<script type="module" src="./src/ui/main.js?v=202610091103"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
-import { SIZE, ANIM, isInside, lineCells } from '../core/constants.js?v=202610091030';
-import { ROTATION } from './renderer.js?v=202610091030';
-import { stepCells } from '../core/battle.js?v=202610091030';
+import { SIZE, ANIM, isInside, lineCells } from '../core/constants.js?v=202610091103';
+import { ROTATION } from './renderer.js?v=202610091103';
+import { stepCells } from '../core/battle.js?v=202610091103';
 
 /**
  * 対戦で、相手の盤面を小さく映す（画面の右上）。盤面と同じ向き（直角が下の三角形）・同じブロックの塗り（.block c-色。盤面の種類の見た目もそのまま）。

@@ -1,11 +1,11 @@
-import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091030';
-import { Game } from '../core/game.js?v=202610091030';
-import { Piece } from '../core/pieces.js?v=202610091030';
-import { createGarbage } from '../core/board.js?v=202610091030';
-import { SIZE, isInside } from '../core/constants.js?v=202610091030';
-import { MiniBoard, turnCost } from './mini-board.js?v=202610091030';
-import { TrayDealer } from './tray-dealer.js?v=202610091030';
-import { PROTOCOL } from './net.js?v=202610091030';
+import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091103';
+import { Game } from '../core/game.js?v=202610091103';
+import { Piece, seedOf } from '../core/pieces.js?v=202610091103';
+import { createGarbage } from '../core/board.js?v=202610091103';
+import { SIZE, isInside } from '../core/constants.js?v=202610091103';
+import { MiniBoard, turnCost } from './mini-board.js?v=202610091103';
+import { TrayDealer } from './tray-dealer.js?v=202610091103';
+import { PROTOCOL } from './net.js?v=202610091103';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
@@ -22,8 +22,8 @@ export const CPU_LEVELS = {
   hard: { name: 'つよい', think: [1000, 1700], best: 1, spread: 0, budget: 60 },
 };
 const RECORD_KEY = 'blockmancala-versus';
-/** オンライン対戦の連鎖の再生の速さ（main.js の ONLINE_SPEED と同じ。ピースを持っているときの速さ） */
-const ONLINE_SPEED = 3;
+/** 対戦の連鎖の再生の速さ（main.js の BATTLE_SPEED と同じ。ピースを持っているときの速さ。CPU 対戦も同じ） */
+const BATTLE_SPEED = 3;
 const COUNT_MS = 800;              // カウントダウンの 1 つぶん
 const PEND_SHOW = 6;               // 予告に並べる数（それより多いと +n）
 
@@ -76,7 +76,7 @@ export class Versus {
     this.oppName = 'CPU'; this.oppTag = CPU_LEVELS[L].name;
     if (!same) this.series = { me: 0, opp: 0 };
     this.cpuDealer ??= new TrayDealer(this.api.workerUrl);
-    this.mini.base = 1;
+    this.mini.base = BATTLE_SPEED;                 // CPU の連鎖も、自分と同じ速さで
     this.begin();
   }
 
@@ -88,10 +88,11 @@ export class Versus {
     this.series = { me: 0, opp: 0 };
     this.helloSeen = false; this.startSent = false;
     this.rematchMe = false; this.rematchOpp = false;
+    this.round = 0;                                // 何戦目か（手駒の順番を決める種に使う。2 人とも同じ）
     net.onMessage = (m) => this.onNet(m);
     net.onGone = (reason) => this.onGone(reason);
     net.onTransport = (t) => { this.transport = t; };
-    this.mini.base = ONLINE_SPEED;                 // 相手の連鎖も、相手の画面と同じ速さで
+    this.mini.base = BATTLE_SPEED;                 // 相手の連鎖も、相手の画面と同じ速さで
     this.begin();
     this.waitText();
     net.send({ t: 'hello', name: this.api.myName(), v: PROTOCOL, rate: rated ? net.rate : undefined });
@@ -107,6 +108,8 @@ export class Versus {
     this.ended = false;
     this.started = false;
     this.myOverAt = null; this.oppOverAt = null;
+    // 手駒の順番を決める種（自分と相手で同じ順番の手駒が出る）。オンラインは部屋と何戦目かから、2 人とも同じ種を作る
+    this.seed = this.kind === 'cpu' ? Math.floor(Math.random() * 2 ** 32) : seedOf(`${this.room?.id}:${this.round ?? 0}`);
     $('vsResult').classList.add('hidden');
     $('vsWaitNote').classList.add('hidden');
     $('vsMeName').textContent = api.myName() || 'YOU';
@@ -129,16 +132,15 @@ export class Versus {
 
   makeSides() {
     const api = this.api;
-    const me = this.me = new BattleSide({ game: api.game, now: () => this.clock.now(), idPrefix: 'm', hooks: {
+    const me = this.me = new BattleSide({ game: api.game, now: () => this.clock.now(), idPrefix: 'm', busy: () => api.busy(), hooks: {
       send: (atk) => this.sendAttack(atk),
       drop: (res) => this.myDrop(res),
       pending: () => this.myPendingChanged(),
     } });
     me.over = false;
     if (this.kind === 'cpu') {
-      const g = this.cpu = new Game({ dealer: this.cpuDealer, hooks: {} });
-      g.setBattle(true, BATTLE_RATES);
-      this.opp = new BattleSide({ game: g, now: () => this.clock.now(), idPrefix: 'c', hooks: {
+      const g = this.cpu = new Game({ hooks: {}, battle: { rates: BATTLE_RATES, seed: this.seed } });   // 自分と同じ種 = 同じ順番の手駒
+      this.opp = new BattleSide({ game: g, now: () => this.clock.now(), idPrefix: 'c', busy: () => this.mini.playLeft() > 0, hooks: {
         send: (atk) => this.incoming(atk),
         drop: (res) => this.mini.playDrop(res.landed),
         pending: () => this.renderPend(),
@@ -193,7 +195,6 @@ export class Versus {
     this.goAt = this.clock.now();
     this.me.startAt = this.goAt;
     if (this.opp) this.opp.startAt = this.goAt;
-    this.me.placedAt = -Infinity;
     this.api.lock(false);
     if (this.cpu) this.cpuNextAt = this.goAt + this.thinkTime() * 0.6;
   }
@@ -365,8 +366,10 @@ export class Versus {
   }
   cpuTick() {
     const g = this.cpu, now = this.clock.now();
-    if (this.cpuBusy || g.gameOver || this.opp.over || now < this.cpuNextAt || !g.tray.some(Boolean)) return;
-    if (this.mini.playLeft() > 2500) return;                    // 自分の連鎖を少し見てから
+    if (this.cpuBusy || g.gameOver || this.opp.over || !g.tray.some(Boolean)) return;
+    // 対戦では連鎖の再生が終わるまで置けない（自分と同じルール）。終わってから少し考えて置く
+    if (this.mini.playLeft() > 0) { this.cpuNextAt = Math.max(this.cpuNextAt, now + this.thinkTime() * 0.4); return; }
+    if (now < this.cpuNextAt) return;
     this.cpuBusy = true;
     const L = CPU_LEVELS[this.level];
     const { cells, garbage } = g.cellLists();
@@ -386,10 +389,10 @@ export class Versus {
       const turn = g.placePiece(m.slot, m.ox, m.oy);
       if (!turn) { this.cpuNextAt = this.clock.now() + 300; return; }   // そのあいだにおじゃまが落ちて置けなくなった
       turn.rest = rest;
-      const readyIn = this.mini.playLeft() + turnCost(turn);
+      const readyIn = this.mini.playLeft() + turnCost(turn) / this.mini.base;
       this.opp.placed(turn, readyIn);
       this.mini.playTurn(turn);
-      this.cpuNextAt = this.clock.now() + this.thinkTime() + (turn.steps.length ? turnCost(turn) * 0.5 : 0);
+      this.cpuNextAt = this.clock.now() + this.thinkTime();
       const lost = () => { if (g === this.cpu && g.gameOver) this.opp.lose(); };
       if (turn.trayReady) turn.trayReady.then(lost); else lost();
     }).catch((e) => { console.error(e); this.cpuBusy = false; });
@@ -545,6 +548,7 @@ export class Versus {
     this.rematchMe = this.rematchOpp = false;
     const series = this.series;
     this.helloSeen = true; this.startSent = false;
+    this.round = (this.round ?? 0) + 1;            // 2 人とも同じだけ数える（手駒の順番の種）
     this.begin();
     this.waitText();
     this.series = series;
