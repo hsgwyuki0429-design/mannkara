@@ -1023,7 +1023,7 @@ console.log('世界ランキングの API（functions/api/ranking.js）');
   const id = 'a'.repeat(32);
   eq(api.cleanRun({ id, name: 'x', score: 10, chain: 2 }), { id, name: 'x', score: 10 }, '記録: スコアと名前だけ受け取る');
   eq([api.cleanRun({ id: 'zz', name: 'x', score: 1 }), api.cleanRun({ id, name: 'x', score: 1.5 }),
-    api.cleanRun({ id, name: 'x', score: -1 }), api.cleanRun({ id, name: 'x', score: 1e9 }), api.cleanRun({ id, name: '', score: 1 })],
+    api.cleanRun({ id, name: 'x', score: -1 }), api.cleanRun({ id, name: 'x', score: Number.MAX_SAFE_INTEGER + 2 }), api.cleanRun({ id, name: '', score: 1 })],
     [null, null, null, null, null], '記録: おかしな id・小数・負・ありえない点・名前なしははねる');
   // D1 の代わりに node:sqlite（使えない Node では飛ばす）
   let sqlite = null;

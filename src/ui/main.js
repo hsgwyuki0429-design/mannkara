@@ -20,8 +20,13 @@ import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610062316';
 import { softwareRendering } from './fx2d.js?v=202610062316';
 import { useSprites } from './shards.js?v=202610062316';
 import { chainTouchesPlacement } from './chain-overlap.js?v=202610062316';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610062316';
+import { BattleNet } from './net.js?v=202610062316';
 
 const $ = (id) => document.getElementById(id);
+/** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
+let versus = null;
+let inputLocked = false;
 let boardTheme = readBoardTheme();
 document.documentElement.dataset.boardTheme = boardTheme;
 const themeColor = (t) => (t === 'glass' ? GLASS_BACKGROUND : t === '3d' ? CUBE_BACKGROUND : t === 'white' ? WHITE_BACKGROUND : '#3a6adf');
@@ -80,7 +85,10 @@ function loadRanking() {
 loadBest();
 /** チュートリアル中なら { i: ステップ, placed: 置いた（次のステップを待っている） }。チュートリアルの点数・盤面は残さない */
 let tutorial = null;
+/** 対戦中か（対戦ではベストスコア・記録・ランキング・途中の保存・学習モードのおすすめを使わない） */
+const inBattle = () => !!versus?.active;
 function saveBest() {
+  if (inBattle()) return false;
   saveRecords();
   if (tutorial || game.score.score <= best) return false;
   best = game.score.score;
@@ -93,7 +101,7 @@ let runRecorded = false;
 const world = new World();
 world.flush();                                     // 前に送れなかった記録があれば送る
 function recordRun() {
-  if (runRecorded || tutorial || game.score.score <= 0) return null;
+  if (runRecorded || tutorial || inBattle() || game.score.score <= 0) return null;
   runRecorded = true;
   const run = { score: game.score.score, at: Date.now() };
   recent = [run.score, ...recent].slice(0, RECENT_GAMES);
@@ -108,6 +116,7 @@ function recordRun() {
 
 /** このゲームの最大連鎖・最大コンボを記録に残す。更新した方を返す（チュートリアルでは残さない） */
 function saveRecords() {
+  if (inBattle()) return { chain: false, combo: false };
   const { bestChain, bestStreak } = game.score;
   const up = { chain: !tutorial && bestChain > records.chain, combo: !tutorial && bestStreak > records.combo };
   if (!up.chain && !up.combo) return up;
@@ -250,6 +259,7 @@ const game = new Game({
       playback.set(turn.seq, { turn, next: 0 });
       playLeft += turnPlayCost(turn);
       startPlayTick();
+      if (inBattle()) versus.onLocalTurn(turn, playLeft);          // 対戦: 連鎖していれば相手へおじゃまを送る（届くのは、この再生が終わるころ）
       const gen = generation;
       enqueue(() => playTurn(turn)).finally(() => {
         if (gen !== generation) return;
@@ -307,6 +317,8 @@ async function playTurn(turn) {
     await renderer.wait(ANIM.betweenChains / sp);
     if (stale()) return;
   }
+  // 対戦: 連鎖の数だけ、盤面のおじゃまの数字が減る（ルールは置いた瞬間に確定している。ここで見せる）
+  if (turn.chip) renderer.garbageChip(turn.chip);
   if (turn.allClear) {
     renderer.showText(allClearText(turn), 't5');
     renderer.allClearBlast();
@@ -317,6 +329,7 @@ async function playTurn(turn) {
   if (turn.trayReady) { await turn.trayReady; if (stale()) return; }
   updateDanger();
   if (pending <= 1) updateHint();                  // 再生待ちが無くなったら、次のおすすめを出す
+  if (turn.gameOver && inBattle()) { await battleLost(); return; }
   if (turn.gameOver) {
     await renderer.wait(350);
     if (stale()) return;
@@ -652,7 +665,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   // 最初の指（isPrimary）が下りたのにまだ持っている = 前の指が離れたのを取りこぼした。持っていたピースは戻す
   // （戻すとトレイを描き直すので、触った枠は番号で探し直す）
   if (drag && e.isPrimary) cancelDrag();
-  if (!hitSlot || gameOverShown || drag || paused) return;
+  if (!hitSlot || gameOverShown || drag || paused || inputLocked) return;
   const slot = Number(hitSlot.dataset.slot);
   const slotEl = document.querySelector(`.slot[data-slot="${slot}"]`);
   const piece = game.tray[slot];
@@ -701,7 +714,7 @@ let hintSeq = 0;               // おすすめを頼んだ回数（答えが届�
 function updateHint() {
   const seq = ++hintSeq;
   if (tutorial) { showTutorialTarget(); return; }
-  if (mode !== 'learn' || game.gameOver || drag || pending > 1) {
+  if (mode !== 'learn' || inBattle() || game.gameOver || drag || pending > 1) {
     setHintedSlot(-1);
     renderer.clearHint();
     return;
@@ -722,25 +735,24 @@ function dropHint() {
   renderer.clearHint();
 }
 /** 左上のリセットボタン: 今のゲームを打ち切って最初からにする（ゲームオーバーの「もう一度」と同じ） */
-$('btnReset').addEventListener('click', () => { sfx.unlock(); saveBest(); recordRun(); restart(); });
+$('btnReset').addEventListener('click', () => { sfx.unlock(); if (inBattle()) return; saveBest(); recordRun(); restart(); });
 function applyMode() {
   const learn = mode === 'learn';
   document.body.classList.toggle('learn', learn);
-  $('btnLearn').classList.toggle('on', learn);
-  $('btnLearn').setAttribute('aria-pressed', String(learn));
   $('modeBadge').classList.toggle('hidden', !learn);
 }
-$('btnLearn').addEventListener('click', () => {
-  sfx.unlock();
+/** 通常 / 学習モードを選ぶ（ホームから。選んだモードは端末に記憶。違うモードにしたら、そのモードの続きから） */
+function setMode(next) {
+  if (next === mode) return false;
   saveBest();                                      // 切り替える前のモードのベストを残してから
   if (!pending) saveGame();                        // 切り替える前のモードの続きも残す（再生の途中なら、置いた時に残した分）
-  mode = mode === 'learn' ? 'normal' : 'learn';
+  mode = next === 'learn' ? 'learn' : 'normal';
   try { localStorage.setItem(MODE_KEY, mode); } catch {}
   loadBest();
   applyMode();
   startOrResume();
-  renderer.showText(mode === 'learn' ? 'LEARN MODE' : 'NORMAL MODE', 't2');
-});
+  return true;
+}
 
 /* ---------- サウンド ---------- */
 function updateSoundButton() {
@@ -759,6 +771,7 @@ let paused = false;
 /** 一時停止: 連鎖の再生も止める（持っているピースは戻す） */
 function setPaused(v) {
   paused = v;
+  versus?.setPaused(v);
   if (v) cancelDrag();
   renderer.timeScale = desiredSpeed();
   renderer.setPaused(v);
@@ -1103,13 +1116,13 @@ $('btnRunChain').addEventListener('click', () => {
  */
 const saveKey = () => (mode === 'learn' ? 'blockmancala-save-learn' : 'blockmancala-save');
 function saveGame() {
-  if (tutorial) return;
+  if (tutorial || inBattle()) return;
   try {
     if (game.gameOver) { localStorage.removeItem(saveKey()); return; }
     localStorage.setItem(saveKey(), JSON.stringify({ state: game.exportState() }));
   } catch {}
 }
-function clearSave() { try { localStorage.removeItem(saveKey()); } catch {} }
+function clearSave() { if (inBattle()) return; try { localStorage.removeItem(saveKey()); } catch {} }
 function readSave() {
   try { const d = JSON.parse(localStorage.getItem(saveKey()) || 'null'); return d?.state?.v === 1 && !d.state.gameOver ? d : null; } catch { return null; }
 }
@@ -1463,7 +1476,223 @@ function nameGate(done) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
   setTimeout(() => input.focus(), 60);
 }
+/* ---------- 対戦（versus.js。ルールは core/battle.js） ---------- */
+/** 自分の盤面におじゃまが落ちる（ルールはもう確定している）。画面では、それまでに置いたターンの再生のあとに落ちてくる */
+function enqueueDrop(res) {
+  if (!res?.landed.length) return;
+  const gen = generation;
+  pending++;
+  playLeft += 320 + res.landed.length * 130;
+  startPlayTick();
+  enqueue(async () => {
+    await renderer.garbageLand(res.landed);
+    if (gen !== generation) return;
+    updateDanger();
+    if (game.gameOver && inBattle()) await battleLost();
+  }).finally(() => {
+    if (gen !== generation) return;
+    pending = Math.max(0, pending - 1);
+    if (!pending) { playingSeq = 0; renderer.timeScale = paused ? 0 : 1; caughtUp(); }
+  });
+}
+/** 対戦で置ける場所がなくなった（見えたところで負け。相手にも知らせる） */
+async function battleLost() {
+  if (gameOverShown) return;
+  gameOverShown = true;
+  cancelDrag();
+  await renderer.wait(250);
+  renderer.setFever(0);
+  renderer.setDanger(0);
+  versus.localLost();
+}
+/** 対戦の画面にして、新しいゲーム（おじゃまのルール・決まった手駒の決め方） */
+function enterBattle() {
+  stopTutorial();
+  for (const id of ['home', 'lobby', 'gameOver', 'pauseOverlay', 'rankOverlay', 'designOverlay', 'vsRules']) $(id).classList.add('hidden');
+  homeOpen = false;
+  renderer.setPaused(false);
+  document.body.classList.add('battle');
+  document.body.classList.toggle('battle-online', versus.kind === 'online');
+  game.setBattle(true, BATTLE_RATES);
+  restart();
+  bestCelebrated = true;                           // 対戦ではベストスコアのお祝いはしない
+  $('modeBadge').classList.add('hidden');
+}
+/** 対戦をやめて、ふだんのゲーム（前のモードの続き）とホームへ */
+function exitBattle() {
+  document.body.classList.remove('battle', 'battle-online');
+  game.setBattle(false);
+  inputLocked = false;
+  loadBest();
+  applyMode();
+  startOrResume();
+  showHome();
+}
+versus = new Versus({
+  game, renderer, sfx, $,
+  workerUrl: new URL('../core/dealer-worker.js?v=202610062316', import.meta.url),
+  myName: () => world.name || 'YOU',
+  enter: enterBattle,
+  exit: exitBattle,
+  lock(on) { inputLocked = on; if (on) cancelDrag(); },
+  enqueueDrop,
+  celebrate() { ambient.celebrate('best'); scenes.newBest($('vsResBig').getBoundingClientRect()); },
+});
+
+/* ---------- ホーム（遊び方を選ぶ・ランキング・デザイン・遊び方・サウンド） ---------- */
+let homeOpen = false;
+let homeTapAt = 0;
+function showHome() {
+  cancelDrag();
+  homeOpen = true;
+  paused = true;
+  renderer.timeScale = 0;
+  renderer.setPaused(true);
+  $('pauseOverlay').classList.add('hidden');
+  $('homeSoloSub').classList.toggle('hidden', !hasSave('normal'));
+  homePanel('main');
+  $('home').classList.remove('hidden');
+  updateHomeSound();
+}
+function hideHome() {
+  homeOpen = false;
+  $('home').classList.add('hidden');
+  renderer.setPaused(false);
+  paused = false;
+  renderer.timeScale = desiredSpeed();
+}
+function hasSave(m) {
+  try { const d = JSON.parse(localStorage.getItem(m === 'learn' ? 'blockmancala-save-learn' : 'blockmancala-save') || 'null'); return d?.state?.v === 1 && !d.state.gameOver; } catch { return false; }
+}
+function homePanel(which) {
+  $('homeMain').classList.toggle('hidden', which !== 'main');
+  $('homeVsPanel').classList.toggle('hidden', which !== 'vs');
+  if (which === 'vs') {
+    const rec = readRecords(), parts = [];
+    for (const [k, v] of Object.entries(CPU_LEVELS)) { const r = rec.cpu[k]; if (r && (r.w || r.l)) parts.push(`${v.name} ${r.w}勝${r.l}敗`); }
+    if (rec.online.w || rec.online.l) parts.push(`オンライン ${rec.online.w}勝${rec.online.l}敗`);
+    $('homeVsRec').textContent = parts.length ? `戦績　${parts.join('・')}` : '';
+  }
+}
+function updateHomeSound() { $('homeSound').classList.toggle('off', !sfx.enabled); }
+$('btnHome').addEventListener('click', () => {
+  sfx.unlock();
+  if (inBattle()) {
+    if (versus.ended) { versus.exit(); return; }
+    const now = performance.now();
+    if (now - homeTapAt < 2200) { homeTapAt = 0; versus.exit(); return; }
+    homeTapAt = now;
+    renderer.showText('もう一度押すと<small>対戦をやめて ホームへ</small>', 't2');
+    return;
+  }
+  saveBest();
+  if (!pending) saveGame();
+  showHome();
+});
+$('homeSolo').addEventListener('click', () => { sfx.unlock(); hideHome(); if (setMode('normal')) renderer.showText('NORMAL MODE', 't2'); });
+$('homeLearn').addEventListener('click', () => { sfx.unlock(); hideHome(); setMode('learn'); renderer.showText('LEARN MODE', 't2'); });
+$('homeVs').addEventListener('click', () => { sfx.unlock(); homePanel('vs'); });
+$('homeVsBack').addEventListener('click', () => homePanel('main'));
+$('homeVsRules').addEventListener('click', () => $('vsRules').classList.remove('hidden'));
+$('vsRulesClose').addEventListener('click', () => $('vsRules').classList.add('hidden'));
+for (const b of document.querySelectorAll('.home-level')) b.addEventListener('click', () => { sfx.unlock(); hideHome(); versus.startCpu(b.dataset.level); });
+$('homeRandom').addEventListener('click', () => { sfx.unlock(); openLobby('random'); });
+$('homeRoomMake').addEventListener('click', () => { sfx.unlock(); openLobby('make'); });
+$('homeRoomJoin').addEventListener('click', () => { sfx.unlock(); openLobby('join'); });
+$('homeRank').addEventListener('click', () => { sfx.unlock(); openRanking(); });
+$('homeDesign').addEventListener('click', () => { sfx.unlock(); openDesign(); });
+$('homeHowto').addEventListener('click', () => { sfx.unlock(); hideHome(); startTutorial(); });
+$('homeSound').addEventListener('click', () => { sfx.unlock(); sfx.enabled = !sfx.enabled; updateSoundButton(); updateHomeSound(); });
+$('btnOverHome')?.addEventListener('click', () => { sfx.unlock(); saveBest(); showHome(); });
+
+/** デザイン（盤面の種類）: 一時停止の画面と同じ一覧を、こちらへ移して見せる */
+function openDesign() {
+  $('designSlot').appendChild(document.querySelector('.board-themes'));
+  $('designOverlay').classList.remove('hidden');
+  render3dPreview();
+}
+$('designClose').addEventListener('click', () => {
+  $('pauseOverlay').querySelector('.pause-box').insertBefore(document.querySelector('.board-themes'), $('btnResume'));
+  $('designOverlay').classList.add('hidden');
+});
+
+/* ---------- オンライン対戦: 相手を探す・あいことば ---------- */
+let lobbyNet = null;
+function lobbyText(title, note = '') { $('lobbyTitle').textContent = title; $('lobbyNote').textContent = note; }
+async function openLobby(kind) {
+  if (!world.named) { nameGate(() => openLobby(kind)); return; }
+  lobbyNet?.cancel();
+  const net = lobbyNet = new BattleNet({ me: world.id, name: world.name, relayOnly: new URLSearchParams(location.search).has('relay') });
+  $('lobby').classList.remove('hidden');
+  $('lobbyCode').classList.add('hidden');
+  $('lobbyJoin').classList.add('hidden');
+  $('lobbySpin').classList.remove('hidden');
+  if (kind === 'join') {
+    lobbyText('あいことばで入る', '友だちの 4けたの あいことばを入れてください');
+    $('lobbySpin').classList.add('hidden');
+    $('lobbyJoin').classList.remove('hidden');
+    $('lobbyInput').value = '';
+    setTimeout(() => $('lobbyInput').focus(), 60);
+    return;
+  }
+  try {
+    let room;
+    if (kind === 'make') {
+      lobbyText('あいことばを作っています…');
+      net.onWaiting = (r) => {
+        lobbyText('あいことば', '友だちに この4けたを伝えて、「あいことばで入る」から入ってもらってください');
+        $('lobbyCode').textContent = r.code;
+        $('lobbyCode').classList.remove('hidden');
+      };
+      room = await net.createRoom();
+    } else {
+      lobbyText('相手をさがしています', 'だれかが「だれかと対戦」を選ぶと始まります');
+      room = await net.matchRandom();
+    }
+    lobbyMatched(net, room);
+  } catch (e) {
+    if (net !== lobbyNet) return;
+    console.error(e);
+    $('lobbySpin').classList.add('hidden');
+    lobbyText('つながりませんでした', '通信のよいところで、もう一度ためしてください');
+  }
+}
+async function lobbyJoin() {
+  const code = $('lobbyInput').value.replace(/\D/g, '');
+  if (code.length !== 4) { $('lobbyInput').focus(); return; }
+  const net = lobbyNet;
+  if (!net) return;
+  $('lobbyJoin').classList.add('hidden');
+  $('lobbySpin').classList.remove('hidden');
+  lobbyText('部屋に入っています…');
+  try {
+    lobbyMatched(net, await net.joinRoom(code));
+  } catch (e) {
+    if (net !== lobbyNet) return;
+    $('lobbySpin').classList.add('hidden');
+    $('lobbyJoin').classList.remove('hidden');
+    lobbyText('あいことばで入る', e.code === 'no-room' ? 'その あいことばの部屋は見つかりませんでした' : 'つながりませんでした。もう一度ためしてください');
+  }
+}
+function lobbyMatched(net, room) {
+  if (!room || net !== lobbyNet) return;
+  sfx.matchFound();
+  $('lobbySpin').classList.add('hidden');
+  $('lobbyCode').classList.add('hidden');
+  lobbyText('相手が見つかりました！', `vs ${room.opponent?.name ?? ''}`);
+  lobbyNet = null;
+  setTimeout(() => {
+    $('lobby').classList.add('hidden');
+    hideHome();
+    versus.startOnline(net, room);
+  }, 900);
+}
+$('lobbyJoinGo').addEventListener('click', lobbyJoin);
+$('lobbyInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); lobbyJoin(); } });
+$('lobbyCancel').addEventListener('click', () => { lobbyNet?.cancel(); lobbyNet = null; $('lobby').classList.add('hidden'); });
+
 startOrResume();
+showHome();
 if (!world.named) nameGate(() => {});              // 途中の保存があっても、なまえが無ければ先に決めてもらう
 // 宝石のかけら・星・ラインの光の枠の絵（色ごと）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
 // まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
@@ -1479,4 +1708,4 @@ window.__renderer = renderer;
 window.__sfx = sfx;
 window.__scenes = scenes;
 window.__ambient = ambient;
-window.__ui = { showScore, renderTray, setBest(v) { best = v; }, pending: () => pending };
+window.__ui = { showScore, renderTray, setBest(v) { best = v; }, pending: () => pending, versus, showHome, hideHome };

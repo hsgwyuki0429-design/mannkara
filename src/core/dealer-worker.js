@@ -10,7 +10,7 @@ self.onmessage = ({ data }) => {
   if (data.type === 'reset') { core.reset(); return; }
   if (data.type === 'load') { core.load(data.state); return; }
   try {
-    const result = data.type === 'deal' ? core.deal(data.cells, data.rate, data.clear) : core.hint(data.cells, data.names);
+    const result = data.type === 'deal' ? core.deal(data.cells, data.rate, data.clear, data.garbage) : core.hint(data.cells, data.names, data.garbage, data.opts);
     self.postMessage({ id: data.id, result });
   } catch (e) {
     self.postMessage({ id: data.id, error: String(e?.stack || e) });

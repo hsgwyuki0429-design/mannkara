@@ -7,9 +7,12 @@ import { SIZE, isInside, lineCells } from './constants.js?v=202610062316';
  * （テストで本体と一致することを確かめている）。
  *
  * 状態は Uint8Array: [0, 64) = マス (r * 8 + x) の占有, [64, 64 + 18) = ライン個数
- * （col n → 64 + n, row n → 64 + 9 + n）
+ * （col n → 64 + n, row n → 64 + 9 + n）, [82] = おじゃまの数
+ * おじゃま（対戦の、置けない灰色のブロック）のマスは 2。ライン個数には数えない（だから満杯にならない）。
+ * 動かない壁として扱う（board.js の insertBottom と同じ）
  */
-const CELLS = 64, CNT = 64, LEN = CNT + 2 * (SIZE + 1);
+const CELLS = 64, CNT = 64, GC = CNT + 2 * (SIZE + 1), LEN = GC + 1;
+export const GARBAGE_CELL = 2;
 const K = { col: 0, row: 1 };
 const cntAt = (kind, n) => CNT + kind * (SIZE + 1) + n;
 /** LINES[kind][n] = そのラインのマス（slot 順、0 = 斜辺側の端） */
@@ -24,8 +27,21 @@ export const TOTAL_CELLS = INSIDE.length;
 
 export function fromBoard(board) {
   const s = new Uint8Array(LEN);
-  for (const { x, r } of board.entries()) fill(s, r * SIZE + x);
+  for (const { x, r, block } of board.entries()) {
+    if (block.color === 'garbage') { s[r * SIZE + x] = GARBAGE_CELL; s[GC]++; }
+    else fill(s, r * SIZE + x);
+  }
   return s;
+}
+/** おじゃまの数（無ければ 0） */
+export const garbageCount = (s) => s[GC];
+/** マス i（r * 8 + x）がおじゃまか */
+export const isGarbageCell = (s, i) => s[i] === GARBAGE_CELL;
+/** ライン(kind 'col' | 'row', n) におじゃまが入っているか（入っていると満杯にならない） */
+export function lineHasGarbage(s, kind, n) {
+  if (!s[GC]) return false;
+  for (const i of LINES[kind === 'col' ? 0 : 1][n]) if (s[i] === GARBAGE_CELL) return true;
+  return false;
 }
 export const cloneSim = (s) => s.slice();
 
@@ -56,8 +72,11 @@ export function blocks(s) {
 }
 export function keyOf(s) {
   let key = 0;
-  for (const i of INSIDE) key = key * 2 + s[i];
-  return key;
+  if (!s[GC]) { for (const i of INSIDE) key = key * 2 + s[i]; return key; }
+  // おじゃまがあるときは、ふつうのブロックの並びと、おじゃまの並びを分けて書く（同じマスでも動き方が違うので別の盤面）
+  let g = 0;
+  for (const i of INSIDE) { key = key * 2 + (s[i] & 1); g = g * 2 + (s[i] >> 1); }
+  return key + ':' + g;
 }
 
 /* ---------- 配置 ---------- */
@@ -149,8 +168,12 @@ function insertBottom(s, kind, n) {
   const cells = LINES[kind][n];
   const count = s[cntAt(kind, n)];
   if (count === n) return false;
-  if (s[cells[0]]) {                           // 手前の端が埋まっている → 一番近い空欄まで奥へ詰めて入る
-    for (const i of cells) if (!s[i]) { fill(s, i); return true; }
+  if (s[cells[0]]) {                           // 手前の端が埋まっている → 一番近い空欄まで奥へ詰めて入る（おじゃまは動かない壁）
+    for (const i of cells) {
+      if (s[i] === GARBAGE_CELL) return false;
+      if (!s[i]) { fill(s, i); return true; }
+    }
+    return false;
   }
   let first = -1;
   for (let k = 0; k < n; k++) if (s[cells[k]]) { first = k; break; }
@@ -292,7 +315,7 @@ export function resolveAll(s, rest = null) {
 export function clearCost(s) {
   let cost = 0;
   for (const i of INSIDE) {
-    if (!s[i]) continue;
+    if (!s[i] || s[i] === GARBAGE_CELL) continue;
     const c = COL_OF(i), r = ROW_OF(i);
     cost += 1 + Math.min(c - s[cntAt(0, c)], r - s[cntAt(1, r)]);
   }

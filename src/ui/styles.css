@@ -240,6 +240,16 @@ button{font-family:inherit;cursor:pointer;}
 .c-blue{--col:#3f6dff;--hi:#a8bfff;--tb:#2f5cf8;--lo:#1c38cc;--rim:#cbd8ff}
 .c-purple{--col:#a849fe;--hi:#ddbcfe;--tb:#983cfb;--lo:#600cf0;--rim:#e7ccfe}
 .c-debug,.c-x{--col:#9fb0cc;--hi:#dde4f0;--tb:#93a4c2;--lo:#6c7c99;--rim:#e6ebf5}
+/* ---- 対戦: おじゃま（相手から送られてくる、置けない灰色の宝石。数字は自分の連鎖で減り、0 で砕ける） ----
+   塗りは宝石と同じ（灰色の石）。数字は盤面と一緒に回らないよう立てて、スコアと同じベタ塗り + 薄い影 */
+.c-garbage{--col:#7f89a3;--hi:#cfd6e6;--tb:#76809b;--lo:#4a536d;--rim:#dfe4ef}
+.block.garbage .gnum{position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;pointer-events:none;
+  font-family:"Round One","Nunito",sans-serif;font-weight:900;font-size:calc(var(--cell) * .54);line-height:1;color:#fff;text-shadow:var(--ts-s);
+  transition:scale 200ms ease-in,color 160ms;}
+.block.garbage.wide .gnum{font-size:calc(var(--cell) * .42);letter-spacing:-.04em;}
+.block.garbage.low .gnum{color:var(--gold);}                          /* あと 1〜2 連鎖で消える */
+.block.garbage.fly .gnum{scale:0;}
+.block.falling{z-index:6;}
 
 /* ---- 中央テキスト ----
    文字はスコアと同じ見え方にそろえる: ベタ塗り + 真下への薄い影（--ts）だけ。
@@ -477,49 +487,183 @@ body.tutorial-on .score-wrap{visibility:hidden;}
 
 /* ---- ゲームオーバー: 盤面をぼかした上に、ゲームの部品（丸いピル・盤面と同じ色の面）と同じ作りの 1 枚のカードを浮かべる。
    色は盤面の種類ごとの --go-*（宝石 = 青、ガラス = 紫、3D = 藍）。カード・スコア・記録・ボタンの順に、下から少しずつ出てくる ---- */
-#gameOver{--go-card:rgba(30,58,170,.55);--go-edge:rgba(160,196,255,.55);--go-tile:rgba(255,255,255,.08);--go-hi:rgba(255,255,255,.22);
+:is(#gameOver,#vsResult){--go-card:rgba(30,58,170,.55);--go-edge:rgba(160,196,255,.55);--go-tile:rgba(255,255,255,.08);--go-hi:rgba(255,255,255,.22);
   padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));
   background:radial-gradient(120% 80% at 50% 40%,rgba(10,20,80,.18),rgba(6,12,50,.5));
   backdrop-filter:blur(10px) saturate(1.2);-webkit-backdrop-filter:blur(10px) saturate(1.2);}
-[data-board-theme="glass"] #gameOver{--go-card:rgba(70,48,170,.55);--go-edge:rgba(214,196,255,.55);}
-[data-board-theme="3d"] #gameOver{--go-card:rgba(30,34,120,.6);--go-edge:rgba(170,176,255,.55);}
-[data-board-theme="white"] #gameOver{--go-card:rgba(29,35,64,.84);--go-edge:rgba(255,255,255,.35);}
-#gameOver .over-box{position:relative;width:min(100%,340px);max-height:100%;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;
+[data-board-theme="glass"] :is(#gameOver,#vsResult){--go-card:rgba(70,48,170,.55);--go-edge:rgba(214,196,255,.55);}
+[data-board-theme="3d"] :is(#gameOver,#vsResult){--go-card:rgba(30,34,120,.6);--go-edge:rgba(170,176,255,.55);}
+[data-board-theme="white"] :is(#gameOver,#vsResult){--go-card:rgba(29,35,64,.84);--go-edge:rgba(255,255,255,.35);}
+:is(#gameOver,#vsResult) .over-box{position:relative;width:min(100%,340px);max-height:100%;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;
   padding:26px 20px 18px;border-radius:30px;border:1.5px solid var(--go-edge);
   background:linear-gradient(180deg,var(--go-hi),rgba(255,255,255,0) 38%),var(--go-card);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 18px 40px rgba(4,10,50,.4);}
-#gameOver .over-box *{touch-action:pan-y;}
-#gameOver .over-box > *{animation:goIn 420ms cubic-bezier(.2,1.3,.4,1) both;}
-#gameOver .over-box > :nth-child(2){animation-delay:60ms}#gameOver .over-box > :nth-child(3){animation-delay:110ms}
-#gameOver .over-box > :nth-child(4){animation-delay:150ms}#gameOver .over-box > :nth-child(5){animation-delay:200ms}
-#gameOver .over-box > :nth-child(6){animation-delay:240ms}#gameOver .over-box > :nth-child(7){animation-delay:280ms}
-#gameOver .over-box > :nth-child(8){animation-delay:320ms}
+:is(#gameOver,#vsResult) .over-box *{touch-action:pan-y;}
+:is(#gameOver,#vsResult) .over-box > *{animation:goIn 420ms cubic-bezier(.2,1.3,.4,1) both;}
+:is(#gameOver,#vsResult) .over-box > :nth-child(2){animation-delay:60ms}:is(#gameOver,#vsResult) .over-box > :nth-child(3){animation-delay:110ms}
+:is(#gameOver,#vsResult) .over-box > :nth-child(4){animation-delay:150ms}:is(#gameOver,#vsResult) .over-box > :nth-child(5){animation-delay:200ms}
+:is(#gameOver,#vsResult) .over-box > :nth-child(6){animation-delay:240ms}:is(#gameOver,#vsResult) .over-box > :nth-child(7){animation-delay:280ms}
+:is(#gameOver,#vsResult) .over-box > :nth-child(8){animation-delay:320ms}
 @keyframes goIn{from{opacity:0;translate:0 14px;scale:.96}}
-#gameOver .over-title{display:inline-block;margin:0 0 14px;padding:5px 16px;border-radius:99px;font-size:15px;line-height:1.3;
+:is(#gameOver,#vsResult) .over-title{display:inline-block;margin:0 0 14px;padding:5px 16px;border-radius:99px;font-size:15px;line-height:1.3;
   background:rgba(255,255,255,.12);border:1.5px solid var(--go-edge);text-shadow:var(--ts-s);}
-#gameOver .over-label{font-size:11px;font-weight:900;letter-spacing:.3em;color:var(--dim);}
-#gameOver .over-score{margin:0;font-size:clamp(46px,15vw,68px);line-height:1.1;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
-#gameOver .over-best{display:inline-block;margin:6px 0 18px;padding:3px 14px;border-radius:99px;font-size:14px;line-height:1.5;
+:is(#gameOver,#vsResult) .over-label{font-size:11px;font-weight:900;letter-spacing:.3em;color:var(--dim);}
+:is(#gameOver,#vsResult) .over-score{margin:0;font-size:clamp(46px,15vw,68px);line-height:1.1;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+:is(#gameOver,#vsResult) .over-best{display:inline-block;margin:6px 0 18px;padding:3px 14px;border-radius:99px;font-size:14px;line-height:1.5;
   background:rgba(255,213,74,.14);border:1.5px solid rgba(255,213,74,.55);}
-#gameOver .over-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 18px;}
-#gameOver .stat{min-width:0;gap:2px;padding:10px 6px 8px;border-radius:18px;background:var(--go-tile);
+:is(#gameOver,#vsResult) .over-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 18px;}
+:is(#gameOver,#vsResult) .stat{min-width:0;gap:2px;padding:10px 6px 8px;border-radius:18px;background:var(--go-tile);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);}
-#gameOver .stat-val{font-size:30px;}
-#gameOver .stat-rec.new{padding:0 8px;border-radius:99px;background:rgba(255,213,74,.18);}
-#gameOver .primary,#gameOver .share-btn{width:100%;min-height:50px;margin:0;padding:12px 16px;border-radius:99px;}
-#gameOver .primary{border:none;color:#3a2600;font-size:19px;text-shadow:none;
+:is(#gameOver,#vsResult) .stat-val{font-size:30px;}
+:is(#gameOver,#vsResult) .stat-rec.new{padding:0 8px;border-radius:99px;background:rgba(255,213,74,.18);}
+:is(#gameOver,#vsResult) .primary,:is(#gameOver,#vsResult) .share-btn{width:100%;min-height:50px;margin:0;padding:12px 16px;border-radius:99px;}
+:is(#gameOver,#vsResult) .primary{border:none;color:#3a2600;font-size:19px;text-shadow:none;
   background:linear-gradient(180deg,#fff0a0,#ffd54a 55%,#f2b11e);box-shadow:inset 0 -3px 0 rgba(160,90,0,.35),0 6px 14px rgba(255,190,40,.28);}
-#gameOver .primary:active{translate:0 2px;box-shadow:inset 0 -1px 0 rgba(160,90,0,.35),0 3px 8px rgba(255,190,40,.25);}
-#gameOver .share-btn{margin-top:10px;font-size:16px;color:#fff;border:1.5px solid var(--go-edge);background:rgba(255,255,255,.1);}
-#gameOver .share-btn svg{fill:#fff;}
-#gameOver .over-links{display:flex;justify-content:center;gap:22px;margin-top:10px;}
-#gameOver .howto{margin:0;padding:8px 2px;font-size:13px;line-height:1.5;color:var(--dim);text-decoration:none;}
-#gameOver .over-rank.ranked{color:var(--gold);}
-#gameOver button:focus-visible{outline:2px solid #fff;outline-offset:3px;}
+:is(#gameOver,#vsResult) .primary:active{translate:0 2px;box-shadow:inset 0 -1px 0 rgba(160,90,0,.35),0 3px 8px rgba(255,190,40,.25);}
+:is(#gameOver,#vsResult) .share-btn{margin-top:10px;font-size:16px;color:#fff;border:1.5px solid var(--go-edge);background:rgba(255,255,255,.1);}
+:is(#gameOver,#vsResult) .share-btn svg{fill:#fff;}
+:is(#gameOver,#vsResult) .over-links{display:flex;justify-content:center;gap:22px;margin-top:10px;}
+:is(#gameOver,#vsResult) .howto{margin:0;padding:8px 2px;font-size:13px;line-height:1.5;color:var(--dim);text-decoration:none;}
+:is(#gameOver,#vsResult) .over-rank.ranked{color:var(--gold);}
+:is(#gameOver,#vsResult) button:focus-visible{outline:2px solid #fff;outline-offset:3px;}
 @media (max-height:620px){
-  #gameOver .over-box{padding:18px 16px 12px;}
-  #gameOver .over-title{margin-bottom:8px;}
-  #gameOver .over-best{margin-bottom:10px;}
-  #gameOver .over-stats{margin-bottom:12px;}
+  :is(#gameOver,#vsResult) .over-box{padding:18px 16px 12px;}
+  :is(#gameOver,#vsResult) .over-title{margin-bottom:8px;}
+  :is(#gameOver,#vsResult) .over-best{margin-bottom:10px;}
+  :is(#gameOver,#vsResult) .over-stats{margin-bottom:12px;}
 }
-@media (prefers-reduced-motion:reduce){#gameOver .over-box > *{animation:none}}
+@media (prefers-reduced-motion:reduce){:is(#gameOver,#vsResult) .over-box > *{animation:none}}
+
+/* ======== 対戦（versus.js）: 自分の盤面は少し小さく、右上に相手の盤面を小さく映す ======== */
+body.battle .best-pill{visibility:hidden;}
+body.battle :is(#btnReset,#btnRank),body.battle-online #btnPause{display:none;}
+body.battle .score-wrap{display:none;}
+body.battle .stage{width:92%;margin:0 auto;}                        /* 相手の盤面のぶん、自分の盤面は少し小さく */
+.vs-head{position:relative;width:100%;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-start;gap:5px;
+  margin-top:min(8px,1vh);padding:0 calc(var(--opp-w,150px) + 14px) 0 6px;min-height:min(94px,11.5vh);}
+.vs-me{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;}
+.vs-name{font-family:"M PLUS Rounded 1c","Nunito",sans-serif;font-size:14px;font-weight:900;line-height:1.2;text-shadow:var(--ts-s);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.vs-timer{flex-shrink:0;padding:1px 9px;border:1.5px solid var(--line);border-radius:99px;font-size:13px;font-weight:900;font-variant-numeric:tabular-nums;}
+.vs-margin{flex-shrink:0;padding:1px 9px;border-radius:99px;font-family:"M PLUS Rounded 1c",sans-serif;font-size:11px;font-weight:900;color:#3a2600;
+  background:linear-gradient(180deg,#fff0a0,#ffd54a 55%,#f2b11e);}
+/* 予告: 相手から飛んできた、まだ落ちていないおじゃま（相手の連鎖が終わるまでは小さく薄く、終わったら大きく揺れる） */
+.vs-pend{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:calc(var(--pend,30px) * 1.45);--pend:30px;padding-left:4px;}
+.vs-pend.small{--pend:14px;gap:3px;min-height:21px;justify-content:center;padding-left:0;}
+/* 盤面と同じく 225° 回した宝石（光の向きをそろえる）。数字だけ立てる */
+.pend-tile{position:relative;--cell:var(--pend);width:var(--pend);height:var(--pend);margin:0 calc(var(--pend) * .1);rotate:225deg;
+  animation:pendIn 300ms cubic-bezier(.3,1.6,.5,1) both;}
+.pend-tile.coming{opacity:.55;scale:.82;}
+.pend-tile.ready{animation:pendIn 300ms cubic-bezier(.3,1.6,.5,1) both,pendShake 900ms ease-in-out 300ms infinite;}
+.pend-tile .gnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:1;rotate:-225deg;
+  font-family:"Round One","Nunito",sans-serif;font-weight:900;font-size:calc(var(--pend) * .52);color:#fff;text-shadow:var(--ts-s);}
+.pend-more{font-size:13px;font-weight:900;text-shadow:var(--ts-s);}
+@keyframes pendIn{from{scale:.2;opacity:0}}
+@keyframes pendShake{0%,100%{rotate:225deg}25%{rotate:219deg}75%{rotate:231deg}}
+/* 相手の盤面 */
+.vs-opp{position:absolute;z-index:3;top:calc(max(15px,env(safe-area-inset-top)) + 44px);right:8px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 8px 8px;border-radius:18px;border:1.5px solid var(--line);background:rgba(20,40,130,.2);pointer-events:none;}
+.vs-opp-head{display:flex;align-items:center;gap:5px;max-width:100%;}
+.vs-opp-head .vs-name{font-size:12px;}
+.vs-tag{flex-shrink:0;padding:0 6px;border-radius:99px;font-family:"M PLUS Rounded 1c",sans-serif;font-size:9px;font-weight:900;line-height:1.6;
+  color:var(--gold);border:1px solid rgba(255,213,74,.6);}
+.vs-opp-field{position:relative;--mcell:12px;}
+.mini-field{position:absolute;transform-origin:50% 50%;--cell:var(--mcell);}
+.mini-wells,.mini-blocks{position:absolute;inset:0;}
+.mini-field .cell{will-change:auto;}
+.mini-field .well::after{inset:8%;box-shadow:inset -1px -1px 2px rgba(4,12,60,.6);}
+.mini-field .well::before{background:var(--plate,#2951c2);}
+.mini-field{--plate:#2951c2;--well:#2d4498;--well-s1:rgba(4,12,60,.7);--well-s2:rgba(4,12,60,.45);--well-rim:rgba(96,140,245,.8);--well-hi:rgba(150,186,255,.95);}
+.mini-field .block::before{box-shadow:inset -.5px 0 0 rgba(255,255,255,.5),-1px 0 1.5px rgba(4,14,64,.35);}
+.mini-field .block.garbage .gnum{font-size:calc(var(--mcell) * .6);text-shadow:none;}
+/* カウントダウン（盤面のまん中に大きく。光らせず、ベタ塗りの文字が弾む） */
+.vs-count{position:fixed;left:50%;top:47%;z-index:26;translate:-50% -50%;pointer-events:none;font-weight:900;font-size:min(130px,30vw);line-height:1;
+  color:#fff;text-shadow:0 6px 6px rgba(0,0,0,.22);opacity:0;}
+.vs-count.go{color:var(--gold);font-size:min(96px,22vw);}
+/* 飛んでいくおじゃま（数字つきの灰色の宝石） */
+.atk-fly{position:fixed;left:0;top:0;z-index:28;pointer-events:none;width:0;height:0;}
+.atk-fly .block{position:absolute;left:-17px;top:-17px;--cell:34px;width:34px;height:34px;rotate:225deg;}
+.atk-fly .gnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:1;rotate:-225deg;
+  font-family:"Round One","Nunito",sans-serif;font-weight:900;font-size:18px;color:#fff;text-shadow:var(--ts-s);}
+.atk-count{position:absolute;left:12px;top:-28px;font-size:14px;font-weight:900;color:var(--gold);text-shadow:var(--ts-s);white-space:nowrap;}
+/* 結果のカード（ゲームオーバーと同じ作り） */
+.vs-res-big{margin:2px 0 0;font-size:clamp(46px,15vw,66px);font-weight:900;line-height:1.1;text-shadow:var(--ts);}
+.vs-res-big.win,.vs-res-big.gone{color:var(--gold);}
+.vs-res-big.draw{color:#7fe6ff;}
+.vs-res-vs{margin:2px 0 4px;font-size:14px;font-weight:800;color:var(--dim);}
+#vsResult .over-stats.vs-stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+#vsResult .vs-stats .stat-label{font-size:10px;white-space:nowrap;}
+#vsResult .primary:disabled{opacity:.45;}
+.vs-wait{margin:8px 0 0;font-size:13px;font-weight:800;color:var(--dim);}
+@media (prefers-reduced-motion:reduce){.pend-tile,.pend-tile.ready{animation:none}}
+
+/* ======== ホーム ======== */
+.home{z-index:32;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;
+  padding:max(20px,env(safe-area-inset-top)) 18px max(20px,env(safe-area-inset-bottom));
+  background:radial-gradient(120% 80% at 50% 35%,rgba(10,20,80,.14),rgba(6,12,50,.5));
+  backdrop-filter:blur(10px) saturate(1.2);-webkit-backdrop-filter:blur(10px) saturate(1.2);}
+.home *{touch-action:pan-y;}
+.home-box{width:min(100%,360px);margin:auto;display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center;}
+.home-logo{display:flex;flex-direction:column;align-items:center;gap:10px;animation:goIn 420ms cubic-bezier(.2,1.3,.4,1) both;}
+.home-logo-mark{width:74px;height:74px;filter:drop-shadow(0 6px 10px rgba(4,10,50,.35));animation:homeBob 2.6s ease-in-out infinite;}
+@keyframes homeBob{50%{translate:0 -4px}}
+.home-title{margin:0;font-family:"Nunito",sans-serif;font-size:clamp(30px,9vw,40px);font-weight:900;letter-spacing:.01em;text-shadow:var(--ts);}
+.home-main,.home-panel{width:100%;display:flex;flex-direction:column;gap:12px;padding:18px 16px;border-radius:30px;
+  border:1.5px solid var(--go-edge,rgba(160,196,255,.55));
+  background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 38%),var(--go-card,rgba(30,58,170,.55));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 18px 40px rgba(4,10,50,.4);animation:goIn 420ms cubic-bezier(.2,1.3,.4,1) 60ms both;}
+.home-play{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:62px;width:100%;padding:12px 16px;border:none;border-radius:99px;
+  font-family:"M PLUS Rounded 1c",sans-serif;font-size:21px;font-weight:900;color:#3a2600;
+  background:linear-gradient(180deg,#fff0a0,#ffd54a 55%,#f2b11e);box-shadow:inset 0 -3px 0 rgba(160,90,0,.35),0 6px 14px rgba(255,190,40,.28);}
+.home-play small{font-size:11px;font-weight:900;color:rgba(58,38,0,.7);}
+.home-play:active,.home-btn:active,.home-level:active{translate:0 2px;}
+.home-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:50px;padding:10px 16px;border-radius:99px;
+  border:1.5px solid var(--go-edge,rgba(160,196,255,.55));background:rgba(255,255,255,.1);color:#fff;
+  font-family:"M PLUS Rounded 1c",sans-serif;font-size:17px;font-weight:900;}
+.home-btn svg{width:22px;height:22px;fill:currentColor;flex-shrink:0;}
+.home-btn.home-vs{color:#fff;background:linear-gradient(180deg,rgba(255,154,214,.36),rgba(255,154,214,.16));border-color:rgba(255,184,226,.75);}
+.home-btn.small{min-height:44px;font-size:14px;padding:8px 10px;}
+.home-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.home-sec{margin:2px 0 -4px;font-size:12px;font-weight:900;letter-spacing:.08em;color:var(--dim);}
+.home-levels{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.home-level{min-height:48px;border-radius:16px;border:1.5px solid var(--go-edge,rgba(160,196,255,.55));background:rgba(255,255,255,.1);color:#fff;
+  font-family:"M PLUS Rounded 1c",sans-serif;font-size:15px;font-weight:900;}
+.home-level[data-level="hard"]{border-color:rgba(255,184,226,.75);}
+.home-online{border-color:rgba(127,230,255,.7);}
+.home-rec{margin:0;min-height:1em;font-size:12px;font-weight:800;color:var(--dim);line-height:1.5;}
+.home-link{margin:0 auto;padding:4px 8px;font-size:13px;font-weight:800;text-decoration:none;}
+.home-icons{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;width:100%;animation:goIn 420ms cubic-bezier(.2,1.3,.4,1) 120ms both;}
+.home-icon{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 2px 8px;border-radius:18px;border:1.5px solid var(--line);
+  background:rgba(120,160,255,.13);color:#fff;font-family:"M PLUS Rounded 1c",sans-serif;font-size:11px;font-weight:900;}
+.home-icon svg{width:24px;height:24px;fill:#fff;}
+#homeRank svg{fill:var(--gold);}
+.home-icon.off{opacity:.5;}
+@media (max-height:640px){.home-box{gap:12px}.home-logo-mark{width:54px;height:54px}.home-main,.home-panel{padding:14px 12px;gap:9px}}
+@media (prefers-reduced-motion:reduce){.home-logo-mark{animation:none}}
+/* オンライン対戦: 相手を探している間 */
+.lobby{z-index:34;}
+.lobby-box{width:min(calc(100% - 40px),340px);padding:24px 18px 14px;border-radius:30px;border:1.5px solid rgba(160,196,255,.55);
+  background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 38%),rgba(30,58,170,.6);box-shadow:0 18px 40px rgba(4,10,50,.4);}
+.lobby-box .over-title{margin-bottom:12px;font-size:20px;}
+.lobby-spin{position:relative;height:46px;display:flex;justify-content:center;align-items:center;gap:10px;--cell:22px;}
+.lobby-spin .cell{position:relative;rotate:45deg;animation:lobbyHop 1.2s ease-in-out infinite;}
+.lobby-spin .cell:nth-child(2){animation-delay:.15s}.lobby-spin .cell:nth-child(3){animation-delay:.3s}.lobby-spin .cell:nth-child(4){animation-delay:.45s}
+@keyframes lobbyHop{0%,60%,100%{translate:0 0}30%{translate:0 -12px}}
+.lobby-code{margin:6px 0 4px;font-size:58px;font-weight:900;letter-spacing:.14em;line-height:1.1;color:var(--gold);text-shadow:var(--ts);font-variant-numeric:tabular-nums;
+  user-select:text;-webkit-user-select:text;}
+.lobby-note{margin:10px 0 0;font-size:13px;font-weight:800;line-height:1.6;color:var(--dim);}
+.lobby-join{display:flex;gap:8px;margin-top:14px;}
+.lobby-input{text-align:center;font-size:24px;letter-spacing:.3em;padding:8px 10px;}
+/* 対戦のルール */
+.rules-box{text-align:left;}
+.rules-box .over-title{text-align:center;}
+.rules-list{margin:0 0 20px;padding:0 0 0 1.2em;display:flex;flex-direction:column;gap:9px;font-size:14px;font-weight:800;line-height:1.55;}
+.rules-list b{color:var(--gold);font-weight:900;}
+#vsRules,#designOverlay{z-index:36;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;padding:24px 16px;}
+.design-box .board-themes{margin-top:8px;}
+/* ホーム・相手探しのカードも、ゲームオーバーと同じ色（盤面の種類ごと） */
+:is(.home,.lobby){--go-card:rgba(30,58,170,.55);--go-edge:rgba(160,196,255,.55);}
+[data-board-theme="glass"] :is(.home,.lobby){--go-card:rgba(70,48,170,.55);--go-edge:rgba(214,196,255,.55);}
+[data-board-theme="3d"] :is(.home,.lobby){--go-card:rgba(30,34,120,.6);--go-edge:rgba(170,176,255,.55);}
+[data-board-theme="white"] :is(.home,.lobby){--go-card:rgba(29,35,64,.84);--go-edge:rgba(255,255,255,.35);}
+.lobby-box{background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0) 38%),var(--go-card);border-color:var(--go-edge);}

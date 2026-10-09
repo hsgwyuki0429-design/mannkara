@@ -31,7 +31,7 @@ function gainOf(before, after, cells, chains) {
 export function evaluate(s) {
   let near = 0;
   for (const kind of ['col', 'row']) for (let n = 2; n <= SIZE; n++) {
-    if (Sim.lineCount(s, kind, n) === n - 1) near++;
+    if (Sim.lineCount(s, kind, n) === n - 1 && !Sim.lineHasGarbage(s, kind, n)) near++;    // おじゃまが入ったラインは満杯にならない
   }
   let roomy = 0;
   for (const cells of ROOMY) if (Sim.fits(s, cells)) roomy++;
@@ -42,12 +42,13 @@ export function evaluate(s) {
  * おすすめの手 { slot, ox, oy, survive } を返す（置ける手が無ければ null）。
  * tray は [Piece | null, …]。budgetMs を過ぎたら、もう1手先の読みを省いて決める
  */
-export function bestMove(board, tray, { budgetMs = 60 } = {}) {
+export function bestMove(board, tray, { budgetMs = 60, ranked = false } = {}) {
   const start = Sim.fromBoard(board);
   const before = Sim.blocks(start);
   const rest = tray.map((p, slot) => p && { slot, name: p.name, cells: cellsOf(p.name) }).filter(Boolean);
   const deadline = now() + budgetMs;
   let best = null;
+  const all = ranked ? [] : null;                             // ranked: 全部の手を良い順に返す（対戦の CPU が、わざと少し外すときに使う）
   const tried = new Set();
   for (const r of rest) {
     if (tried.has(r.name)) continue;                          // 同じ形は1回調べれば十分
@@ -60,11 +61,13 @@ export function bestMove(board, tray, { budgetMs = 60 } = {}) {
       const survive = solvable(b, others.map((o) => o.name));
       let value = gainOf(before, b, r.cells.length, chains) + evaluate(b);
       if (others.length && now() < deadline) value += 0.5 * lookahead(b, others);
+      all?.push({ slot: r.slot, ox, oy, survive, value, chains });
       if (!best || (survive && !best.survive) || (survive === best.survive && value > best.value)) {
         best = { slot: r.slot, ox, oy, survive, value };
       }
     }
   }
+  if (all) return all.sort((p, q) => (q.survive - p.survive) || (q.value - p.value)).map(({ slot, ox, oy, survive, chains }) => ({ slot, ox, oy, survive, chains }));
   return best && { slot: best.slot, ox: best.ox, oy: best.oy, survive: best.survive };
 }
 

@@ -73,8 +73,8 @@
       <button id="btnReset" class="round-btn" aria-label="リセット（最初から）">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.54 6.72 A9.20 9.20 0 1 1 8.85 3.35 L9.81 5.99 A6.40 6.40 0 1 0 17.24 8.33 Z" /><path d="M19.61 4.91 L22.02 8.55 L16.73 10.37 Z" /></svg>
       </button>
-      <button id="btnLearn" class="round-btn learn-btn" aria-label="学習モード" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6a6.9 6.9 0 0 0-4.1 12.5c.7.5 1.1 1.3 1.1 2.1v.6h6v-.6c0-.8.4-1.6 1.1-2.1A6.9 6.9 0 0 0 12 2.6z" /><rect x="9" y="19.2" width="6" height="2.4" rx="1.2" /></svg>
+      <button id="btnHome" class="round-btn home-btn-top" aria-label="ホーム">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 2.6 11.1l1.5 1.8 1.4-1.2v8.6c0 .6.5 1.1 1.1 1.1h3.9v-6h3v6h3.9c.6 0 1.1-.5 1.1-1.1v-8.6l1.4 1.2 1.5-1.8z" /></svg>
       </button>
     </div>
     <div class="top-btns">
@@ -93,6 +93,22 @@
     <div id="score" class="score">0</div>
     <div id="modeBadge" class="mode-badge hidden">LEARN</div>
   </div>
+  <!-- 対戦: 自分の名前・経過時間・予告（相手から飛んできた、まだ落ちていないおじゃま） -->
+  <div id="vsHead" class="vs-head hidden">
+    <div class="vs-me">
+      <span id="vsMeName" class="vs-name">YOU</span>
+      <span id="vsTimer" class="vs-timer">0:00</span>
+      <span id="vsMargin" class="vs-margin hidden"></span>
+    </div>
+    <div id="vsMyPend" class="vs-pend" aria-label="予告"></div>
+  </div>
+  <!-- 対戦: 相手の盤面（右上に小さく） -->
+  <div id="vsOpp" class="vs-opp hidden" aria-hidden="true">
+    <div class="vs-opp-head"><span id="vsOppName" class="vs-name">CPU</span><span id="vsOppTag" class="vs-tag"></span></div>
+    <div id="vsOppPend" class="vs-pend small"></div>
+    <div id="vsOppField" class="vs-opp-field"></div>
+  </div>
+  <div id="vsCount" class="vs-count hidden" aria-live="polite"></div>
 
   <div class="stage">
     <div id="playfield" class="playfield">
@@ -161,6 +177,7 @@
     <div class="over-links">
       <button id="btnOverRank" class="link howto over-rank">ランキングを見る</button>
       <button id="btnOverHowto" class="link howto">遊び方</button>
+      <button id="btnOverHome" class="link howto">ホーム</button>
     </div>
   </div>
 </div>
@@ -202,6 +219,104 @@
     <ol id="rankList" class="rank-list"></ol>
     <p id="rankMe" class="rank-me hidden"></p>
     <button id="rankClose" class="primary">とじる</button>
+  </div>
+</div>
+<!-- 対戦の結果（ゲームオーバーと同じ作りのカード） -->
+<div id="vsResult" class="overlay hidden">
+  <div class="overlay-box over-box vs-box">
+    <p id="vsResTitle" class="over-title">対戦の結果</p>
+    <p id="vsResBig" class="vs-res-big">WIN!</p>
+    <p id="vsResVs" class="vs-res-vs"></p>
+    <p id="vsResSeries" class="over-best"></p>
+    <div class="over-stats vs-stats">
+      <div class="stat"><span class="stat-label">最大連鎖</span><span id="vsStatChain" class="stat-val">0</span></div>
+      <div class="stat"><span class="stat-label">送ったおじゃま</span><span id="vsStatSent" class="stat-val">0</span></div>
+      <div class="stat"><span class="stat-label">消したおじゃま</span><span id="vsStatChip" class="stat-val">0</span></div>
+    </div>
+    <button id="vsRematch" class="primary">もう一度</button>
+    <p id="vsWaitNote" class="vs-wait hidden">相手を待っています…</p>
+    <div class="over-links"><button id="vsHome" class="link howto">ホームへ</button></div>
+  </div>
+</div>
+<!-- ホーム: 遊び方を選ぶ（ひとりで・学習モード・対戦）・ランキング・デザイン・遊び方・サウンド -->
+<div id="home" class="overlay home hidden">
+  <div class="home-box">
+    <div class="home-logo">
+      <svg class="home-logo-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x=".5" y=".5" width="31" height="31" rx="7" fill="#2b4bbf" stroke="#96c0ff" /><path d="M6 6h20v4H22v4h-4v4h-4v4h-4v4H6z" fill="#ffd23f" /></svg>
+      <h1 class="home-title">blockmancala</h1>
+    </div>
+    <div id="homeMain" class="home-main">
+      <button id="homeSolo" class="home-play">ひとりで あそぶ<small id="homeSoloSub" class="hidden">つづきから</small></button>
+      <button id="homeVs" class="home-btn home-vs">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 3.5h5l7.6 7.6-2.5 2.5L6 6v-2.5zM20.5 3.5v5l-3.9 3.9-2.5-2.5 3.9-3.9h2.5zM6.2 14.6l3.2 3.2-1.8 1.8 1.4 1.4-1.4 1.4-2.1-2.1-1.8 1.8-1.4-1.4 1.8-1.8-2.1-2.1 1.4-1.4 1.4 1.4zM17.8 14.6l1.4 1.4 1.4-1.4 1.4 1.4-2.1 2.1 1.8 1.8-1.4 1.4-1.8-1.8-2.1 2.1-1.4-1.4 1.4-1.4-1.8-1.8z" /></svg>
+        対戦
+      </button>
+      <button id="homeLearn" class="home-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6a6.9 6.9 0 0 0-4.1 12.5c.7.5 1.1 1.3 1.1 2.1v.6h6v-.6c0-.8.4-1.6 1.1-2.1A6.9 6.9 0 0 0 12 2.6z" /><rect x="9" y="19.2" width="6" height="2.4" rx="1.2" /></svg>
+        学習モード
+      </button>
+    </div>
+    <div id="homeVsPanel" class="home-panel hidden">
+      <p class="home-sec">CPU と対戦</p>
+      <div class="home-levels">
+        <button class="home-level" data-level="easy">よわい</button>
+        <button class="home-level" data-level="normal">ふつう</button>
+        <button class="home-level" data-level="hard">つよい</button>
+      </div>
+      <p class="home-sec">オンライン対戦</p>
+      <button id="homeRandom" class="home-btn home-online">だれかと対戦</button>
+      <div class="home-row">
+        <button id="homeRoomMake" class="home-btn small">あいことばを作る</button>
+        <button id="homeRoomJoin" class="home-btn small">あいことばで入る</button>
+      </div>
+      <p id="homeVsRec" class="home-rec"></p>
+      <button id="homeVsRules" class="link home-link">対戦のルール</button>
+      <button id="homeVsBack" class="link home-link">もどる</button>
+    </div>
+    <div class="home-icons">
+      <button id="homeRank" class="home-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 2.8h10.8v2h3.4v2.6c0 2.7-2 4.9-4.6 5.3a5.5 5.5 0 0 1-3.1 2.6v2.9h3.1v3H7.8v-3h3.1v-2.9a5.5 5.5 0 0 1-3.1-2.6C5.2 12.3 3.2 10.1 3.2 7.4V4.8h3.4zm0 4H5.4v.6c0 1.4.9 2.6 2.1 3.1a7 7 0 0 1-.9-3.3zm10.8 0v.4a7 7 0 0 1-.9 3.3c1.2-.5 2.1-1.7 2.1-3.1v-.6z" /></svg>ランキング</button>
+      <button id="homeDesign" class="home-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="8" rx="2" /><rect x="3" y="13" width="8" height="8" rx="2" /><rect x="13" y="13" width="8" height="8" rx="2" /></svg>デザイン</button>
+      <button id="homeHowto" class="home-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19zm1.3 15.2h-2.6v-2.5h2.6zm2.4-7.4c-.4.8-1.1 1.3-1.7 1.7-.6.4-.9.7-.9 1.4v.5h-2.4v-.7c0-1.4.7-2.1 1.5-2.6.6-.4 1-.7 1-1.4 0-.7-.6-1.2-1.4-1.2-.9 0-1.5.6-1.6 1.5L7.8 9c.2-2.1 1.9-3.4 4.2-3.4 2.4 0 4 1.3 4 3.3 0 .5-.1 1-.3 1.4z" /></svg>遊び方</button>
+      <button id="homeSound" class="home-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.2 3.4v10.3a4 4 0 1 0 2.3 3.6V8.1h4.6V3.4z" /></svg>サウンド</button>
+    </div>
+  </div>
+</div>
+<!-- オンライン対戦: 相手を探している間・あいことば -->
+<div id="lobby" class="overlay lobby hidden">
+  <div class="overlay-box lobby-box">
+    <p id="lobbyTitle" class="over-title">相手をさがしています</p>
+    <div id="lobbySpin" class="lobby-spin" aria-hidden="true"><i class="cell block c-red"></i><i class="cell block c-yellow"></i><i class="cell block c-cyan"></i><i class="cell block c-purple"></i></div>
+    <p id="lobbyCode" class="lobby-code hidden"></p>
+    <p id="lobbyNote" class="lobby-note"></p>
+    <div id="lobbyJoin" class="lobby-join hidden">
+      <input id="lobbyInput" class="rank-name-input lobby-input" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" enterkeyhint="go" placeholder="0000" />
+      <button id="lobbyJoinGo" class="rank-name-go">はいる</button>
+    </div>
+    <button id="lobbyCancel" class="link howto">やめる</button>
+  </div>
+</div>
+<!-- デザイン（盤面の種類）。一時停止の画面と同じ一覧を、開いたほうへ移して使う -->
+<div id="designOverlay" class="overlay hidden">
+  <div class="overlay-box pause-box design-box">
+    <p class="over-title">デザイン</p>
+    <div id="designSlot"></div>
+    <button id="designClose" class="primary">とじる</button>
+  </div>
+</div>
+<!-- 対戦のルール -->
+<div id="vsRules" class="overlay hidden">
+  <div class="overlay-box pause-box rules-box">
+    <p class="over-title">対戦のルール</p>
+    <ul class="rules-list">
+      <li><b>2連鎖</b>以上すると、連鎖の数を書いた<b>おじゃま</b>が相手へ飛んでいきます</li>
+      <li>おじゃまは、相手の連鎖が終わってから、自分が次に置いたあとに<b>上から落ちてきて</b>、盤面の一番下に積もります</li>
+      <li>おじゃまの上には置けず、おじゃまが入ったラインは<b>満杯になりません</b></li>
+      <li>自分が連鎖すると、盤面のおじゃまの数字が<b>連鎖の数だけ減り</b>、0 になると消えます</li>
+      <li>全消しすると、送るおじゃまが <b>+5</b></li>
+      <li>1分30秒を過ぎると、1回に送るおじゃまの数が<b>だんだん増えます</b></li>
+      <li>置ける場所がなくなったほうの負け</li>
+    </ul>
+    <button id="vsRulesClose" class="primary">とじる</button>
   </div>
 </div>
 <div id="pauseOverlay" class="overlay hidden">

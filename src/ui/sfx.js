@@ -468,6 +468,45 @@ export class Sfx {
   settle(i = 0) { if (!this.allow('settle', 0.032)) return;
                  this.noise({ dur: 0.025, gain: 0.075, from: 1800, to: 650, attack: 0.001, priority: 0 });
                  this.tone(note(i, 392), { dur: 0.06, gain: 0.13, type: 'triangle', priority: 0 }); }
+  /* ---------- 対戦（どれも、いまの音のセットの鈴・置く音で鳴らす。ガラスの盤面ではコップの音になる） ---------- */
+  // 相手からおじゃまが飛んできた（予告に並ぶ）: 低めの鈴が 2 つ、下がって鳴る（注意をひくが、おどかさない）
+  garbageWarn(n = 1) { if (!this.allow('garbageWarn', 0.12)) return;
+                  const f = 392 * (n >= 8 ? 0.84 : 1);
+                  this.bell(f, { gain: 0.26, ring: 0.5, oct: 1, priority: 2 });
+                  this.bell(f * 0.75, { gain: 0.24, ring: 0.6, oct: 1, at: 0.11, priority: 2 });
+                  this.vibe([0, 12, 30, 12]); }
+  // おじゃまが積もった: 石が落ちたような低い「ゴトッ」（置く音を低く重く + 胴鳴り）
+  garbageLand(i = 0) { if (!this.allow('garbageLand', 0.05)) return;
+                  this.glass((i + 2) % PLACE_VARIANTS, 1, this.kit);
+                  this.tone(118, { dur: 0.16, gain: 0.5, slide: 0.55, attack: 0.002, priority: 3 });
+                  this.noise({ dur: 0.06, gain: 0.16, from: 1400, to: 420, attack: 0.002, priority: 2 });
+                  this.vibe(18); }
+  // 連鎖でおじゃまの数字が減った: 軽く上がる「チッ、チッ」
+  garbageChip(count = 1) { if (!this.allow('garbageChip', 0.08)) return;
+                  [0, 2].forEach((k, i) => this.bell(note(k + 5, 523.25), { gain: 0.16, ring: 0.3, at: i * 0.05, priority: 1 }));
+                  this.tone(1568, { dur: 0.03, type: 'triangle', gain: 0.08 * Math.min(3, count) }); }
+  // おじゃまが 0 になって砕けた: 砕ける音（かけら）+ 明るく上がる鈴
+  garbageBreak(count = 1) { if (!this.allow('garbageBreak', 0.1)) return;
+                  this.shatter();
+                  [0, 2, 4].forEach((k, i) => this.bell(note(k + 3, 523.25), { gain: 0.24, ring: 0.5, at: 0.05 + i * 0.05, priority: 2 }));
+                  this.vibe([0, 14, 20, 14]); }
+  // おじゃまを送った: 風が上へ抜ける「シュッ」+ 数字が大きいほど高い鈴
+  attack(n = 2) { const k = Math.min(9, Math.max(0, n - 2));
+                  this.noise({ dur: 0.28, gain: 0.2, from: 500, to: 2800, attack: 0.08, priority: 2 });
+                  this.bell(note(k + 2, 392), { gain: 0.3, ring: 0.6, oct: 1, at: 0.05, priority: 2 });
+                  this.bell(note(k + 4, 392), { gain: 0.2, ring: 0.5, oct: 1, at: 0.12, priority: 1 }); }
+  // 送ったおじゃまが相手の予告に届いた: 小さな「コッ」
+  attackHit()   { if (!this.allow('attackHit', 0.06)) return;
+                  this.tone(240, { dur: 0.06, type: 'triangle', gain: 0.18, slide: 0.7, priority: 1 }); }
+  // 相手が見つかった
+  matchFound()  { [0, 2, 4, 7].forEach((k, i) => this.bell(note(k, 523.25), { gain: 0.3, ring: i === 3 ? 0.9 : 0.4, at: i * 0.07 })); this.vibe([0, 20, 30, 20]); }
+  // カウントダウン（3・2・1）と、はじめ！
+  countdown(i = 3) { this.bell(i === 1 ? 587.33 : 523.25, { gain: 0.34, ring: 0.45, oct: 1, priority: 3 }); this.vibe(10); }
+  go()          { [0, 4, 7].forEach((k, i) => this.bell(note(k, 523.25) * 2, { gain: 0.3, ring: 0.8, at: i * 0.03, priority: 3 }));
+                  this.shalan(3, { size: 0.8, at: 0.04 }); this.vibe([0, 30]); }
+  // 勝ち: ファンファーレ + シャラン、負け: ゲームオーバーと同じ、やわらかく下がる和音
+  win()         { this.fanfare(); this.shalan(6, { size: 0.9, at: 0.5 }); }
+  lose()        { this.over(); }
   // ゲームオーバー: やわらかい三角波・正弦波の和音が、ゆっくり下がって消える（耳障りなのこぎり波は使わない）
   over()        { [392, 311.1, 261.6].forEach((f, i) => this.tone(f, { dur: 0.9, type: i ? 'sine' : 'triangle', gain: 0.22, slide: 0.7, at: i * 0.12 }));
                   this.tone(196, { dur: 1.1, type: 'sine', gain: 0.25, slide: 0.8, at: 0.3 }); this.vibe([0, 60, 50, 140]); }
