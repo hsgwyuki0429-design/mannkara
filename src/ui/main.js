@@ -1,28 +1,28 @@
-import { Game } from '../core/game.js?v=202610090639';
-import { Board, createBlock } from '../core/board.js?v=202610090639';
-import { Piece } from '../core/pieces.js?v=202610090639';
-import * as Sim from '../core/sim.js?v=202610090639';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610090639';
-import { Renderer, delay, markJoins } from './renderer.js?v=202610090639';
-import { Sfx, kitForScore } from './sfx.js?v=202610090639';
-import { Scenes } from './scenes.js?v=202610090639';
-import { Ambient } from './ambient.js?v=202610090639';
-import { colorOf } from './palette.js?v=202610090639';
-import { TrayDealer } from './tray-dealer.js?v=202610090639';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610090639';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610090639';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610090639';
-import { World, SEASON } from './world.js?v=202610090639';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610090639';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610090639';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610090639';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610090639';
-import { softwareRendering } from './fx2d.js?v=202610090639';
-import { useSprites } from './shards.js?v=202610090639';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610090639';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610090639';
-import { makeQr, drawQr } from './qr.js?v=202610090639';
-import { BattleNet } from './net.js?v=202610090639';
+import { Game } from '../core/game.js?v=202610091030';
+import { Board, createBlock } from '../core/board.js?v=202610091030';
+import { Piece } from '../core/pieces.js?v=202610091030';
+import * as Sim from '../core/sim.js?v=202610091030';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091030';
+import { Renderer, delay, markJoins } from './renderer.js?v=202610091030';
+import { Sfx, kitForScore } from './sfx.js?v=202610091030';
+import { Scenes } from './scenes.js?v=202610091030';
+import { Ambient } from './ambient.js?v=202610091030';
+import { colorOf } from './palette.js?v=202610091030';
+import { TrayDealer } from './tray-dealer.js?v=202610091030';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091030';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091030';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091030';
+import { World, SEASON } from './world.js?v=202610091030';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091030';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610091030';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091030';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091030';
+import { softwareRendering } from './fx2d.js?v=202610091030';
+import { useSprites } from './shards.js?v=202610091030';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610091030';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091030';
+import { makeQr, drawQr } from './qr.js?v=202610091030';
+import { BattleNet } from './net.js?v=202610091030';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -233,7 +233,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610090639', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091030', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -714,7 +714,11 @@ window.addEventListener('pointercancel', (e) => { if (mine(e)) cancelDrag(); });
 // アプリの切り替え・通知などで指が離れたのが届かないことがある。そのときは持っているピースを戻す
 window.addEventListener('blur', cancelDrag);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { cancelDrag(); saveBest(); saveGame(); sfx.markStale(); }  // 途中でアプリを閉じてもベストスコアと盤面が残るように
+  if (document.hidden) {
+    cancelDrag(); saveBest(); saveGame(); sfx.markStale();   // 途中でアプリを閉じてもベストスコアと盤面が残るように
+    // CPU との対戦は、裏にいる間も CPU だけ進んでしまうので一時停止にする（オンラインは止められない）
+    if (inBattle() && versus.kind === 'cpu' && !versus.ended && !paused && !gameOverShown) setPaused(true);
+  }
   else sfx.unlock();   // 画面に戻ってきたとき: まず再開を試す（iOS はこの後の最初の操作で音を作り直す）
 });
 window.addEventListener('pagehide', () => { saveBest(); saveGame(); });
@@ -788,7 +792,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610090639').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610091030').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -1464,15 +1468,15 @@ function nameGate(done) {
   const gate = $('nameGate'), input = $('gateInput'), go = $('gateGo');
   gate.classList.remove('hidden');
   const ready = () => !!input.value.trim();
-  input.addEventListener('input', () => { go.disabled = !ready(); });
+  input.oninput = () => { go.disabled = !ready(); };
   const commit = () => {
     if (!ready() || !world.setName(input.value)) { input.focus(); return; }
     gate.classList.add('hidden');
     world.flush(true);                             // ランキングに参加する（前のベストスコアが残っていれば、ここで送る）
     done();
   };
-  go.addEventListener('click', commit);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+  go.onclick = commit;                             // 開くたびに付け直す（前に開いたときの done は呼ばない）
+  input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } };
   setTimeout(() => input.focus(), 60);
 }
 /* ---------- 対戦（versus.js。ルールは core/battle.js） ---------- */
@@ -1528,7 +1532,7 @@ function exitBattle() {
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610090639', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610091030', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,
@@ -1585,7 +1589,13 @@ $('btnHome').addEventListener('click', () => {
   if (!pending) saveGame();
   showHome();
 });
-$('homeSolo').addEventListener('click', () => { sfx.unlock(); hideHome(); });
+/** ひとりで: 遊んでいたゲームの続きへ。チュートリアルの途中ならやめて本番のゲームへ、ゲームオーバーのあとなら新しいゲーム */
+$('homeSolo').addEventListener('click', () => {
+  sfx.unlock();
+  hideHome();
+  if (tutorial) { stopTutorial(); startOrResume(); }
+  else if (gameOverShown) restart();
+});
 $('homeVs').addEventListener('click', () => { sfx.unlock(); homePanel('vs'); });
 $('homeVsBack').addEventListener('click', () => homePanel('main'));
 $('homeVsRules').addEventListener('click', () => $('vsRules').classList.remove('hidden'));
@@ -1680,8 +1690,9 @@ function lobbyMatched(net, room, rated = false) {
   $('lobbySpin').classList.add('hidden');
   $('lobbyCode').classList.add('hidden');
   lobbyText('相手が見つかりました！', `vs ${room.opponent?.name ?? ''}`);
-  lobbyNet = null;
   setTimeout(() => {
+    if (net !== lobbyNet) return;                  // 始まるまでの間に「やめる」を押した（部屋は出ている）
+    lobbyNet = null;
     $('lobby').classList.add('hidden');
     hideHome();
     versus.startOnline(net, room, { rated });
