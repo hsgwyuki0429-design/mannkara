@@ -38,8 +38,8 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202610091434" />
-<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091434" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202610091446" />
+<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091446" />
 </head>
 <body>
 <div id="app">
@@ -315,13 +315,13 @@
   <div class="overlay-box pause-box rules-box">
     <p class="over-title">対戦のルール</p>
     <ul class="rules-list">
-      <li><b>2連鎖</b>以上すると、連鎖の数を書いた<b>おじゃま</b>が相手へ飛んでいきます</li>
+      <li><b>1連鎖</b>から、連鎖の数を書いた<b>おじゃま</b>が相手へ飛んでいきます（1連鎖なら「1」、5連鎖なら「5」）</li>
       <li>自分と相手には、<b>同じ順番</b>でピースが出ます。使った枠には<b>すぐ次のピース</b>が入ります</li>
       <li>おじゃまは、相手の連鎖が終わったら<b>すぐ</b>、盤面の<b>一番外側の辺</b>（直角をはさむ 2 辺）の空きマスに、真ん中から順に<b>ドンと置かれます</b>（自分が連鎖しているときは、その連鎖が終わったらすぐ）。外側の辺が埋まったら、次の辺へ</li>
       <li>おじゃまの上には置けず、おじゃまが入ったラインは<b>満杯になりません</b></li>
       <li>自分が連鎖すると、<b>連鎖の数ぶん</b>（5 連鎖なら −5）が、<b>一番外側のおじゃま 1 個</b>に当たります（角から一番遠い端のものから。0 になって消えたら次のおじゃまへ）</li>
       <li>全消しすると、送るおじゃまが <b>+5</b></li>
-      <li>1分30秒を過ぎると、1回に送るおじゃまの数が<b>だんだん増えます</b></li>
+      <li>1分30秒を過ぎると、1回に送るおじゃまの<b>個数</b>が2個になり、そこから20秒ごとに1個ずつ増えます（最大5個。増えた瞬間に画面にも出ます）</li>
       <li>置ける場所がなくなったほうの負け</li>
       <li>連鎖はいつも速く再生され、<b>連鎖のあいだは次のピースを持てません</b>（連鎖が終わってから置きます）</li>
       <li><b>レート戦</b>は 1000 から。勝つと増え、負けると同じだけ減ります（2人の増減を足すと 0）。途中でやめると負けです</li>
@@ -373,6 +373,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202610091434"></script>
+<script type="module" src="./src/ui/main.js?v=202610091446"></script>
 </body>
 </html>

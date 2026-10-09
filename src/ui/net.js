@@ -8,9 +8,9 @@
  *     まだ届いたと言われていないものを新しい道で送り直す。重なって届いたものは捨てる）
  * 相手からのメッセージは onMessage(msg)。相手がいなくなったら onGone(reason)（'left' 出ていった / 'lost' 通信が途切れた）
  */
-import { apiBase } from './world.js?v=202610091434';
+import { apiBase } from './world.js?v=202610091446';
 
-export const PROTOCOL = 4;          // 4: おじゃまの削り方を変えた（3: 置き場所と削り方を変えた・2: 同じ順番の手駒・使った枠にすぐ補充）
+export const PROTOCOL = 5;          // 5: 1 連鎖でも送る・1 回の個数の上限なし（4: おじゃまの削り方・3: 置き場所と削り方・2: 同じ順番の手駒）
 const ICE_SERVERS = [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }];
 const GATHER_MS = 2500;          // つなぐ候補を集める時間の上限
 const P2P_GIVE_UP_MS = 9000;     // これまでにじかにつながらなければ、中継のまま

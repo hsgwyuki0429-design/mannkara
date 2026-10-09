@@ -1,12 +1,12 @@
-import { BattleSide, BATTLE_SPEED, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091434';
-import { Game } from '../core/game.js?v=202610091434';
-import { Piece, seedOf } from '../core/pieces.js?v=202610091434';
-import { createGarbage } from '../core/board.js?v=202610091434';
-import { isInside } from '../core/constants.js?v=202610091434';
-import { OppBoard, turnCost } from './opp-board.js?v=202610091434';
-import { TrayDealer } from './tray-dealer.js?v=202610091434';
-import { Renderer } from './renderer.js?v=202610091434';
-import { PROTOCOL } from './net.js?v=202610091434';
+import { BattleSide, BATTLE_SPEED, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, marginStartOf, MARGIN_MS, MARGIN_MAX, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091446';
+import { Game } from '../core/game.js?v=202610091446';
+import { Piece, seedOf } from '../core/pieces.js?v=202610091446';
+import { createGarbage } from '../core/board.js?v=202610091446';
+import { isInside } from '../core/constants.js?v=202610091446';
+import { OppBoard, turnCost } from './opp-board.js?v=202610091446';
+import { TrayDealer } from './tray-dealer.js?v=202610091446';
+import { Renderer } from './renderer.js?v=202610091446';
+import { PROTOCOL } from './net.js?v=202610091446';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
@@ -247,8 +247,17 @@ export class Versus {
         m.textContent = label;
         m.classList.remove('hidden');
         m.animate([{ scale: '1.6' }, { scale: '1' }], { duration: 380, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+        this.announceMargin(blocks);
       }
     }
+  }
+
+  /** マージンタイムで 1 回に送るおじゃまの個数が増えた: 画面の真ん中に「おじゃま ×N / 何分何秒から」を出して、警告の音を鳴らす */
+  announceMargin(blocks) {
+    const sec = Math.round(marginStartOf(blocks) / 1000);
+    const at = `${Math.floor(sec / 60)}分${String(sec % 60).padStart(2, '0')}秒`;
+    this.api.renderer.showText(`おじゃま ×${blocks}<small>${at}をすぎた${blocks >= MARGIN_MAX ? '（さいだい）' : ''}</small>`, 't3');
+    this.api.sfx.garbageIncoming?.(blocks, 0);
   }
 
   setPaused(on) {
