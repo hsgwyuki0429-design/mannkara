@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202610090554';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610090554';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610090554';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610090554';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610090554';
-import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610090554';
-import * as Sim from '../src/core/sim.js?v=202610090554';
-import { DealerCore } from '../src/core/dealer.js?v=202610090554';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610090554';
-import { ScoreManager } from '../src/core/score.js?v=202610090554';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610090554';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610090554';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610090554';
+import { Board, createBlock } from '../src/core/board.js?v=202610090639';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610090639';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610090639';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610090639';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610090639';
+import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610090639';
+import * as Sim from '../src/core/sim.js?v=202610090639';
+import { DealerCore } from '../src/core/dealer.js?v=202610090639';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610090639';
+import { ScoreManager } from '../src/core/score.js?v=202610090639';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610090639';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610090639';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610090639';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610090554';
+  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610090639';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -847,16 +847,16 @@ console.log('穴・凹みにはまる形: はまり方の判定・約30% の確�
 
 console.log('スコア倍率');
 {
-  eq([1, 2, 3, 4, 5, 8, 12, 13, 20, 30].map(chainMultiplier), [1, 2, 3, 5, 8, 20, 50, 60, 130, 230], '連鎖倍率（12連鎖より先も上限なしで伸びる）');
+  eq([1, 2, 3, 4, 5, 8, 12, 13, 20, 30].map(chainMultiplier), [1, 2, 4, 6, 10, 24, 60, 72, 156, 276], '連鎖倍率（シーズン2で少し上げた。12連鎖より先も上限なしで伸びる）');
   const near = (a, b) => Math.abs(a - b) < 1e-9;
-  eq([1, 2, 3, 5, 12].map(streakMultiplier).every((v, i) => near(v, Math.pow(1.3, [0, 1, 2, 4, 11][i]))), true, 'COMBO 倍率: 1コンボごとに ×1.3（上限なし）');
-  eq(streakMultiplier(20) > streakMultiplier(19), true, 'COMBO 倍率は長く続くほど伸び続ける');
+  eq([1, 2, 3, 5, 12].map(streakMultiplier).every((v, i) => near(v, [1, 1.1, 1.2, 1.4, 2.1][i])), true, 'COMBO 倍率: 1コンボごとに +0.1（シーズン2で下げた）');
+  eq([streakMultiplier(21), streakMultiplier(50)], [3, 3], 'COMBO 倍率は ×3 まで（点数がふくらみすぎないように）');
   const s = new ScoreManager();
   s.streak = 2;                                              // このターンで COMBO 3
-  eq(SCORE_PER_GOAL, 90, 'ゴール1個の基本点は 90');
-  eq(s.addStep({ goals: 2, chain: 3 }), Math.round(2 * SCORE_PER_GOAL * 3 * 1.69), '3連鎖目・COMBO 3 のゴール2個'); 
+  eq(SCORE_PER_GOAL, 100, 'ゴール1個の基本点は 100');
+  eq(s.addStep({ goals: 2, chain: 3 }), Math.round(2 * SCORE_PER_GOAL * 4 * 1.2), '3連鎖目・COMBO 3 のゴール2個'); 
   s.endTurn(true);
-  eq(s.addAllClear(), Math.round(ALL_CLEAR_BONUS * 1.69), '全消しボーナスにも COMBO 倍率');
+  eq(s.addAllClear(), Math.round(ALL_CLEAR_BONUS * 1.2), '全消しボーナスにも COMBO 倍率');
   eq(ALL_CLEAR_BONUS, 5000, '全消しボーナスは 5,000');
   const t = new ScoreManager(); t.endTurn(true);
   eq(t.addAllClear(), ALL_CLEAR_BONUS, 'COMBO 1 の全消しはボーナスそのまま');
@@ -874,7 +874,7 @@ console.log('全消しのあとは、しばらくスコアの倍率が上がる'
   const gains = [];
   for (let i = 0; i < ALL_CLEAR_BOOST_TURNS + 2; i++) { s.endTurn(false); s.streak = 0; gains.push(s.addStep({ goals: 1, chain: 1 })); }
   // 1手目は上で使い終えたので、残り4手が ×1.5、そのあとは元どおり
-  eq(gains, [135, 135, 135, 135, 90, 90, 90], `${ALL_CLEAR_BOOST_TURNS} 手が終わると元に戻る`);
+  eq(gains, [150, 150, 150, 150, 100, 100, 100], `${ALL_CLEAR_BOOST_TURNS} 手が終わると元に戻る`);
   s.endTurn(true); s.addAllClear(); s.endTurn(false); s.endTurn(false); s.addAllClear();
   eq(s.boostTurns, ALL_CLEAR_BOOST_TURNS, 'もう一度全消しすると手数が戻る（倍率は重ねない）');
   const g = new Game({ random: () => 0.5 });
@@ -1016,12 +1016,12 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202610090554');
+  const api = await import('../functions/api/ranking.js?v=202610090639');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');
   const id = 'a'.repeat(32);
-  eq(api.cleanRun({ id, name: 'x', score: 10, chain: 2 }), { id, name: 'x', score: 10 }, '記録: スコアと名前だけ受け取る');
+  eq(api.cleanRun({ id, name: 'x', score: 10, chain: 2, season: 2 }), { id, name: 'x', score: 10, add: 0, games: 0, seq: 0, season: 2 }, '記録: スコア・累計・名前だけ受け取る');
   eq([api.cleanRun({ id: 'zz', name: 'x', score: 1 }), api.cleanRun({ id, name: 'x', score: 1.5 }),
     api.cleanRun({ id, name: 'x', score: -1 }), api.cleanRun({ id, name: 'x', score: Number.MAX_SAFE_INTEGER + 2 }), api.cleanRun({ id, name: '', score: 1 })],
     [null, null, null, null, null], '記録: おかしな id・小数・負・ありえない点・名前なしははねる');
@@ -1038,38 +1038,38 @@ console.log('世界ランキングの API（functions/api/ranking.js）');
       return st;
     } };
     const A = '1'.repeat(32), B = '2'.repeat(32), C = '3'.repeat(32), D = '4'.repeat(32);
-    await api.submit(d1, { id: A, name: 'A', score: 500 }, 1);
-    await api.submit(d1, { id: B, name: 'B', score: 900 }, 2);
-    await api.submit(d1, { id: C, name: 'C', score: 500 }, 3);
-    await api.submit(d1, { id: A, name: 'A2', score: 300 }, 4);
-    await api.submit(d1, { id: D, name: 'D', score: 0 }, 5);
+    await api.submit(d1, { season: 2, id: A, name: 'A', score: 500 }, 1);
+    await api.submit(d1, { season: 2, id: B, name: 'B', score: 900 }, 2);
+    await api.submit(d1, { season: 2, id: C, name: 'C', score: 500 }, 3);
+    await api.submit(d1, { season: 2, id: A, name: 'A2', score: 300 }, 4);
+    await api.submit(d1, { season: 2, id: D, name: 'D', score: 0 }, 5);
     const r = await api.ranking(d1, C);
     eq(r.top.map((x) => [x.rank, x.name, x.score, x.me]), [[1, 'B', 900, false], [2, 'A2', 500, false], [3, 'C', 500, true]],
       '1人1行の自己ベスト（下がった点では下げない）・名前は新しいもの・同じ点なら先に出した人が上・0 点の人は出ない');
-    eq(r.me, { rank: 3, score: 500 }, '自分の順位（同じ点のときも上の並びと同じ）');
+    eq(r.me, { rank: 3, score: 500, games: 0 }, '自分の順位（同じ点のときも上の並びと同じ）');
     eq((await api.ranking(d1, D)).me, null, '0 点なら自分の順位は無し');
     eq(JSON.stringify(r).includes(A), false, 'id は返さない');
     eq(r.total, 3, '参加している人数（0 点の人は数えない）');
-    for (let i = 0; i < 120; i++) await api.submit(d1, { id: (1000 + i).toString(16).padStart(32, 'f'), name: 'p' + i, score: 10 + i }, 10 + i);
-    const p1 = await api.ranking(d1, C), p2 = await api.ranking(d1, C, 50), last = await api.ranking(d1, C, 100, 100);
+    for (let i = 0; i < 120; i++) await api.submit(d1, { season: 2, id: (1000 + i).toString(16).padStart(32, 'f'), name: 'p' + i, score: 10 + i }, 10 + i);
+    const p1 = await api.ranking(d1, C), p2 = await api.ranking(d1, C, { offset: 50 }), last = await api.ranking(d1, C, { offset: 100, limit: 100 });
     eq([p1.top.length, p1.total, p2.top[0].rank, last.top.length, last.top.at(-1).rank, last.top.at(-1).score], [50, 123, 51, 23, 123, 10],
       '最下位まで、offset をずらして続きを読める（1回に50人。最後のページは残りだけ）');
-    eq((await api.ranking(d1, C, 0, 9999)).top.length, api.PAGE_MAX, '1回に読めるのは PAGE_MAX 人まで');
+    eq((await api.ranking(d1, C, { limit: 9999 })).top.length, api.PAGE_MAX, '1回に読めるのは PAGE_MAX 人まで');
     eq([...p1.top, ...p2.top].map((x) => x.rank), Array.from({ length: 100 }, (_, i) => i + 1), 'ページをつなげても順位が飛ばない');
     // 不適切な名前を隠す（作成者だけ。書き換えはできない）
-    const admin = await import('../functions/api/admin.js?v=202610090554');
+    const admin = await import('../functions/api/admin.js?v=202610090639');
     const P = '5'.repeat(32), Q = '6'.repeat(32);
-    await api.submit(d1, { id: P, name: 'わるい名前', score: 700 }, 1000);
-    await api.submit(d1, { id: Q, name: 'ふつう', score: 650 }, 1001);
+    await api.submit(d1, { season: 2, id: P, name: 'わるい名前', score: 700 }, 1000);
+    await api.submit(d1, { season: 2, id: Q, name: 'ふつう', score: 650 }, 1001);
     eq(await admin.setHidden(d1, P, true), true, '名前を隠す');
     const seen = (await api.ranking(d1, null)).top.find((x) => x.score === 700);
     eq([seen.name, seen.hidden, seen.me], [api.HIDDEN_NAME, true, false], 'ほかの人には ＊＊＊ と出る（順位・スコアはそのまま）');
     const mine = (await api.ranking(d1, P)).top.find((x) => x.score === 700);
     eq([mine.name, mine.hidden, mine.me], ['わるい名前', false, true], '本人には本人の名前のまま出る（隠されたことに気づかない）');
     eq((await api.ranking(d1, null)).top.find((x) => x.score === 650).name, 'ふつう', 'ほかの人の名前は隠れない');
-    await api.submit(d1, { id: P, name: 'わるい名前', score: 800 }, 1002);
+    await api.submit(d1, { season: 2, id: P, name: 'わるい名前', score: 800 }, 1002);
     eq((await api.ranking(d1, null)).top.find((x) => x.score === 800).name, api.HIDDEN_NAME, '同じ名前のまま記録を更新しても、隠れたまま');
-    await api.submit(d1, { id: P, name: 'あたらしい名前', score: 800 }, 1003);
+    await api.submit(d1, { season: 2, id: P, name: 'あたらしい名前', score: 800 }, 1003);
     eq((await api.ranking(d1, null)).top.find((x) => x.score === 800).name, 'あたらしい名前', '本人が名前を変えたら、新しい名前は出る（まだ不適切なら、もう一度隠す）');
     await admin.setHidden(d1, P, true);
     eq((await admin.adminList(d1, { onlyHidden: true })).players.map((x) => [x.name, x.hidden]), [['あたらしい名前', true]], '管理: 隠しているものだけ');
@@ -1084,7 +1084,7 @@ console.log('世界ランキングの API（functions/api/ranking.js）');
     old.exec("INSERT INTO players VALUES ('" + 'a'.repeat(32) + "', '前からいる人', 500, 1, 1)");
     const d1old = { prepare(sql) { let args = []; const st = { bind: (...x) => { args = x; return st; }, run: async () => old.prepare(sql).run(...args),
       all: async () => ({ results: old.prepare(sql).all(...args) }), first: async () => old.prepare(sql).get(...args) ?? null }; return st; } };
-    eq((await api.ranking(d1old, null)).top.map((x) => [x.name, x.hidden]), [['前からいる人', false]], '古い表でもそのまま動く（列を足す）');
+    eq((await api.ranking(d1old, null, { season: 1 })).top.map((x) => [x.name, x.hidden]), [['前からいる人', false]], '古い表でもそのまま動く（列を足す）');
     // 合言葉（ADMIN_KEY）
     const req = (key, method = 'GET', body) => new Request('https://x.test/api/admin', { method, headers: key ? { Authorization: 'Bearer ' + key } : {}, body });
     const K = 'k'.repeat(20);

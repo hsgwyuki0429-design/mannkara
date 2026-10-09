@@ -49,6 +49,7 @@
     <div class="row">
       <input id="q" type="text" placeholder="名前で探す" maxlength="40" />
       <label><input id="onlyHidden" type="checkbox" />隠しているものだけ</label>
+      <select id="season"><option value="2">シーズン2</option><option value="1">シーズン1</option></select>
     </div>
     <div id="msg"></div>
     <ol id="list"></ol>
@@ -97,7 +98,7 @@
   async function load(reset = true) {
     const my = ++token;
     if (reset) { offset = 0; $('list').replaceChildren(); }
-    const qs = new URLSearchParams({ q: $('q').value.trim(), hidden: $('onlyHidden').checked ? '1' : '0', offset });
+    const qs = new URLSearchParams({ q: $('q').value.trim(), hidden: $('onlyHidden').checked ? '1' : '0', season: $('season').value, offset });
     try {
       const d = await api('?' + qs);
       if (my !== token) return;
@@ -122,6 +123,7 @@
   let timer = 0;
   $('q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
   $('onlyHidden').addEventListener('change', () => load());
+  $('season').addEventListener('change', () => load());
   $('more').addEventListener('click', () => load(false));
   $('out').addEventListener('click', logout);
   if (key) open();

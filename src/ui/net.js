@@ -8,7 +8,7 @@
  *     まだ届いたと言われていないものを新しい道で送り直す。重なって届いたものは捨てる）
  * 相手からのメッセージは onMessage(msg)。相手がいなくなったら onGone(reason)（'left' 出ていった / 'lost' 通信が途切れた）
  */
-import { apiBase } from './world.js?v=202610090554';
+import { apiBase } from './world.js?v=202610090639';
 
 export const PROTOCOL = 1;
 const ICE_SERVERS = [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }];
@@ -57,6 +57,28 @@ export class BattleNet {
   async createRoom() { return this.waitFor(await this.call({ op: 'create', me: this.me, name: this.name })); }
   /** あいことばの部屋に入る（無ければ 'no-room' のエラー） */
   async joinRoom(code) { return this.waitFor(await this.call({ op: 'join', me: this.me, name: this.name, code: String(code) })); }
+  /** レート戦の相手（だれでもよい相手と同じ探し方で、レート戦どうし）。自分のレートは this.rate */
+  async matchRated() {
+    const res = await this.call({ op: 'rated', me: this.me, name: this.name });
+    this.rate = res.rate?.rate ?? null;
+    return this.waitFor(res);
+  }
+  /**
+   * レート戦の結果を知らせる（'win' / 'lose' / 'draw'）。相手の知らせを待つあいだは少しずつ聞き直す（最大 waitMs）。
+   * → { status: 'done', rate, delta } / { status: 'void' } / { status: 'pending' }（決まらなかった）
+   */
+  async reportResult(result, waitMs = 25000) {
+    const key = this.room?.key;
+    if (!key) return { status: 'pending' };
+    const until = Date.now() + waitMs;
+    for (;;) {
+      let res = null;
+      try { res = await this.call({ op: 'result', key, result }); } catch {}
+      if (res && res.status !== 'pending') return res;
+      if (Date.now() > until) return res ?? { status: 'pending' };
+      await sleep(1500);
+    }
+  }
 
   async waitFor({ room }) {
     this.room = room;

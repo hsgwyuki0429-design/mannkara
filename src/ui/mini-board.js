@@ -1,6 +1,6 @@
-import { SIZE, ANIM, isInside, lineCells } from '../core/constants.js?v=202610090554';
-import { ROTATION } from './renderer.js?v=202610090554';
-import { stepCells } from '../core/battle.js?v=202610090554';
+import { SIZE, ANIM, isInside, lineCells } from '../core/constants.js?v=202610090639';
+import { ROTATION } from './renderer.js?v=202610090639';
+import { stepCells } from '../core/battle.js?v=202610090639';
 
 /**
  * 対戦で、相手の盤面を小さく映す（画面の右上）。盤面と同じ向き（直角が下の三角形）・同じブロックの塗り（.block c-色。盤面の種類の見た目もそのまま）。
@@ -28,6 +28,7 @@ export class MiniBoard {
     this.paused = false;
     this.gen = 0;
     this.cell = 12;
+    this.base = 1;                 // 再生の速さ（オンライン対戦は、ピースを持っているときと同じ 3 倍）
   }
 
   /** マスの大きさ（px）を決めて並べ直す */
@@ -93,8 +94,8 @@ export class MiniBoard {
   }
   remove(id) { this.els.get(id)?.remove(); this.els.delete(id); }
 
-  /** 再生の残り（ms。相手の画面での残りと同じ見積もり） */
-  playLeft() { return this.left; }
+  /** 再生の残り（ms。相手の画面での残りと同じ見積もり。速さで割った、ほんとうの時間） */
+  playLeft() { return this.left / this.base; }
   setPaused(on) { this.paused = !!on; }
 
   /** 再生の列に並べる（順番に 1 つずつ） */
@@ -125,7 +126,7 @@ export class MiniBoard {
     });
   }
   /** 再生が溜まっていたら少し速める（相手の画面より遅れすぎないように） */
-  speed() { return 1 + Math.min(3, Math.max(0, this.left - 4000) / 3000); }
+  speed() { return this.base * (1 + Math.min(3, Math.max(0, this.left / this.base - 4000) / 3000)); }
   wait(ms) { return this.tween(ms, () => {}); }
 
   /**
