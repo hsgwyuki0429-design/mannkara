@@ -110,12 +110,11 @@ export const chainMultiplier = (chain) => {
   return chain <= last ? CHAIN_MULTIPLIERS[Math.max(0, chain)] : CHAIN_MULTIPLIERS[last] + (chain - last) * CHAIN_MULTIPLIER_STEP;
 };
 /**
- * 連続発動ターン(COMBO)倍率: 1コンボごとに +STREAK_STEP（COMBO 1 = ×1, 2 = ×1.1, 3 = ×1.2 …）、上限 ×STREAK_MAX（COMBO 21）。
- * シーズン1は 1コンボごとに ×1.3 を掛けていく上限なしの倍率で、長いコンボで点数が何千倍にもふくらんだ（ランキングがインフレした）ので、足し算にした
+ * 連続発動ターン(COMBO)倍率: 1コンボごとに ×STREAK_RATE を掛けていく、上限なし（COMBO 1 = ×1, 2 = ×1.1, 3 = ×1.21 …）。
+ * シーズン1は ×1.3 を掛けていく倍率で、長いコンボで点数が何千倍にもふくらんだ（ランキングがインフレした）ので、シーズン2で ×1.1 に下げた
  */
-export const STREAK_STEP = 0.1;
-export const STREAK_MAX = 3;
-export const streakMultiplier = (streak) => Math.min(STREAK_MAX, 1 + STREAK_STEP * Math.max(0, streak - 1));
+export const STREAK_RATE = 1.1;
+export const streakMultiplier = (streak) => Math.pow(STREAK_RATE, Math.max(0, streak - 1));
 /** 全消し（ALL CLEAR）のボーナス。そのターンの COMBO 倍率も掛ける */
 export const ALL_CLEAR_BONUS = 5000;
 /** 全消しのあと ALL_CLEAR_BOOST_TURNS 手のあいだ、手に入るスコアすべてに ×ALL_CLEAR_BOOST（もう一度全消しすると手数が戻る） */
