@@ -1,18 +1,18 @@
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091320';
-import { edgeSpot, edgeOrder } from './battle.js?v=202610091320';
-import { PieceGenerator, Piece, SHAPES, seededRandom, BATTLE_SHAPES } from './pieces.js?v=202610091320';
-import { ScoreManager } from './score.js?v=202610091320';
-import { nextActivation, lineMoves } from './mancala.js?v=202610091320';
-import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610091320';
-import * as Sim from './sim.js?v=202610091320';
-import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610091320';
-import { bestMove } from './advisor.js?v=202610091320';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610091340';
+import { edgeSpot, edgeOrder } from './battle.js?v=202610091340';
+import { PieceGenerator, Piece, SHAPES, seededRandom, BATTLE_SHAPES } from './pieces.js?v=202610091340';
+import { ScoreManager } from './score.js?v=202610091340';
+import { nextActivation, lineMoves } from './mancala.js?v=202610091340';
+import { solvable, countWays, spots, planAllClear, keyAfter } from './planner.js?v=202610091340';
+import * as Sim from './sim.js?v=202610091340';
+import { tightRateFor, allClearRateFor, TIGHT_COOLDOWN } from './difficulty.js?v=202610091340';
+import { bestMove } from './advisor.js?v=202610091340';
 import {
   SIZE, TRAY_SIZE, CHAIN_PIECE_RATE, FIT_WEIGHTS, HARD_FILL, WAYS_MAX, WAYS_TOLERANCE,
   TIGHT_RATE, TIGHT_MAX_FILL, TIGHT_MIN_SPOTS, TIGHT_MAX_WAYS, TIGHT_CAP, TIGHT_BUDGET_MS,
   LINEUP_CANDIDATES, LINEUP_BUDGET_MS, targetWays,
   ALL_CLEAR_RATE, ALL_CLEAR_PIECES, ALL_CLEAR_BUDGET_MS, TRAY_RETRIES,
-} from './constants.js?v=202610091320';
+} from './constants.js?v=202610091340';
 
 /**
  * ゲーム本体（DOM 非依存）。ルールは同期的に即確定し、描画側は hooks.onTurn で記録を受け取って再生する。
@@ -198,26 +198,28 @@ export class Game {
     return { landed, left, gameOver: this.gameOver };
   }
   /**
-   * 対戦: 自分が k 連鎖したので、盤面のおじゃまを削る。**連鎖の 1 段ごとに、おじゃま 1 個だけ**を「−その段の数」（1 段目は −1、2 段目は −2 …）。
-   * 削る順番は置かれる順番と同じ（一番外側の辺から、真ん中から外へ）。おじゃまの数が連鎖の段より少なければ、残ったものを順番にもう一度。0 以下になったら消える。
-   * hits = 段ごとの記録 [{ step, damage, block, x, r, from, n, removed }]（n = そのあとの数字。画面が 1 段ずつ見せる）、
-   * changed / removed = このターンで数字が減った / 消えたものの、ターンの最初からの結果
+   * 対戦: 自分が k 連鎖したので、盤面のおじゃまを削る。**合計 k**（5 連鎖なら合計 −5）を、一番外側のおじゃま 1 個から順に当てる:
+   * 連鎖の 1 段ごとに −1 を、いま一番先のおじゃまに（同じおじゃまが 0 以下になって消えたら、残りの段は次のおじゃまへ）。
+   * 順番は置かれる順番と同じ（一番外側の辺から、真ん中（角）から外へ。edgeOrder）。
+   * hits = 段ごとの記録 [{ step, damage, block, x, r, from, n, removed }]（damage = そのおじゃまが、このターンでここまでに削られた合計 = 画面に出す「−1」「−2」…、
+   * n = そのあとの数字。画面が 1 段ずつ見せる）、changed / removed = このターンで数字が減った / 消えたものの、ターンの最初からの結果
    */
   chipGarbage(k) {
     const hits = [], changed = [], removed = [];
     if (!(k > 0)) return { hits, changed, removed };
     const at = new Map(this.board.garbage().map((g) => [g.x + ',' + g.r, g]));
     const list = edgeOrder().map((c) => at.get(c.x + ',' + c.r)).filter(Boolean);
-    const first = new Map();                                    // block.id -> ターンの最初の数字
-    let idx = 0;
+    const first = new Map(), dealt = new Map();                  // block.id -> ターンの最初の数字 / ここまでに削られた合計
     for (let step = 1; step <= k && list.length; step++) {
-      const i = idx % list.length, e = list[i], { block, x, r } = e;
+      const e = list[0], { block, x, r } = e;
       const from = block.garbage;
       first.has(block.id) || first.set(block.id, { e, from });
-      block.garbage = from - step;
+      block.garbage = from - 1;
+      const damage = (dealt.get(block.id) ?? 0) + 1;
+      dealt.set(block.id, damage);
       const gone = block.garbage <= 0;
-      hits.push({ step, damage: step, block, x, r, from, n: Math.max(0, block.garbage), removed: gone });
-      if (gone) { this.board.set(x, r, null); list.splice(i, 1); idx = i; } else idx = i + 1;
+      hits.push({ step, damage, block, x, r, from, n: Math.max(0, block.garbage), removed: gone });
+      if (gone) { this.board.set(x, r, null); list.shift(); }
     }
     for (const { e, from } of first.values()) {
       if (e.block.garbage <= 0) removed.push({ block: e.block, x: e.x, r: e.r, from });
