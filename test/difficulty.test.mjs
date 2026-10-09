@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { allClearRateFor, ALL_CLEAR_RATE_MAX, ALL_CLEAR_RATE_AT_BEST, ALL_CLEAR_RATE_MIN, tightRateFor, TIGHT_RATE_STRUGGLING, TIGHT_RATE_AT_BEST, TIGHT_RATE_MAX, TIGHT_COOLDOWN } from '../src/core/difficulty.js?v=202610091340';
-import { TIGHT_RATE, ALL_CLEAR_RATE } from '../src/core/constants.js?v=202610091340';
-import { Game } from '../src/core/game.js?v=202610091340';
+import { allClearRateFor, ALL_CLEAR_RATE_MAX, ALL_CLEAR_RATE_AT_BEST, ALL_CLEAR_RATE_MIN, tightRateFor, TIGHT_RATE_STRUGGLING, TIGHT_RATE_AT_BEST, TIGHT_RATE_MAX, TIGHT_COOLDOWN } from '../src/core/difficulty.js?v=202610091434';
+import { TIGHT_RATE, ALL_CLEAR_RATE } from '../src/core/constants.js?v=202610091434';
+import { Game } from '../src/core/game.js?v=202610091434';
 
 
 const near = (a, b) => Math.abs(a - b) < 1e-9;
