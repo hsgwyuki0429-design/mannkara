@@ -1,27 +1,28 @@
-import { Game } from '../core/game.js?v=202610090554';
-import { Board, createBlock } from '../core/board.js?v=202610090554';
-import { Piece } from '../core/pieces.js?v=202610090554';
-import * as Sim from '../core/sim.js?v=202610090554';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610090554';
-import { Renderer, delay, markJoins } from './renderer.js?v=202610090554';
-import { Sfx, kitForScore } from './sfx.js?v=202610090554';
-import { Scenes } from './scenes.js?v=202610090554';
-import { Ambient } from './ambient.js?v=202610090554';
-import { colorOf } from './palette.js?v=202610090554';
-import { TrayDealer } from './tray-dealer.js?v=202610090554';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610090554';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage } from './brand.js?v=202610090554';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610090554';
-import { World } from './world.js?v=202610090554';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610090554';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610090554';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610090554';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610090554';
-import { softwareRendering } from './fx2d.js?v=202610090554';
-import { useSprites } from './shards.js?v=202610090554';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610090554';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610090554';
-import { BattleNet } from './net.js?v=202610090554';
+import { Game } from '../core/game.js?v=202610090639';
+import { Board, createBlock } from '../core/board.js?v=202610090639';
+import { Piece } from '../core/pieces.js?v=202610090639';
+import * as Sim from '../core/sim.js?v=202610090639';
+import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610090639';
+import { Renderer, delay, markJoins } from './renderer.js?v=202610090639';
+import { Sfx, kitForScore } from './sfx.js?v=202610090639';
+import { Scenes } from './scenes.js?v=202610090639';
+import { Ambient } from './ambient.js?v=202610090639';
+import { colorOf } from './palette.js?v=202610090639';
+import { TrayDealer } from './tray-dealer.js?v=202610090639';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610090639';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610090639';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610090639';
+import { World, SEASON } from './world.js?v=202610090639';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610090639';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610090639';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610090639';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610090639';
+import { softwareRendering } from './fx2d.js?v=202610090639';
+import { useSprites } from './shards.js?v=202610090639';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610090639';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610090639';
+import { makeQr, drawQr } from './qr.js?v=202610090639';
+import { BattleNet } from './net.js?v=202610090639';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -42,19 +43,18 @@ const ambient = new Ambient();
 ambient.onChange = (look, ms) => renderer.view3d?.setBackground(look, ms);
 ambient.bindBoard(renderer.plateSets);                     // 盤面の土台の色も、背景と一緒に変わる
 
-/* ---------- モード（通常 / 学習）とベストスコア（端末ごと・モードごとに別） ---------- */
+/* ---------- ベストスコア・記録（端末ごと・シーズンごとに別。SEASON は world.js） ---------- */
 // 端末に残す記録の名前はゲーム名（blockmancala-）で始める。前の名前で残っている記録は、読む前にここで移す
 try { migrateStorage(localStorage); } catch {}
-const MODE_KEY = 'blockmancala-mode';
-let mode = 'normal';
-try { mode = localStorage.getItem(MODE_KEY) === 'learn' ? 'learn' : 'normal'; } catch {}
-const bestKey = () => (mode === 'learn' ? 'blockmancala-best-learn' : 'blockmancala-best');
+/** シーズンごとの記録の名前（シーズン 1 は -s の付かない名前のまま残っている） */
+const seasonKey = (base, season = SEASON) => (season === 1 ? base : `${base}-s${season}`);
+const bestKey = () => seasonKey('blockmancala-best');
 let best = 0;
-/** 最大連鎖・最大コンボの記録（端末ごと・モードごとに別） */
-const recordsKey = () => (mode === 'learn' ? 'blockmancala-records-learn' : 'blockmancala-records');
+/** 最大連鎖・最大コンボの記録 */
+const recordsKey = () => seasonKey('blockmancala-records');
 let records = { chain: 0, combo: 0 };
-/** 最近のゲームのスコア（新しい順、RECENT_GAMES 件まで。端末ごと・モードごと）。ひっかけの確率を出来に合わせるのに使う（core/difficulty.js） */
-const recentKey = () => (mode === 'learn' ? 'blockmancala-recent-learn' : 'blockmancala-recent');
+/** 最近のゲームのスコア（新しい順、RECENT_GAMES 件まで）。ひっかけの確率を出来に合わせるのに使う（core/difficulty.js） */
+const recentKey = () => seasonKey('blockmancala-recent');
 let recent = [];
 /** このゲームを始めたときのベストスコア（途中でベストを残しても変えない。超えたかどうかを見るため） */
 let skillBest = 0;
@@ -68,19 +68,23 @@ function loadBest() {
   loadRanking();
   skillBest = best;
 }
-/** この端末のランキング（スコア。端末ごと・モードごとに別）。1ゲームずつ、終わったときに入れる */
-const rankingKey = () => (mode === 'learn' ? 'blockmancala-ranking-learn' : 'blockmancala-ranking');
+/** この端末のランキング（スコア。シーズンごとに別）。1ゲームずつ、終わったときに入れる */
+const rankingKey = (season = SEASON) => seasonKey('blockmancala-ranking', season);
 let ranking = [];
 let lastRun = null;          // いちばん最近入れたゲーム（ランキングの中で色を付ける）
 function loadRanking() {
   ranking = [];
   lastRun = null;
+  try { ranking = parseRanking(localStorage.getItem(rankingKey())); } catch {}
+}
+/** シーズン 1 のこの端末のランキング（見るだけ。ランキングができる前のベストスコアも 1 件として入れる） */
+function season1Local() {
   let text = null;
-  try { text = localStorage.getItem(rankingKey()); } catch {}
-  if (text != null) { ranking = parseRanking(text); return; }
-  // ランキングができる前のベストスコアは1件として入れておく（ベストスコアとランキングの1位が食い違わないように）
-  for (const run of legacyRuns(best)) ranking = addRun(ranking, run).list;
-  if (ranking.length) try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
+  try { text = localStorage.getItem(rankingKey(1)); } catch {}
+  if (text != null) return parseRanking(text);
+  let list = [];
+  try { for (const run of legacyRuns(Number(localStorage.getItem('blockmancala-best')) || 0)) list = addRun(list, run).list; } catch {}
+  return list;
 }
 loadBest();
 /** チュートリアル中なら { i: ステップ, placed: 置いた（次のステップを待っている） }。チュートリアルの点数・盤面は残さない */
@@ -110,7 +114,7 @@ function recordRun() {
   ranking = res.list;
   if (res.rank) lastRun = run;
   try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
-  if (mode === 'normal') { world.addPending(run.score); world.flush(); }     // 世界ランキングは通常モードだけ
+  world.addRun(run.score); world.flush();          // 世界ランキング（今のシーズンのベスト・累計）
   return res.rank;
 }
 
@@ -165,7 +169,14 @@ function planSpeeds(steps) {
 /** 連鎖の通り道に次のピースを置いたときだけ、音と動きを残して追いつく。 */
 const OVERLAP_SPEED = 8;
 const playingSpeed = () => (playingSeq && playingSeq < fastBefore ? OVERLAP_SPEED : 1);
-const desiredSpeed = () => (paused ? 0 : Math.max(playingSpeed(), drag ? catchUpSpeed(performance.now()) : 1));
+const desiredSpeed = () => (paused ? 0 : onlineBattle() ? ONLINE_SPEED : Math.max(playingSpeed(), drag ? catchUpSpeed(performance.now()) : 1));
+/**
+ * オンライン対戦だけのルール: 連鎖の再生はいつも、ピースを持っているときと同じ速さ（ONLINE_SPEED）で、再生が終わるまで次のピースは置けない。
+ * どちらの画面でも連鎖の長さが同じになり、送ったおじゃま・届いたおじゃまが、順番どおりにきれいに並ぶ
+ */
+const onlineBattle = () => !!versus?.active && versus.kind === 'online';
+/** オンライン対戦で、再生中は手駒を薄くして「まだ置けない」と分かるように */
+const syncLock = () => document.body.classList.toggle('vs-busy', onlineBattle() && pending > 0);
 /**
  * 再生中にピースを持ち上げたときの再生の速さ（置くまでに表示を盤面に追いつかせる）:
  *  - 持っているだけ（盤面へ近づけていない）なら速めない
@@ -178,6 +189,7 @@ const APPROACH_MIN = 0.05, STILL_MS = 120;
 /** 見積もりより再生が長引いても（全消しの演出など）、再生中は速められるように残りをこれより少なく見ない（ms） */
 const PLAY_LEFT_MIN = 300;
 const HELD_SPEED = 3;
+const ONLINE_SPEED = HELD_SPEED;
 function catchUpSpeed(now) {
   if (!drag || !pending) return 1;
   return HELD_SPEED;                                    // ブロックを持っている間は、連鎖の再生をいつも 3 倍の速さにする（以下は使わない）
@@ -221,7 +233,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610090554', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610090639', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -259,13 +271,15 @@ const game = new Game({
       playback.set(turn.seq, { turn, next: 0 });
       playLeft += turnPlayCost(turn);
       startPlayTick();
-      if (inBattle()) versus.onLocalTurn(turn, playLeft);          // 対戦: 連鎖していれば相手へおじゃまを送る（届くのは、この再生が終わるころ）
+      if (inBattle()) versus.onLocalTurn(turn, playLeft / (onlineBattle() ? ONLINE_SPEED : 1));
+      syncLock();   // 対戦: 連鎖していれば相手へおじゃまを送る（届くのは、この再生が終わるころ）
       const gen = generation;
       enqueue(() => playTurn(turn)).finally(() => {
         if (gen !== generation) return;
         playback.delete(turn.seq);
         pending = Math.max(0, pending - 1);
         if (!pending) { playingSeq = 0; renderer.timeScale = paused ? 0 : 1; caughtUp(); }
+        syncLock();
       });
       if (tutorial) tutorialPlaced();
     },
@@ -347,7 +361,7 @@ async function playTurn(turn) {
     $('finalBest').textContent = isBest ? '👑 NEW BEST!' : `👑 ${best.toLocaleString('en-US')}`;
     clearSave();
     $('gameOver').classList.remove('hidden');
-    prepareShare({ score: game.score.score, chain: game.score.bestChain, combo: game.score.bestStreak, best: isBest, learn: mode === 'learn', theme: boardTheme,
+    prepareShare({ score: game.score.score, chain: game.score.bestChain, combo: game.score.bestStreak, best: isBest, theme: boardTheme,
       board: [...game.board.entries()].map(({ block, x, r }) => [x, r, block.color]) });
   }
 }
@@ -665,7 +679,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   // 最初の指（isPrimary）が下りたのにまだ持っている = 前の指が離れたのを取りこぼした。持っていたピースは戻す
   // （戻すとトレイを描き直すので、触った枠は番号で探し直す）
   if (drag && e.isPrimary) cancelDrag();
-  if (!hitSlot || gameOverShown || drag || paused || inputLocked) return;
+  if (!hitSlot || gameOverShown || drag || paused || inputLocked || (onlineBattle() && pending > 0)) return;   // オンライン対戦では、連鎖の再生中は置けない
   const slot = Number(hitSlot.dataset.slot);
   const slotEl = document.querySelector(`.slot[data-slot="${slot}"]`);
   const piece = game.tray[slot];
@@ -705,28 +719,13 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => { saveBest(); saveGame(); });
 
-/* ---------- 学習モード ---------- */
-/**
- * 学習モードでは、次に置くとよいピースと場所を光らせる（Game.hint: 全消しの手順中はその手順、
- * それ以外は今の盤面での総当たり）。スコアとベストスコアは通常モードとは別
- */
-let hintSeq = 0;               // おすすめを頼んだ回数（答えが届くまでに状況が変わったら、その答えは出さない）
+/* ---------- チュートリアルの置く場所の印 ---------- */
+let hintSeq = 0;
 function updateHint() {
-  const seq = ++hintSeq;
+  hintSeq++;
   if (tutorial) { showTutorialTarget(); return; }
-  if (mode !== 'learn' || inBattle() || game.gameOver || drag || pending > 1) {
-    setHintedSlot(-1);
-    renderer.clearHint();
-    return;
-  }
-  // 総当たりは別スレッドで（Game.hintAsync。答えは Game.hint と同じ）
-  game.hintAsync().then((h) => {
-    if (seq !== hintSeq || drag || game.gameOver) return;
-    setHintedSlot(-1);
-    if (!h) { renderer.clearHint(); return; }
-    renderer.showHint(game.tray[h.slot], h.ox, h.oy, h.plan);
-    setHintedSlot(h.slot);
-  });
+  setHintedSlot(-1);
+  renderer.clearHint();
 }
 /** おすすめを消す（頼んでいる途中の答えも出さない） */
 function dropHint() {
@@ -736,24 +735,6 @@ function dropHint() {
 }
 /** 左上のリセットボタン: 今のゲームを打ち切って最初からにする（ゲームオーバーの「もう一度」と同じ） */
 $('btnReset').addEventListener('click', () => { sfx.unlock(); if (inBattle()) return; saveBest(); recordRun(); restart(); });
-function applyMode() {
-  const learn = mode === 'learn';
-  document.body.classList.toggle('learn', learn);
-  $('modeBadge').classList.toggle('hidden', !learn);
-}
-/** 通常 / 学習モードを選ぶ（ホームから。選んだモードは端末に記憶。違うモードにしたら、そのモードの続きから） */
-function setMode(next) {
-  if (next === mode) return false;
-  saveBest();                                      // 切り替える前のモードのベストを残してから
-  if (!pending) saveGame();                        // 切り替える前のモードの続きも残す（再生の途中なら、置いた時に残した分）
-  mode = next === 'learn' ? 'learn' : 'normal';
-  try { localStorage.setItem(MODE_KEY, mode); } catch {}
-  loadBest();
-  applyMode();
-  startOrResume();
-  return true;
-}
-
 /* ---------- サウンド ---------- */
 function updateSoundButton() {
   $('btnSound').classList.toggle('off', !sfx.enabled);
@@ -807,7 +788,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610090554').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610090639').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -935,8 +916,10 @@ function render3dPreview() {
   });
 }
 
-/* ---------- ランキング（スコア。世界 / この端末） ---------- */
+/* ---------- ランキング（シーズンごと。世界: ベスト・累計・レート / この端末） ---------- */
 let rankScope = 'world';
+let rankKind = 'best';                             // 世界ランキングの種類: best = ベストスコア / total = 累計スコア / rate = オンライン対戦のレート
+let rankSeason = SEASON;                           // 見ているシーズン（前のシーズンは「シーズン1の結果」から）
 let rankToken = 0;                                 // 読み込み中に切り替えたら、前の結果は捨てる
 let pausedBeforeRank = false;
 const fmtNum = (v) => v.toLocaleString('en-US');
@@ -946,12 +929,13 @@ function fmtDate(at) {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-/** 1行: 順位・スコア・名前（世界）か日付（この端末） */
-function rankRow(rank, value, { name = null, date = null, cls = '', dim = false } = {}) {
+/** 1行: 順位・値・名前（世界）か日付（この端末）・小さな説明（ゲーム数・勝ち負け） */
+function rankRow(rank, value, { name = null, date = null, sub = null, cls = '', dim = false } = {}) {
   const li = document.createElement('li');
   li.className = 'rank-row' + (rank <= 3 ? ` top${rank}` : '') + cls;
   li.innerHTML = `<span class="rank-no">${rank}</span>`
     + `<span class="rank-main"><b>${fmtNum(value)}</b>`
+    + (sub != null ? `<span class="rank-sub">${esc(sub)}</span>` : '')
     + (name != null ? `<span class="rank-player${dim ? ' rank-hidden' : ''}">${esc(name)}</span>` : '')
     + (date != null ? `<span class="rank-date">${date}</span>` : '') + `</span>`;
   return li;
@@ -963,15 +947,24 @@ function rankMessage(text) {
   $('rankList').replaceChildren(li);
 }
 function renderRanking() {
+  const past = rankSeason !== SEASON;
+  if (past) rankKind = 'best';                     // シーズン 1 はベストスコアだけ
+  $('rankSeason').textContent = `シーズン${rankSeason}`;
+  $('rankSeason').classList.toggle('past', past);
+  $('rankSeasonBtn').textContent = past ? `シーズン${SEASON}（いま）にもどる` : 'シーズン1の結果を見る';
   for (const b of document.querySelectorAll('.rank-scope-btn')) b.classList.toggle('on', b.dataset.scope === rankScope);
-  $('rankMode').classList.toggle('hidden', mode !== 'learn');
   const isWorld = rankScope === 'world';
-  const needsName = isWorld && !world.named;         // 世界ランキングは、なまえを決めるまで参加できない
-  $('rankName').classList.toggle('hidden', !isWorld || needsName);
+  $('rankKinds').classList.toggle('hidden', !isWorld || past);
+  for (const b of document.querySelectorAll('.rank-kind-btn')) b.classList.toggle('on', b.dataset.kind === rankKind);
+  const needsName = isWorld && !past && !world.named;   // 世界ランキングは、なまえを決めるまで参加できない
+  $('rankName').classList.toggle('hidden', !isWorld || needsName || past);
   $('rankNameText').textContent = world.name || '';
   $('rankNamePrompt').classList.toggle('hidden', !needsName);
-  $('rankNote').classList.toggle('hidden', !(isWorld && mode === 'learn') || needsName);
-  $('rankNote').textContent = '学習モードの記録は世界ランキングに入りません';
+  const note = past ? 'シーズン1の結果です（もう記録は増えません）'
+    : isWorld && rankKind === 'total' ? 'このシーズンに遊んだゲームのスコアの合計'
+    : isWorld && rankKind === 'rate' ? 'オンライン対戦の「レート戦」のレート（1000 から）' : '';
+  $('rankNote').textContent = note;
+  $('rankNote').classList.toggle('hidden', !note || needsName);
   $('rankMe').classList.add('hidden');
   $('rankList').classList.toggle('hidden', needsName);
   $('rankList').scrollTop = 0;
@@ -979,32 +972,35 @@ function renderRanking() {
   if (isWorld) renderWorld(); else renderLocal();
 }
 function renderLocal() {
-  const top = topRuns(ranking);
+  const past = rankSeason !== SEASON;
+  const top = topRuns(past ? season1Local() : ranking);
   if (!top.length) return rankMessage('まだ記録がありません');
   $('rankList').replaceChildren(...top.map((r, i) =>
-    rankRow(i + 1, r.score, { date: fmtDate(r.at), cls: r === lastRun ? ' latest' : '' })));
+    rankRow(i + 1, r.score, { date: fmtDate(r.at), cls: !past && r === lastRun ? ' latest' : '' })));
 }
 /** 世界ランキング: 最下位まで、スクロールで続きを読み足していく（1回に数十人ずつ） */
-let worldPage = null;                              // { token, next: 次に読む順位 - 1, total, loading, failed }
+let worldPage = null;                              // { token, next: 次に読む順位 - 1, total, loading, failed, season, kind }
+const subOf = (kind, r) => (kind === 'total' ? `${fmtNum(r.games || 0)}ゲーム` : kind === 'rate' ? `${r.wins ?? 0}勝${(r.games || 0) - (r.wins ?? 0)}敗` : null);
 async function renderWorld() {
-  const token = ++rankToken;
+  const token = ++rankToken, season = rankSeason, kind = rankKind;
   worldPage = null;
   rankMessage('読み込み中…');
   let data;
-  try { data = await world.fetchTop(0); } catch { data = null; }
+  try { data = await world.fetchTop(0, { season, kind }); } catch { data = null; }
   if (token !== rankToken || rankScope !== 'world') return;
   if (!data) return rankMessage('世界ランキングにつながりませんでした');
-  if (!data.top.length) rankMessage('まだ記録がありません');
-  else $('rankList').replaceChildren(...worldRows(data.top));
-  worldPage = { token, next: data.top.length, total: data.total ?? data.top.length, loading: false, failed: false };
+  if (!data.top.length) rankMessage(kind === 'rate' ? 'まだレート戦をした人がいません' : 'まだ記録がありません');
+  else $('rankList').replaceChildren(...worldRows(data.top, kind));
+  worldPage = { token, next: data.top.length, total: data.total ?? data.top.length, loading: false, failed: false, season, kind };
   if (data.me) {
-    $('rankMe').innerHTML = `あなた　<b>${fmtNum(data.me.rank)}位</b>　${fmtNum(data.me.score)}点`
+    const unit = kind === 'rate' ? '' : '点';
+    $('rankMe').innerHTML = `あなた　<b>${fmtNum(data.me.rank)}位</b>　${kind === 'rate' ? 'レート ' : ''}${fmtNum(data.me.score)}${unit}`
       + (worldPage.total ? `<span class="rank-total">／${fmtNum(worldPage.total)}人中</span>` : '');
     $('rankMe').classList.remove('hidden');
   }
   moreWorld();                                     // 画面に余白があれば、スクロールしなくても続きを読む
 }
-const worldRows = (top) => top.map((r) => rankRow(r.rank, r.score, { name: r.name, cls: r.me ? ' latest' : '', dim: !!r.hidden }));
+const worldRows = (top, kind) => top.map((r) => rankRow(r.rank, r.score, { name: r.name, sub: subOf(kind, r), cls: r.me ? ' latest' : '', dim: !!r.hidden }));
 /** 一覧の下の端が近づいたら続きを読む（最下位まで） */
 async function moreWorld() {
   const p = worldPage, list = $('rankList');
@@ -1016,24 +1012,28 @@ async function moreWorld() {
   tail.textContent = '読み込み中…';
   list.append(tail);
   let data;
-  try { data = await world.fetchTop(p.next); } catch { data = null; }
+  try { data = await world.fetchTop(p.next, { season: p.season, kind: p.kind }); } catch { data = null; }
   tail.remove();
   if (p !== worldPage || p.token !== rankToken || rankScope !== 'world') return;
   p.loading = false;
   if (!data || !data.top.length) { p.failed = !data; if (data) p.total = p.next; return; }
-  list.append(...worldRows(data.top));
+  list.append(...worldRows(data.top, p.kind));
   p.next += data.top.length;
   p.total = data.total ?? p.total;
   moreWorld();
 }
+for (const b of document.querySelectorAll('.rank-kind-btn')) b.addEventListener('click', () => { rankKind = b.dataset.kind; renderRanking(); });
+$('rankSeasonBtn').addEventListener('click', () => { rankSeason = rankSeason === SEASON ? 1 : SEASON; renderRanking(); });
 $('rankList').addEventListener('scroll', () => { if (rankScope === 'world') moreWorld(); }, { passive: true });
 /** ゲーム中に開いたら、一時停止と同じように連鎖の再生を止める（とじたら戻す） */
-function openRanking() {
+function openRanking(kind = null) {
   pausedBeforeRank = paused;
   paused = true;
   cancelDrag();
   renderer.timeScale = 0;
   editName(false);
+  rankSeason = SEASON;
+  if (kind) { rankScope = 'world'; rankKind = kind; }
   renderRanking();
   $('rankOverlay').classList.remove('hidden');
 }
@@ -1074,7 +1074,7 @@ for (const b of document.querySelectorAll('.rank-scope-btn')) {
   b.addEventListener('click', () => { rankScope = b.dataset.scope; renderRanking(); });
 }
 $('btnRank').addEventListener('click', () => { sfx.unlock(); if (!gameOverShown) openRanking(); });
-$('btnOverRank').addEventListener('click', () => openRanking());
+$('btnOverRank').addEventListener('click', () => openRanking('best'));
 $('rankClose').addEventListener('click', closeRanking);
 
 /* ---------- デバッグ（URL に ?debug を付けた時だけボタンを出す） ---------- */
@@ -1114,7 +1114,7 @@ $('btnRunChain').addEventListener('click', () => {
 /**
  * ゲームの途中の状態を端末に残し、次に開いたときはその盤面から続ける（説明などは出さない。モードごとに別）
  */
-const saveKey = () => (mode === 'learn' ? 'blockmancala-save-learn' : 'blockmancala-save');
+const saveKey = () => seasonKey('blockmancala-save');      // シーズン 1 の途中のゲーム（前のスコアの計算）は続けない
 function saveGame() {
   if (tutorial || inBattle()) return;
   try {
@@ -1450,7 +1450,6 @@ $('shareCopy').addEventListener('click', () => {
   try { navigator.clipboard.writeText(url).then(() => { hint.textContent = 'リンクを コピーしました'; }, failed); } catch { failed(); }
 });
 
-applyMode();
 $('btnRetry').addEventListener('click', () => { sfx.unlock(); saveBest(); restart(); });
 window.addEventListener('resize', () => {
   slotBoxCache = null; slotCenterCache = null;
@@ -1482,6 +1481,7 @@ function enqueueDrop(res) {
   if (!res?.landed.length) return;
   const gen = generation;
   pending++;
+  syncLock();
   playLeft += 320 + res.landed.length * 130;
   startPlayTick();
   enqueue(async () => {
@@ -1493,6 +1493,7 @@ function enqueueDrop(res) {
     if (gen !== generation) return;
     pending = Math.max(0, pending - 1);
     if (!pending) { playingSeq = 0; renderer.timeScale = paused ? 0 : 1; caughtUp(); }
+    syncLock();
   });
 }
 /** 対戦で置ける場所がなくなった（見えたところで負け。相手にも知らせる） */
@@ -1515,26 +1516,25 @@ function enterBattle() {
   game.setBattle(true, BATTLE_RATES);
   restart();
   bestCelebrated = true;                           // 対戦ではベストスコアのお祝いはしない
-  $('modeBadge').classList.add('hidden');
 }
 /** 対戦をやめて、ふだんのゲーム（前のモードの続き）とホームへ */
 function exitBattle() {
-  document.body.classList.remove('battle', 'battle-online');
+  document.body.classList.remove('battle', 'battle-online', 'vs-busy');
   game.setBattle(false);
   inputLocked = false;
   loadBest();
-  applyMode();
   startOrResume();
   showHome();
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610090554', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610090639', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,
   lock(on) { inputLocked = on; if (on) cancelDrag(); },
   enqueueDrop,
+  findRated: () => openLobby('rated'),
   celebrate() { ambient.celebrate('best'); scenes.newBest($('vsResBig').getBoundingClientRect()); },
 });
 
@@ -1546,7 +1546,7 @@ function showHome() {
   renderer.timeScale = 0;
   renderer.setPaused(true);
   $('pauseOverlay').classList.add('hidden');
-  $('homeSoloSub').classList.toggle('hidden', !hasSave('normal'));
+  $('homeSoloSub').classList.toggle('hidden', !readSave());
   homePanel('main');
   $('home').classList.remove('hidden');
   updateHomeSound();
@@ -1557,9 +1557,6 @@ function hideHome() {
   paused = false;
   renderer.timeScale = desiredSpeed();
 }
-function hasSave(m) {
-  try { const d = JSON.parse(localStorage.getItem(m === 'learn' ? 'blockmancala-save-learn' : 'blockmancala-save') || 'null'); return d?.state?.v === 1 && !d.state.gameOver; } catch { return false; }
-}
 function homePanel(which) {
   $('homeMain').classList.toggle('hidden', which !== 'main');
   $('homeVsPanel').classList.toggle('hidden', which !== 'vs');
@@ -1568,6 +1565,9 @@ function homePanel(which) {
     for (const [k, v] of Object.entries(CPU_LEVELS)) { const r = rec.cpu[k]; if (r && (r.w || r.l)) parts.push(`${v.name} ${r.w}勝${r.l}敗`); }
     if (rec.online.w || rec.online.l) parts.push(`オンライン ${rec.online.w}勝${rec.online.l}敗`);
     $('homeVsRec').textContent = parts.length ? `戦績　${parts.join('・')}` : '';
+    // 自分のレート（このシーズン）
+    world.fetchRate().then((r) => { $('homeRateVal').textContent = `あなたのレート ${r.rate}${r.games ? `（${r.wins}勝${r.games - r.wins}敗）` : ''}`; })
+      .catch(() => { $('homeRateVal').textContent = ''; });
   }
 }
 function updateHomeSound() { $('homeSound').classList.toggle('off', !sfx.enabled); }
@@ -1585,17 +1585,18 @@ $('btnHome').addEventListener('click', () => {
   if (!pending) saveGame();
   showHome();
 });
-$('homeSolo').addEventListener('click', () => { sfx.unlock(); hideHome(); if (setMode('normal')) renderer.showText('NORMAL MODE', 't2'); });
-$('homeLearn').addEventListener('click', () => { sfx.unlock(); hideHome(); setMode('learn'); renderer.showText('LEARN MODE', 't2'); });
+$('homeSolo').addEventListener('click', () => { sfx.unlock(); hideHome(); });
 $('homeVs').addEventListener('click', () => { sfx.unlock(); homePanel('vs'); });
 $('homeVsBack').addEventListener('click', () => homePanel('main'));
 $('homeVsRules').addEventListener('click', () => $('vsRules').classList.remove('hidden'));
 $('vsRulesClose').addEventListener('click', () => $('vsRules').classList.add('hidden'));
 for (const b of document.querySelectorAll('.home-level')) b.addEventListener('click', () => { sfx.unlock(); hideHome(); versus.startCpu(b.dataset.level); });
 $('homeRandom').addEventListener('click', () => { sfx.unlock(); openLobby('random'); });
+$('homeRated').addEventListener('click', () => { sfx.unlock(); openLobby('rated'); });
 $('homeRoomMake').addEventListener('click', () => { sfx.unlock(); openLobby('make'); });
 $('homeRoomJoin').addEventListener('click', () => { sfx.unlock(); openLobby('join'); });
 $('homeRank').addEventListener('click', () => { sfx.unlock(); openRanking(); });
+$('homeRate')?.addEventListener('click', () => { sfx.unlock(); openRanking('rate'); });
 $('homeDesign').addEventListener('click', () => { sfx.unlock(); openDesign(); });
 $('homeHowto').addEventListener('click', () => { sfx.unlock(); hideHome(); startTutorial(); });
 $('homeSound').addEventListener('click', () => { sfx.unlock(); sfx.enabled = !sfx.enabled; updateSoundButton(); updateHomeSound(); });
@@ -1641,11 +1642,14 @@ async function openLobby(kind) {
         $('lobbyCode').classList.remove('hidden');
       };
       room = await net.createRoom();
+    } else if (kind === 'rated') {
+      lobbyText('レート戦の相手をさがしています', 'だれかが「レート戦」を選ぶと始まります');
+      room = await net.matchRated();
     } else {
       lobbyText('相手をさがしています', 'だれかが「だれかと対戦」を選ぶと始まります');
       room = await net.matchRandom();
     }
-    lobbyMatched(net, room);
+    lobbyMatched(net, room, kind === 'rated');
   } catch (e) {
     if (net !== lobbyNet) return;
     console.error(e);
@@ -1670,7 +1674,7 @@ async function lobbyJoin() {
     lobbyText('あいことばで入る', e.code === 'no-room' ? 'その あいことばの部屋は見つかりませんでした' : 'つながりませんでした。もう一度ためしてください');
   }
 }
-function lobbyMatched(net, room) {
+function lobbyMatched(net, room, rated = false) {
   if (!room || net !== lobbyNet) return;
   sfx.matchFound();
   $('lobbySpin').classList.add('hidden');
@@ -1680,12 +1684,79 @@ function lobbyMatched(net, room) {
   setTimeout(() => {
     $('lobby').classList.add('hidden');
     hideHome();
-    versus.startOnline(net, room);
+    versus.startOnline(net, room, { rated });
   }, 900);
 }
 $('lobbyJoinGo').addEventListener('click', lobbyJoin);
 $('lobbyInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); lobbyJoin(); } });
 $('lobbyCancel').addEventListener('click', () => { lobbyNet?.cancel(); lobbyNet = null; $('lobby').classList.add('hidden'); });
+
+/* ---------- QR コード（このゲームの URL。インスタグラムのプロフィールの QR のようなカード） ---------- */
+/** カードを canvas に描く（そのまま「画像を保存」にも使う）: 白いカード・グラデーションの QR・まん中にロゴ・ゲーム名と URL */
+function drawQrCard() {
+  const cv = $('qrCard'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = '#fff';
+  g.beginPath(); g.roundRect(0, 0, W, H, 60); g.fill();
+  const qr = makeQr(gameUrl(), { ecl: 'H' });
+  const size = 520, x = (W - size) / 2, y = 86;
+  drawQr(g, qr, x, y, size, {
+    colors: ['#2b4bbf', '#a849fe'], logoCells: 7,
+    logo(ctx, cx, cy, s) {                          // アイコンと同じ階段の形（白いふちの角丸の四角）
+      ctx.save();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.roundRect(cx - s / 2 - 8, cy - s / 2 - 8, s + 16, s + 16, (s + 16) * 0.26); ctx.fill();
+      ctx.fillStyle = LOGO_BG;
+      ctx.beginPath(); ctx.roundRect(cx - s / 2, cy - s / 2, s, s, s * 0.22); ctx.fill();
+      ctx.translate(cx - s / 2, cy - s / 2); ctx.scale(s / 32, s / 32);
+      ctx.fillStyle = LOGO_FG; ctx.fill(new Path2D(LOGO_PATH));
+      ctx.restore();
+    },
+  });
+  g.textAlign = 'center';
+  g.fillStyle = '#1d2340';
+  g.font = '900 60px Nunito, "M PLUS Rounded 1c", sans-serif';
+  g.fillText(GAME_NAME, W / 2, y + size + 104);
+  g.fillStyle = '#7b84a8';
+  g.font = '800 30px Nunito, "M PLUS Rounded 1c", sans-serif';
+  g.fillText(displayUrl(), W / 2, y + size + 152);
+}
+function openQr() {
+  sfx.unlock();
+  cancelDrag();
+  $('qrNote').textContent = 'カメラで読みこむと、すぐ遊べます';
+  $('qrOverlay').classList.remove('hidden');
+  drawQrCard();
+  document.fonts?.ready.then(() => { if (!$('qrOverlay').classList.contains('hidden')) drawQrCard(); });   // 字が読みこまれたら描き直す
+}
+$('btnQr').addEventListener('click', openQr);
+$('qrClose').addEventListener('click', () => $('qrOverlay').classList.add('hidden'));
+$('qrOverlay').addEventListener('click', (e) => { if (e.target === $('qrOverlay')) $('qrOverlay').classList.add('hidden'); });
+const qrBlob = () => new Promise((r) => $('qrCard').toBlob(r, 'image/png'));
+$('qrShare').addEventListener('click', async () => {
+  const url = gameUrl();
+  try {
+    const blob = await qrBlob(), file = blob && new File([blob], `${GAME_NAME}-qr.png`, { type: 'image/png' });
+    if (file && navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], text: `${GAME_NAME}\n${url}` }); return; }
+    if (navigator.share) { await navigator.share({ title: GAME_NAME, url }); return; }
+  } catch (e) { if (e?.name === 'AbortError') return; }
+  $('qrCopy').click();
+});
+$('qrCopy').addEventListener('click', () => {
+  const url = gameUrl(), note = $('qrNote');
+  const failed = () => { note.textContent = url; };
+  try { navigator.clipboard.writeText(url).then(() => { note.textContent = 'リンクを コピーしました'; }, failed); } catch { failed(); }
+});
+$('qrSave').addEventListener('click', async () => {
+  const blob = await qrBlob();
+  if (!blob) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${GAME_NAME}-qr.png`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  $('qrNote').textContent = '画像を保存しました';
+});
 
 startOrResume();
 showHome();

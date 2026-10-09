@@ -97,23 +97,25 @@ export const TRAY_RETRIES = 40;
 
 // ===== スコア（調整用） =====
 export const SCORE_PER_CELL_PLACED = 1;
-export const SCORE_PER_GOAL = 90;           // ゴールへ入った1個（連鎖・コンボの倍率を掛ける前の基本点。コンボ倍率 ×1.3 に合わせて 100 の 0.9 倍）
+export const SCORE_PER_GOAL = 100;          // ゴールへ入った1個（連鎖・コンボの倍率を掛ける前の基本点）
 /**
  * 連鎖倍率（index = 連鎖数）。2連鎖目から伸び、長い連鎖ほど大きく跳ねる。
- * 上限なし: 表より長い連鎖は、1連鎖ごとに CHAIN_MULTIPLIER_STEP ずつ伸び続ける
+ * 上限なし: 表より長い連鎖は、1連鎖ごとに CHAIN_MULTIPLIER_STEP ずつ伸び続ける。
+ * シーズン2で少し上げた（シーズン1: 1, 1, 2, 3, 5, 8, 12, 16, 20, 25, 30, 40, 50 / 1連鎖ごとに +10）
  */
-export const CHAIN_MULTIPLIERS = [1, 1, 2, 3, 5, 8, 12, 16, 20, 25, 30, 40, 50];
-export const CHAIN_MULTIPLIER_STEP = 10;
+export const CHAIN_MULTIPLIERS = [1, 1, 2, 4, 6, 10, 14, 19, 24, 30, 36, 48, 60];
+export const CHAIN_MULTIPLIER_STEP = 12;
 export const chainMultiplier = (chain) => {
   const last = CHAIN_MULTIPLIERS.length - 1;
   return chain <= last ? CHAIN_MULTIPLIERS[Math.max(0, chain)] : CHAIN_MULTIPLIERS[last] + (chain - last) * CHAIN_MULTIPLIER_STEP;
 };
 /**
- * 連続発動ターン(COMBO)倍率: 1コンボごとに ×STREAK_RATE を掛けていく（COMBO 1 = ×1, 2 = ×1.3, 3 = ×1.69 …）。
- * 上限なし（COMBO 5 で約 ×2.9、8 で約 ×6.3、12 で約 ×18）
+ * 連続発動ターン(COMBO)倍率: 1コンボごとに +STREAK_STEP（COMBO 1 = ×1, 2 = ×1.1, 3 = ×1.2 …）、上限 ×STREAK_MAX（COMBO 21）。
+ * シーズン1は 1コンボごとに ×1.3 を掛けていく上限なしの倍率で、長いコンボで点数が何千倍にもふくらんだ（ランキングがインフレした）ので、足し算にした
  */
-export const STREAK_RATE = 1.3;
-export const streakMultiplier = (streak) => Math.pow(STREAK_RATE, Math.max(0, streak - 1));
+export const STREAK_STEP = 0.1;
+export const STREAK_MAX = 3;
+export const streakMultiplier = (streak) => Math.min(STREAK_MAX, 1 + STREAK_STEP * Math.max(0, streak - 1));
 /** 全消し（ALL CLEAR）のボーナス。そのターンの COMBO 倍率も掛ける */
 export const ALL_CLEAR_BONUS = 5000;
 /** 全消しのあと ALL_CLEAR_BOOST_TURNS 手のあいだ、手に入るスコアすべてに ×ALL_CLEAR_BOOST（もう一度全消しすると手数が戻る） */

@@ -84,12 +84,11 @@ html[data-board-theme="white"]{background-color:#f4f6fb !important;}
   --ts:0 2px 0 rgba(29,35,64,.08);--ts-s:0 1px 0 rgba(29,35,64,.08);--goal:#18b8c4;--amb-glow:255,120,150;}
 [data-board-theme="white"] #app :is(.round-btn){background:#fff;color:#1d2340;border-color:rgba(29,35,64,.12);box-shadow:0 3px 8px rgba(29,35,64,.08);}
 [data-board-theme="white"] #app .round-btn svg{fill:#1d2340;}
-[data-board-theme="white"] #app #btnRank svg,[data-board-theme="white"] #app .learn-btn.on svg{fill:var(--gold);}
+[data-board-theme="white"] #app #btnRank svg{fill:var(--gold);}
 [data-board-theme="white"] #app .best-pill{background:#fff;border-color:rgba(29,35,64,.12);box-shadow:0 3px 8px rgba(29,35,64,.08);}
 [data-board-theme="white"] #app :is(.brand-name,.lane-num.lit){color:#1d2340;}
 [data-board-theme="white"] .lane-num{color:#5a6285;}
 [data-board-theme="white"] :is(.pop,.combo-pop,.float-score){color:#1d2340;}
-[data-board-theme="white"] .mode-badge{background:#fff;}
 /* 盤面: 背景より少しだけ色味の違う白一色（影・縁・くぼみなしの平面） */
 /* ambient.js が背景の色相に合わせて .well-set に色を直接書くので、!important で固定する */
 [data-board-theme="white"] #wellLayer .well-set{--plate:#e8ecf4 !important;--well:#e8ecf4 !important;--well-s1:transparent !important;--well-s2:transparent !important;

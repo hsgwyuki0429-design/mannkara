@@ -1,11 +1,11 @@
-import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610090554';
-import { Game } from '../core/game.js?v=202610090554';
-import { Piece } from '../core/pieces.js?v=202610090554';
-import { createGarbage } from '../core/board.js?v=202610090554';
-import { SIZE, isInside } from '../core/constants.js?v=202610090554';
-import { MiniBoard, turnCost } from './mini-board.js?v=202610090554';
-import { TrayDealer } from './tray-dealer.js?v=202610090554';
-import { PROTOCOL } from './net.js?v=202610090554';
+import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610090639';
+import { Game } from '../core/game.js?v=202610090639';
+import { Piece } from '../core/pieces.js?v=202610090639';
+import { createGarbage } from '../core/board.js?v=202610090639';
+import { SIZE, isInside } from '../core/constants.js?v=202610090639';
+import { MiniBoard, turnCost } from './mini-board.js?v=202610090639';
+import { TrayDealer } from './tray-dealer.js?v=202610090639';
+import { PROTOCOL } from './net.js?v=202610090639';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
@@ -22,6 +22,8 @@ export const CPU_LEVELS = {
   hard: { name: 'つよい', think: [1000, 1700], best: 1, spread: 0, budget: 60 },
 };
 const RECORD_KEY = 'blockmancala-versus';
+/** オンライン対戦の連鎖の再生の速さ（main.js の ONLINE_SPEED と同じ。ピースを持っているときの速さ） */
+const ONLINE_SPEED = 3;
 const COUNT_MS = 800;              // カウントダウンの 1 つぶん
 const PEND_SHOW = 6;               // 予告に並べる数（それより多いと +n）
 
@@ -67,29 +69,32 @@ export class Versus {
   /* ---------- 始める ---------- */
   /** CPU と対戦（level = easy / normal / hard） */
   startCpu(level) {
+    this.rated = false;
     const L = CPU_LEVELS[level] ? level : 'normal';
     const same = this.kind === 'cpu' && this.level === L && this.series;
     this.kind = 'cpu'; this.level = L; this.net = null;
     this.oppName = 'CPU'; this.oppTag = CPU_LEVELS[L].name;
     if (!same) this.series = { me: 0, opp: 0 };
     this.cpuDealer ??= new TrayDealer(this.api.workerUrl);
+    this.mini.base = 1;
     this.begin();
   }
 
   /** オンライン対戦（net = 相手が見つかった BattleNet、room = その部屋） */
-  startOnline(net, room) {
-    this.kind = 'online'; this.level = null;
+  startOnline(net, room, { rated = false } = {}) {
+    this.kind = 'online'; this.level = null; this.rated = rated;
     this.net = net; this.room = room;
-    this.oppName = room.opponent?.name || 'あいて'; this.oppTag = 'オンライン';
+    this.oppName = room.opponent?.name || 'あいて'; this.oppTag = rated ? 'レート戦' : 'オンライン';
     this.series = { me: 0, opp: 0 };
     this.helloSeen = false; this.startSent = false;
     this.rematchMe = false; this.rematchOpp = false;
     net.onMessage = (m) => this.onNet(m);
     net.onGone = (reason) => this.onGone(reason);
     net.onTransport = (t) => { this.transport = t; };
+    this.mini.base = ONLINE_SPEED;                 // 相手の連鎖も、相手の画面と同じ速さで
     this.begin();
     this.waitText();
-    net.send({ t: 'hello', name: this.api.myName(), v: PROTOCOL });
+    net.send({ t: 'hello', name: this.api.myName(), v: PROTOCOL, rate: rated ? net.rate : undefined });
     net.start();
     if (room.seat === 1) this.later(2600, () => this.maybeStart(), true);    // じかにつながるのを少し待ってから
   }
@@ -398,6 +403,7 @@ export class Versus {
         this.helloSeen = true;
         if (m.v !== PROTOCOL) { this.finish('version'); return; }
         if (m.name) { this.oppName = m.name; this.$('vsOppName').textContent = m.name; }
+        if (this.rated && Number.isFinite(m.rate)) { this.oppTag = `レート ${m.rate}`; this.$('vsOppTag').textContent = this.oppTag; }
         if (this.room.seat === 1) this.maybeStart();
         break;
       case 'start':
@@ -481,13 +487,20 @@ export class Versus {
     $('vsResTitle').textContent = title;
     $('vsResBig').textContent = big;
     $('vsResBig').className = `vs-res-big ${result}`;
-    $('vsResVs').textContent = `vs ${this.oppName}${this.kind === 'cpu' ? `（${this.oppTag}）` : ''}`;
+    $('vsResVs').textContent = `vs ${this.oppName}${this.kind === 'cpu' || this.rated ? `（${this.oppTag}）` : ''}`;
     $('vsResSeries').textContent = `${this.series.me} - ${this.series.opp}`;
+    $('vsResSeries').classList.toggle('hidden', !!this.rated);
+    $('vsRate').classList.toggle('hidden', !this.rated || result === 'version');
+    $('vsRematch').textContent = this.rated ? 'もう一度さがす' : 'もう一度';
+    if (this.rated && result !== 'version') {
+      if (this.started) this.reportRated(result === 'gone' ? 'win' : result);
+      else $('vsRate').textContent = '対戦が始まる前だったので、レートは動きません';
+    }
     const sc = this.api.game.score;
     $('vsStatChain').textContent = sc.bestChain;
     $('vsStatSent').textContent = this.me.stats.sent;
     $('vsStatChip').textContent = this.me.stats.chipped;
-    const canRematch = this.kind === 'cpu' || (!this.netGone && result !== 'version');
+    const canRematch = this.kind === 'cpu' || this.rated || (!this.netGone && result !== 'version');
     $('vsRematch').disabled = !canRematch;
     $('vsWaitNote').classList.toggle('hidden', !(result === 'version'));
     if (result === 'version') $('vsWaitNote').textContent = 'ページを読みこみ直してください';
@@ -499,9 +512,25 @@ export class Versus {
     }, true);
   }
 
+  /** レート戦の結果をサーバーへ（2 人の知らせが合ったら、レートが動く）。結果のカードにレートの増減を出す */
+  async reportRated(result) {
+    const el = this.$('vsRate'), net = this.net;
+    el.innerHTML = 'レートを計算しています…';
+    el.className = 'vs-rate';
+    const res = await net.reportResult(result);
+    if (this.net !== net && this.net) return;
+    if (res.status === 'done') {
+      const from = res.rate - res.delta, up = res.delta > 0, cls = up ? 'up' : res.delta < 0 ? 'down' : '';
+      el.innerHTML = `レート　${from} → <b>${res.rate}</b> <span class="vs-delta ${cls}">${up ? '+' : ''}${res.delta}</span>`;
+      el.className = `vs-rate ${cls}`;
+      el.animate([{ scale: '1.15' }, { scale: '1' }], { duration: 320, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+    } else el.textContent = res.status === 'void' ? 'この対戦はレートに数えませんでした（結果が食い違いました）' : 'レートはあとで反映されます';
+  }
+
   rematch() {
     if (!this.active) return;
     if (this.kind === 'cpu') { this.startCpu(this.level); return; }
+    if (this.rated) { const find = this.api.findRated; this.exit(); find?.(); return; }      // レート戦は 1 戦ずつ。新しい相手をさがす
     if (this.netGone) return;
     this.rematchMe = true;
     this.net.send({ t: 'rematch' });
@@ -525,6 +554,7 @@ export class Versus {
   exit() {
     if (!this.active) return;
     this.active = false;
+    this.endedBeforeExit = this.ended;
     this.ended = true;
     clearInterval(this.tickTimer);
     this.clearTimers();
@@ -533,6 +563,8 @@ export class Versus {
     this.mini.reset(null);
     const net = this.net;
     this.net = null;
+    // レート戦の途中でやめたら負け（自分で「負け」と知らせる）
+    if (net && this.rated && this.started && !this.endedBeforeExit) net.reportResult('lose', 0).catch(() => {});
     if (net) { try { net.send({ t: 'bye' }); } catch {} setTimeout(() => net.cancel(), 150); }
     this.netGone = null;
     const $ = this.$;

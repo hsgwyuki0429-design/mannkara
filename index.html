@@ -38,8 +38,8 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202610090554" />
-<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610090554" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202610090639" />
+<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610090639" />
 </head>
 <body>
 <div id="app">
@@ -88,10 +88,14 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5.6" y="4.8" width="4.6" height="14.4" rx="2.3" /><rect x="13.8" y="4.8" width="4.6" height="14.4" rx="2.3" /></svg>
       </button>
     </div>
+    <!-- このゲームの URL の QR コード（押すとカードが出る） -->
+    <button id="btnQr" class="qr-pill" aria-label="QR コード">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h8v8H3zm2 2v4h4V5zm8-2h8v8h-8zm2 2v4h4V5zM3 13h8v8H3zm2 2v4h4v-4zm9-2h3v3h-3zm4 0h3v3h-3zm-4 4h3v4h-3zm4 1h3v3h-3zM6 6h2v2H6zm10 0h2v2h-2zM6 16h2v2H6z" /></svg>
+      <span>QR</span>
+    </button>
   </header>
   <div class="score-wrap">
     <div id="score" class="score">0</div>
-    <div id="modeBadge" class="mode-badge hidden">LEARN</div>
   </div>
   <!-- 対戦: 自分の名前・経過時間・予告（相手から飛んできた、まだ落ちていないおじゃま） -->
   <div id="vsHead" class="vs-head hidden">
@@ -196,10 +200,15 @@
 <!-- ランキング（スコア）: 世界 / この端末（この端末のはモードごとに別） -->
 <div id="rankOverlay" class="overlay hidden">
   <div class="overlay-box rank-box">
-    <p class="over-title rank-title">ランキング</p>
+    <p class="over-title rank-title">ランキング<span id="rankSeason" class="rank-mode rank-season">シーズン2</span></p>
     <div class="rank-scope">
       <button class="rank-scope-btn" data-scope="world">🌏 世界</button>
-      <button class="rank-scope-btn" data-scope="local">この端末<span id="rankMode" class="rank-mode hidden">LEARN</span></button>
+      <button class="rank-scope-btn" data-scope="local">この端末</button>
+    </div>
+    <div id="rankKinds" class="rank-kinds">
+      <button class="rank-kind-btn" data-kind="best">ベスト</button>
+      <button class="rank-kind-btn" data-kind="total">累計</button>
+      <button class="rank-kind-btn" data-kind="rate">レート</button>
     </div>
     <div id="rankName" class="rank-name">
       <span class="rank-name-label">なまえ</span>
@@ -219,6 +228,7 @@
     <ol id="rankList" class="rank-list"></ol>
     <p id="rankMe" class="rank-me hidden"></p>
     <button id="rankClose" class="primary">とじる</button>
+    <button id="rankSeasonBtn" class="link howto rank-season-btn">シーズン1の結果を見る</button>
   </div>
 </div>
 <!-- 対戦の結果（ゲームオーバーと同じ作りのカード） -->
@@ -228,6 +238,7 @@
     <p id="vsResBig" class="vs-res-big">WIN!</p>
     <p id="vsResVs" class="vs-res-vs"></p>
     <p id="vsResSeries" class="over-best"></p>
+    <p id="vsRate" class="vs-rate hidden"></p>
     <div class="over-stats vs-stats">
       <div class="stat"><span class="stat-label">最大連鎖</span><span id="vsStatChain" class="stat-val">0</span></div>
       <div class="stat"><span class="stat-label">送ったおじゃま</span><span id="vsStatSent" class="stat-val">0</span></div>
@@ -251,10 +262,6 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 3.5h5l7.6 7.6-2.5 2.5L6 6v-2.5zM20.5 3.5v5l-3.9 3.9-2.5-2.5 3.9-3.9h2.5zM6.2 14.6l3.2 3.2-1.8 1.8 1.4 1.4-1.4 1.4-2.1-2.1-1.8 1.8-1.4-1.4 1.8-1.8-2.1-2.1 1.4-1.4 1.4 1.4zM17.8 14.6l1.4 1.4 1.4-1.4 1.4 1.4-2.1 2.1 1.8 1.8-1.4 1.4-1.8-1.8-2.1 2.1-1.4-1.4 1.4-1.4-1.8-1.8z" /></svg>
         対戦
       </button>
-      <button id="homeLearn" class="home-btn">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6a6.9 6.9 0 0 0-4.1 12.5c.7.5 1.1 1.3 1.1 2.1v.6h6v-.6c0-.8.4-1.6 1.1-2.1A6.9 6.9 0 0 0 12 2.6z" /><rect x="9" y="19.2" width="6" height="2.4" rx="1.2" /></svg>
-        学習モード
-      </button>
     </div>
     <div id="homeVsPanel" class="home-panel hidden">
       <p class="home-sec">CPU と対戦</p>
@@ -264,12 +271,14 @@
         <button class="home-level" data-level="hard">つよい</button>
       </div>
       <p class="home-sec">オンライン対戦</p>
-      <button id="homeRandom" class="home-btn home-online">だれかと対戦</button>
+      <button id="homeRated" class="home-btn home-rated">レート戦<small id="homeRateVal" class="home-rate-val"></small></button>
+      <button id="homeRandom" class="home-btn home-online">だれかと対戦（フリー）</button>
       <div class="home-row">
         <button id="homeRoomMake" class="home-btn small">あいことばを作る</button>
         <button id="homeRoomJoin" class="home-btn small">あいことばで入る</button>
       </div>
       <p id="homeVsRec" class="home-rec"></p>
+      <button id="homeRate" class="link home-link">レートランキング</button>
       <button id="homeVsRules" class="link home-link">対戦のルール</button>
       <button id="homeVsBack" class="link home-link">もどる</button>
     </div>
@@ -315,8 +324,23 @@
       <li>全消しすると、送るおじゃまが <b>+5</b></li>
       <li>1分30秒を過ぎると、1回に送るおじゃまの数が<b>だんだん増えます</b></li>
       <li>置ける場所がなくなったほうの負け</li>
+      <li>オンライン対戦では、連鎖はいつも速く再生され、<b>連鎖のあいだは次のピースを置けません</b>（おじゃまが順番どおりに届くように）</li>
+      <li><b>レート戦</b>は 1000 から。勝つと増え、負けると同じだけ減ります（2人の増減を足すと 0）。途中でやめると負けです</li>
     </ul>
     <button id="vsRulesClose" class="primary">とじる</button>
+  </div>
+</div>
+<!-- QR コード: インスタグラムのプロフィールの QR のようなカード -->
+<div id="qrOverlay" class="overlay qr-overlay hidden">
+  <button id="qrClose" class="qr-close" aria-label="とじる"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.2 4.8 12 10.6l5.8-5.8 1.4 1.4-5.8 5.8 5.8 5.8-1.4 1.4-5.8-5.8-5.8 5.8-1.4-1.4 5.8-5.8-5.8-5.8z" /></svg></button>
+  <div class="qr-box">
+    <canvas id="qrCard" class="qr-card" width="720" height="880" aria-label="blockmancala の QR コード"></canvas>
+    <div class="qr-actions">
+      <button id="qrShare" class="qr-act"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 7.2 7.6l1.6 1.6 2.1-2.1V15h2.2V7.1l2.1 2.1 1.6-1.6z" /><path d="M5 11h3v2H7v6h10v-6h-1v-2h3v10H5z" /></svg>シェア</button>
+      <button id="qrCopy" class="qr-act"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h10a2 2 0 0 1 2 2v10h-2V5H9zM5 7h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zm0 2v10h10V9z" /></svg>リンクをコピー</button>
+      <button id="qrSave" class="qr-act"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3zM4 18h16v2H4z" /></svg>画像を保存</button>
+    </div>
+    <p id="qrNote" class="qr-note">カメラで読みこむと、すぐ遊べます</p>
   </div>
 </div>
 <div id="pauseOverlay" class="overlay hidden">
@@ -350,6 +374,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202610090554"></script>
+<script type="module" src="./src/ui/main.js?v=202610090639"></script>
 </body>
 </html>
