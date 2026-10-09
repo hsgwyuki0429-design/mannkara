@@ -1,6 +1,5 @@
-import { ANIM } from '../core/constants.js?v=202610091446';
-import { dropPlayMs } from '../core/battle.js?v=202610091446';
-import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091446';
+import { ANIM } from '../core/constants.js?v=202610091500';
+import { Renderer, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091500';
 
 /**
  * 対戦で、相手の盤面を映す。自分の盤面と同じ描き方（renderer.js の Renderer をもう 1 つ。盤面の種類・土台の色・宝石・通路の番号・ゴール・
@@ -14,6 +13,7 @@ export class OppBoard {
     this.root = root;
     this.r = new Renderer(null, { root });
     this.queue = Promise.resolve();
+    this.drops = new Set();        // 演出中のおじゃま（連鎖の再生の列とは別）
     this.left = 0;                 // 再生の残り（速さ 1 のときの ms）
     this.paused = false;
     this.gen = 0;
@@ -35,6 +35,7 @@ export class OppBoard {
   reset(board) {
     this.gen++;
     this.queue = Promise.resolve();
+    this.drops.clear();
     this.left = 0;
     this.r.reset();
     if (board) this.r.bindBoard(board);
@@ -91,11 +92,18 @@ export class OppBoard {
     });
   }
 
-  /** おじゃまが落ちてくる（landed = [{ block, x, r, n }]。自分の盤面と同じ置かれ方） */
+  /**
+   * おじゃまが置かれる（landed = [{ block, x, r, n }]。自分の盤面と同じ置かれ方）。連鎖の再生の列には並べない（相手もおじゃまの演出の間に置ける。
+   * 置く操作をふさがない）。演出が終わったら解決する Promise を返す
+   */
   playDrop(landed) {
-    if (!landed?.length) return this.queue;
-    return this.enqueue(dropPlayMs(landed.length), () => this.r.garbageLand(landed));
+    if (!landed?.length) return Promise.resolve();
+    const p = this.r.garbageLand(landed).catch((e) => console.error(e)).finally(() => this.drops.delete(p));
+    this.drops.add(p);
+    return p;
   }
+  /** 再生が全部終わったとき（置いたターンの再生とおじゃまの演出の、どちらも）に解決する */
+  settled() { return Promise.all([this.queue, ...this.drops]); }
 
   /** ゴールの画面の座標（攻撃が飛び立つ場所） */
   goalPoint() {

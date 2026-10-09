@@ -31,10 +31,9 @@ function battle(seed) {
     for (const st of sides) {
       const g = st.game;
       const dr = st.side.tick();
-      if (dr) st.busyUntil = Math.max(st.busyUntil, t) + B.dropPlayMs(dr.landed.length) / SPEED;   // おじゃまの落ちる動き（main.js の enqueueDrop と同じ見積もり。0.9 倍速）
       st.maxGarbage = Math.max(st.maxGarbage, g.board.garbage().length);
       if (dr && g.gameOver) return lose(st, `おじゃまが落ちて置けなくなった（盤面 ${g.board.totalBlocks()} 個・おじゃま ${g.board.garbage().length} 個）`);
-      if (t < st.nextAt || t < st.busyUntil) continue;          // 連鎖（とおじゃまの落ちる動き）の再生が終わるまで置けない
+      if (t < st.nextAt || t < st.busyUntil) continue;          // 連鎖の再生が終わるまで置けない（おじゃまの演出は置くのをふさがない）
       let m = bestMove(g.board, g.tray, { budgetMs: BUDGET });
       if (m && st.random() < MISS) {
         const opts = [];

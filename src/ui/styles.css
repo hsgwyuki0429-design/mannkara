@@ -596,6 +596,11 @@ body.battle .vs-opp-field{width:100%;}
   animation:ojRing 520ms cubic-bezier(.15,.7,.3,1) both;}
 @keyframes ojRing{from{scale:.15;opacity:.95}to{scale:1;opacity:0}}
 @media (prefers-reduced-motion:reduce){.oj-ring{animation:none;opacity:0}}
+/* おじゃまが置かれる予定のマスの赤い枠（警告の間。そのマスにはもうピースを置けない） */
+.oj-mark{box-sizing:border-box;pointer-events:none;border:max(2px,calc(var(--cell) * .08)) solid rgba(255,90,90,.9);border-radius:calc(var(--cell) * .22);
+  background:rgba(255,70,70,.18);animation:ojMark 520ms ease-in-out infinite alternate;}
+@keyframes ojMark{from{opacity:.45}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.oj-mark{animation:none}}
 /* 飛んでいくおじゃま（数字つきの灰色の宝石） */
 .atk-fly{position:fixed;left:0;top:0;z-index:28;pointer-events:none;width:0;height:0;}
 .atk-fly .block{position:absolute;left:-17px;top:-17px;--cell:34px;width:34px;height:34px;rotate:225deg;}

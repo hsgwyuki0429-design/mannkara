@@ -1,12 +1,12 @@
-import { BattleSide, BATTLE_SPEED, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, marginStartOf, MARGIN_MS, MARGIN_MAX, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091446';
-import { Game } from '../core/game.js?v=202610091446';
-import { Piece, seedOf } from '../core/pieces.js?v=202610091446';
-import { createGarbage } from '../core/board.js?v=202610091446';
-import { isInside } from '../core/constants.js?v=202610091446';
-import { OppBoard, turnCost } from './opp-board.js?v=202610091446';
-import { TrayDealer } from './tray-dealer.js?v=202610091446';
-import { Renderer } from './renderer.js?v=202610091446';
-import { PROTOCOL } from './net.js?v=202610091446';
+import { BattleSide, BATTLE_SPEED, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, marginStartOf, MARGIN_MS, MARGIN_MAX, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091500';
+import { Game } from '../core/game.js?v=202610091500';
+import { Piece, seedOf } from '../core/pieces.js?v=202610091500';
+import { createGarbage } from '../core/board.js?v=202610091500';
+import { isInside } from '../core/constants.js?v=202610091500';
+import { OppBoard, turnCost } from './opp-board.js?v=202610091500';
+import { TrayDealer } from './tray-dealer.js?v=202610091500';
+import { Renderer } from './renderer.js?v=202610091500';
+import { PROTOCOL } from './net.js?v=202610091500';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
@@ -339,7 +339,7 @@ export class Versus {
     this.oppOverAt = at;
     if (this.myOverAt != null) { this.decide(); return; }
     // 相手の盤面の再生が追いついてから（相手が置けなくなったのが見えてから）
-    this.view.queue.then(() => { if (this.myOverAt == null) this.finish('win'); else this.decide(); });
+    this.view.settled().then(() => { if (this.myOverAt == null) this.finish('win'); else this.decide(); });
   }
   decide() {
     if (this.ended) return;
@@ -451,7 +451,7 @@ export class Versus {
     if (!pack) return;
     this.mirror.board = unpackBoard(pack);
     const board = this.mirror.board;
-    this.view.queue.then(() => { if (this.mirror?.board === board) this.view.reset(board); });
+    this.view.settled().then(() => { if (this.mirror?.board === board) this.view.reset(board); });
   }
   onGone(reason) {
     if (!this.active) return;
