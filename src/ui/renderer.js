@@ -1,12 +1,31 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells } from '../core/constants.js?v=202610091147';
-import { Shards } from './shards.js?v=202610091147';
-import { Sparkles } from './sparkles.js?v=202610091147';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091147';
-import { Rims } from './rims.js?v=202610091147';
-import { colorOf } from './palette.js?v=202610091147';
-import { PLATE_SETS } from './ambient.js?v=202610091147';
-import { glassElement, glassGroups } from './glass.js?v=202610091147';
+import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091208';
+import { Shards } from './shards.js?v=202610091208';
+import { Sparkles } from './sparkles.js?v=202610091208';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610091208';
+import { Rims } from './rims.js?v=202610091208';
+import { colorOf } from './palette.js?v=202610091208';
+import { PLATE_SETS } from './ambient.js?v=202610091208';
+import { glassElement, glassGroups } from './glass.js?v=202610091208';
+
+/** 連鎖数ごとの褒め言葉（段階が上がるほど派手な色）。[この連鎖から, 言葉, 段階] */
+export const PRAISE = [[8, 'Unbelievable!', 5], [6, 'Amazing!', 4], [4, 'Excellent!', 3], [3, 'Great!', 2], [2, 'Good!', 1]];
+/**
+ * 1ターンぶんの各連鎖の再生速度。連鎖が進むほど指数的に速くし、
+ * それでも合計が TURN_PLAY_BUDGET を超えるなら全体をまとめて速めて収める（自分の盤面と、対戦の相手の盤面で同じ）
+ */
+export function planSpeeds(steps) {
+  const base = steps.map((s) => Math.min(CHAIN_SPEED_MAX, Math.pow(CHAIN_SPEED_GROWTH, s.chain - 1)));
+  const cost = (s) => Renderer.stepCells(s) * ANIM.step + ANIM.betweenChains;
+  const total = steps.reduce((a, s, i) => a + cost(s) / base[i], 0);
+  const k = Math.max(1, total / TURN_PLAY_BUDGET);
+  return base.map((v) => v * k);
+}
+/** 1 ターンの再生の長さ（速さ 1 のとき。ms）。planSpeeds で速めたぶんも入れる */
+export function turnPlayCost(turn) {
+  const sp = planSpeeds(turn.steps);
+  return turn.steps.reduce((a, s, i) => a + (Renderer.stepCells(s) * ANIM.step + ANIM.betweenChains) / sp[i], turn.steps.length ? ANIM.charge : 0);
+}
 
 /** 盤面全体を画面の縦方向にだけ少し伸ばす率（斜辺の中心線が基準） */
 const STRETCH_Y = 1.04;
@@ -73,19 +92,29 @@ export function markJoins(cells) {
 }
 
 export class Renderer {
-  constructor(sfx) {
+  /**
+   * root を渡すと、その入れ物（.stage と同じ役目）の中に、自分の盤面とまったく同じ作りの盤面を作る（対戦の相手の盤面。id は付けない・
+   * 画面全体の演出（背景の光・ピンチの縁）と --cell は入れ物の中だけ）。渡さなければ index.html の自分の盤面
+   */
+  constructor(sfx, { root = null } = {}) {
     this.sfx = sfx;
+    this.root = root;
+    const get = (id) => (root ? root.querySelector(`[data-part="${id}"]`) : document.getElementById(id));
     // 必要な要素が HTML に無くても（古い HTML がキャッシュされている等）自前で作る
     const need = (id, cls, parent = 'playfield') => {
-      if (document.getElementById(id)) return;
+      if (get(id)) return;
       const d = document.createElement('div');
-      d.id = id; d.className = cls;
-      document.getElementById(parent).appendChild(d);
+      if (root) d.dataset.part = id; else d.id = id;
+      d.className = cls;
+      (parent ? get(parent) : root).appendChild(d);
     };
+    if (root) need('playfield', 'playfield', null);
     ['wellLayer', 'hiLayer', 'blockLayer', 'hintLayer', 'ghostLayer', 'fxLayer'].forEach((id) => need(id, 'layer'));
     need('lane', 'lane'); need('laneRow', 'lane'); need('goal', 'goal'); need('pop', 'pop');
-    this.pf = document.getElementById('playfield');
-    this.wellLayer = document.getElementById('wellLayer');
+    if (root && !get('goal').firstChild) get('goal').innerHTML = '<span>GOAL</span>';
+    this.pf = get('playfield');
+    this.wellLayer = get('wellLayer');
+    this.wellLayer.classList.add('well-layer');
     // 盤面の土台（マスの下の土台とくぼみ）は、背景の色に合わせて色が変わる。色の違う層を重ねて opacity だけで切り替える（ambient.bindBoard）ので、
     // 同じ土台の絵の層をいくつか持つ。0 番だけが最初から見えている（今の青）
     this.plateSets = Array.from({ length: PLATE_SETS }, (_, i) => {
@@ -95,14 +124,14 @@ export class Renderer {
       this.wellLayer.appendChild(d);
       return d;
     });
-    this.hiLayer = document.getElementById('hiLayer');
-    this.blockLayer = document.getElementById('blockLayer');
+    this.hiLayer = get('hiLayer');
+    this.blockLayer = get('blockLayer');
     this.glassLayer = document.createElement('div');
     this.glassLayer.className = 'layer glass-blocks';
     this.blockLayer.after(this.glassLayer);
-    this.ghostLayer = document.getElementById('ghostLayer');
-    this.hintLayer = document.getElementById('hintLayer');
-    this.fxLayer = document.getElementById('fxLayer');
+    this.ghostLayer = get('ghostLayer');
+    this.hintLayer = get('hintLayer');
+    this.fxLayer = get('fxLayer');
     // 消える列のハイライトは既存ブロックの上に重ねる（下にあると隠れて見えない）
     this.glassLayer.after(this.hiLayer);
     // マスに色が満ちる演出（空いたマスの中に塗るので、ブロックより下・マスより上）
@@ -114,16 +143,16 @@ export class Renderer {
     this.annoLayer.className = 'layer';
     this.hintLayer.after(this.annoLayer);
     this.marks = [];
-    this.lane = document.getElementById('lane');
-    this.laneRow = document.getElementById('laneRow');
-    this.goal = document.getElementById('goal');
-    this.pop = document.getElementById('pop');
+    this.lane = get('lane');
+    this.laneRow = get('laneRow');
+    this.goal = get('goal');
+    this.pop = get('pop');
     // 盤面は直角が下に来るよう 225° 回転して表示する。回転しない外枠 wrap に入れ、
     // 文字（連鎖表示）は wrap 側に置いて回転させない
-    this.wrap = document.getElementById('rotWrap');
+    this.wrap = get('rotWrap');
     if (!this.wrap) {
       this.wrap = document.createElement('div');
-      this.wrap.id = 'rotWrap';
+      if (root) this.wrap.dataset.part = 'rotWrap'; else this.wrap.id = 'rotWrap';
       this.wrap.className = 'rot-wrap';
       this.pf.parentNode.insertBefore(this.wrap, this.pf);
       this.wrap.appendChild(this.pf);
@@ -144,8 +173,9 @@ export class Renderer {
     this.comboPop.className = 'combo-pop';
     this.wrap.appendChild(this.comboPop);
     // ピンチのときの画面の縁と、コンボが続くほど明るくなる背景
-    this.dangerEl = document.getElementById('danger') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'danger' }));
-    this.feverEl = document.getElementById('fever') || document.body.insertBefore(Object.assign(document.createElement('div'), { id: 'fever' }), document.body.firstChild);
+    // （相手の盤面は画面に出さない入れ物。背景の光・ピンチの縁は自分の盤面だけ）
+    this.dangerEl = root ? document.createElement('div') : document.getElementById('danger') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'danger' }));
+    this.feverEl = root ? document.createElement('div') : document.getElementById('fever') || document.body.insertBefore(Object.assign(document.createElement('div'), { id: 'fever' }), document.body.firstChild);
     // 背景の色の層（色ごとに1枚。opacity だけを動かして色を入れ替える）
     if (!this.feverEl.querySelector('.fv')) {
       for (let i = 0; i < FEVER_HUES; i++) this.feverEl.appendChild(Object.assign(document.createElement('i'), { className: `fv fv${i}` }));
@@ -182,19 +212,21 @@ export class Renderer {
   }
 
   /* ---------- レイアウト ---------- */
+  static EXT_UP = 8.99;                                       // 斜辺の中心線から上下に見えている範囲（h 単位。上はゴールまで、下は直角の先まで）
+  static EXT_DOWN = 8.55;
+  static spanW = 11.62;                                       // 左右の番号を含めた横幅（マス単位）
+  static spanH = (8.99 + 8.55) / Math.SQRT2;                  // 縦幅（マス単位）
   layout() {
     const stage = this.wrap.parentElement.getBoundingClientRect();
     const sw = stage.width || window.innerWidth;
     const sh = stage.height || window.innerHeight - 380;
     // 盤面をできるだけ大きく: 見えている範囲（左右の番号「8」の外側まで、ゴール上端〜直角の先端まで）が
     // ステージにぴったり収まる最大のマスの大きさにする
-    const EXT_UP = 8.99, EXT_DOWN = 8.55;                     // 斜辺の中心線から上下に見えている範囲（h 単位）
-    const SPAN_W = 11.62;                                     // 左右の番号を含めた横幅（マス単位）
-    const SPAN_H = (EXT_UP + EXT_DOWN) / Math.SQRT2;          // 縦幅（マス単位）
+    const { EXT_UP, EXT_DOWN, spanW: SPAN_W, spanH: SPAN_H } = Renderer;
     const cell = Math.max(1, Math.floor(Math.min((sw - 4) / SPAN_W, (sh - 4) / SPAN_H)));
     const k = cell / this.cell;
     this.cell = cell;
-    document.documentElement.style.setProperty('--cell', cell + 'px');
+    (this.root ?? document.documentElement).style.setProperty('--cell', cell + 'px');
     const W = SIZE * cell;
     this.W = W;
     const h = cell / Math.SQRT2;                             // 画面上で 1 マス進むと縦横にこれだけずれる
@@ -1257,7 +1289,7 @@ export class Renderer {
 
 /**
  * おじゃまの「−k」（連鎖の途中、このターンの終わりに減る数）。盤面と一緒に回らないよう立てた枠の中で、数字の少し上に出す。
- * 相手の小さな盤面（mini-board.js）も同じものを使う
+ * 対戦の相手の盤面（opp-board.js）も同じ
  */
 export function showGarbageTick(el, k) {
   if (!el) return;

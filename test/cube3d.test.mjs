@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
   STRETCH_Y, CUBE, BEVEL, VIEW_ANGLE, localToB, bToLocal, eyeFor, projection, apply4, projectToClient, unprojectClient,
   keyframes, cubicBezier, EASE, platePolygon, polyDistance, plateFieldData, toHalf,
-} from '../src/ui/cube3d-math.js?v=202610091147';
-import { roundedCube, cubeJoins, causJoins } from '../src/ui/cube3d.js?v=202610091147';
-import { ROTATION } from '../src/ui/renderer.js?v=202610091147';
+} from '../src/ui/cube3d-math.js?v=202610091208';
+import { roundedCube, cubeJoins, causJoins } from '../src/ui/cube3d.js?v=202610091208';
+import { ROTATION } from '../src/ui/renderer.js?v=202610091208';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 const VIEWS = [

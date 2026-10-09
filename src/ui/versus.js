@@ -1,15 +1,16 @@
-import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091147';
-import { Game } from '../core/game.js?v=202610091147';
-import { Piece, seedOf } from '../core/pieces.js?v=202610091147';
-import { createGarbage } from '../core/board.js?v=202610091147';
-import { SIZE, isInside } from '../core/constants.js?v=202610091147';
-import { MiniBoard, turnCost } from './mini-board.js?v=202610091147';
-import { TrayDealer } from './tray-dealer.js?v=202610091147';
-import { PROTOCOL } from './net.js?v=202610091147';
+import { BattleSide, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, MARGIN_MS, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610091208';
+import { Game } from '../core/game.js?v=202610091208';
+import { Piece, seedOf } from '../core/pieces.js?v=202610091208';
+import { createGarbage } from '../core/board.js?v=202610091208';
+import { isInside } from '../core/constants.js?v=202610091208';
+import { OppBoard, turnCost } from './opp-board.js?v=202610091208';
+import { TrayDealer } from './tray-dealer.js?v=202610091208';
+import { Renderer } from './renderer.js?v=202610091208';
+import { PROTOCOL } from './net.js?v=202610091208';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。
- *  - 自分の盤面はふだんと同じ（main.js）。相手の盤面は右上に小さく映す（mini-board.js）
+ *  - 自分の盤面はふだんと同じ（main.js）。相手の盤面も同じ描き方で、自分の盤面の上に同じ大きさで映す（opp-board.js）
  *  - 相手から飛んできたおじゃまは、自分の盤面の上に「予告」として並ぶ（相手の連鎖が終わるまでは薄く、終わったら濃く）
  *  - 3・2・1・GO で始まり、置けなくなったほうの負け。結果のカードから「もう一度」（同じ相手と）・「ホームへ」
  * main.js とは api（自分のゲーム・描画・音・入力のロックなど）でつながる
@@ -26,7 +27,7 @@ const RECORD_KEY = 'blockmancala-versus';
 const BATTLE_SPEED = 3;
 const COUNT_MS = 800;              // カウントダウンの 1 つぶん
 const PEND_SHOW = 6;               // 予告に並べる数（それより多いと +n）
-/** タブレットの横向き（styles.css と同じ条件。相手の盤面は右上に小さく） */
+/** タブレットの横向き（styles.css と同じ条件。相手の盤面は自分の盤面の右に並べる） */
 const WIDE = '(min-width:900px) and (min-aspect-ratio:4/3)';
 
 /** 一時停止できる時計（CPU との対戦は一時停止できる） */
@@ -59,7 +60,7 @@ export class Versus {
     const $ = api.$;
     this.$ = $;
     this.active = false;
-    this.mini = new MiniBoard($('vsOppField'));
+    this.view = new OppBoard($('vsOppField'));
     this.timers = [];
     this.tickTimer = 0;
     this.series = null;
@@ -78,7 +79,7 @@ export class Versus {
     this.oppName = 'CPU'; this.oppTag = CPU_LEVELS[L].name;
     if (!same) this.series = { me: 0, opp: 0 };
     this.cpuDealer ??= new TrayDealer(this.api.workerUrl);
-    this.mini.base = BATTLE_SPEED;                 // CPU の連鎖も、自分と同じ速さで
+    this.view.base = BATTLE_SPEED;                 // CPU の連鎖も、自分と同じ速さで
     this.begin();
   }
 
@@ -94,7 +95,7 @@ export class Versus {
     net.onMessage = (m) => this.onNet(m);
     net.onGone = (reason) => this.onGone(reason);
     net.onTransport = (t) => { this.transport = t; };
-    this.mini.base = BATTLE_SPEED;                 // 相手の連鎖も、相手の画面と同じ速さで
+    this.view.base = BATTLE_SPEED;                 // 相手の連鎖も、相手の画面と同じ速さで
     this.begin();
     this.waitText();
     net.send({ t: 'hello', name: this.api.myName(), v: PROTOCOL, rate: rated ? net.rate : undefined });
@@ -142,37 +143,37 @@ export class Versus {
     me.over = false;
     if (this.kind === 'cpu') {
       const g = this.cpu = new Game({ hooks: {}, battle: { rates: BATTLE_RATES, seed: this.seed } });   // 自分と同じ種 = 同じ順番の手駒
-      this.opp = new BattleSide({ game: g, now: () => this.clock.now(), idPrefix: 'c', busy: () => this.mini.playLeft() > 0, hooks: {
+      this.opp = new BattleSide({ game: g, now: () => this.clock.now(), idPrefix: 'c', busy: () => this.view.playLeft() > 0, hooks: {
         send: (atk) => this.incoming(atk),
-        drop: (res) => this.mini.playDrop(res.landed),
+        drop: (res) => this.view.playDrop(res.landed),
         pending: () => this.renderPend(),
         over: () => this.oppLost(this.clock.now() - (this.goAt ?? 0)),
       } });
       this.cpuBusy = false;
       this.cpuNextAt = Infinity;
       this.mirror = null;
-      this.mini.reset(g.board);
+      this.view.reset(g.board);
     } else {
       this.cpu = null; this.opp = null;
       this.mirror = Game.mirror();
       this.oppPend = [];
-      this.mini.reset(this.mirror.board);
+      this.view.reset(this.mirror.board);
     }
   }
 
   /**
    * 相手の盤面の大きさ。スマホの縦向きなどでは、自分の盤面の上に並べて、2 つの三角がちょうど同じ大きさで収まるマスにする
-   * （自分の盤面は renderer.js の layout が、残りの高さに収まるように決める。そちらは上のゴールと番号のぶん高い）。
-   * タブレットの横向きは、今までどおり右上に小さく
+   * （自分の盤面は renderer.js の layout が、残りの高さに収まるように決める）。タブレットの横向きは、自分の盤面の右に並べる
    */
   layout() {
-    const w = Math.min(window.innerWidth, 1400);
+    const field = this.$('vsOppField'), app = this.$('app'), opp = this.$('vsOpp');
+    const cs = getComputedStyle(app);
     if (window.matchMedia?.(WIDE).matches) {
-      this.mini.layout(Math.max(8, Math.min(22, Math.floor(w * 0.2 / (SIZE * Math.SQRT2)))));
+      // タブレットの横向き: 自分の盤面の右の列に、同じ大きさで（自分の盤面は左の列で、同じ幅・同じ高さに収まる大きさになる）
+      const h = app.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      this.view.layout(Math.max(6, Math.floor(Math.min((opp.clientWidth - 4) / Renderer.spanW, (h - 10) / Renderer.spanH))));
       return;
     }
-    const app = this.$('app'), opp = this.$('vsOpp'), field = this.$('vsOppField');
-    const cs = getComputedStyle(app);
     let rest = app.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
     for (const el of app.children) {
       if (el === opp || el.classList.contains('stage')) continue;
@@ -181,11 +182,10 @@ export class Versus {
       rest -= el.offsetHeight + parseFloat(st.marginTop) + parseFloat(st.marginBottom);
     }
     const os = getComputedStyle(opp);
-    rest -= opp.offsetHeight - field.offsetHeight - parseFloat(getComputedStyle(field).marginTop) + parseFloat(os.marginTop) + parseFloat(os.marginBottom);
-    // 自分の盤面: 縦 (8.99 + 8.55) / √2 マス + 4px・横 11.62 マス + 4px（renderer.js）。相手: 縦 8 / √2 × 1.04 マス + 2px
-    const MY_H = (8.99 + 8.55) / Math.SQRT2, OPP_H = (SIZE / Math.SQRT2) * 1.04 + 0.5;    // 相手の盤面の上の余白（styles.css）も
-    const cell = Math.floor(Math.min((app.clientWidth + 16 - 4) / 11.62, (rest - 10) / (MY_H + OPP_H)));
-    this.mini.layout(Math.max(6, cell));
+    rest -= opp.offsetHeight - field.offsetHeight + parseFloat(os.marginTop) + parseFloat(os.marginBottom);
+    // 2 つの盤面は同じ作り: どちらも縦 spanH マス（+ 数 px）・横 spanW マス（renderer.js の layout）
+    const cell = Math.floor(Math.min((app.clientWidth + 16 - 4) / Renderer.spanW, (rest - 16) / (2 * Renderer.spanH)));
+    this.view.layout(Math.max(6, cell));
   }
 
   /** オンライン: 相手とつないでいる間（始まるまで）の小さな文字 */
@@ -262,7 +262,7 @@ export class Versus {
   setPaused(on) {
     if (!this.active || this.kind !== 'cpu' || !this.clock) return;
     if (on) this.clock.pause(); else this.clock.resume();
-    this.mini.setPaused(on);
+    this.view.setPaused(on);
   }
 
   /* ---------- 自分 ---------- */
@@ -307,7 +307,7 @@ export class Versus {
     this.later(readyIn, () => {
       if (!this.active || this.ended) return;
       const t = this.$('vsMyPend').getBoundingClientRect();
-      this.fly(this.mini.goalPoint(), { x: t.left + t.width / 2, y: t.top + t.height / 2 }, atk, () => this.api.sfx.garbageWarn(atk.n));
+      this.fly(this.view.goalPoint(), { x: t.left + t.width / 2, y: t.top + t.height / 2 }, atk, () => this.api.sfx.garbageWarn(atk.n));
     });
   }
 
@@ -373,7 +373,7 @@ export class Versus {
     this.oppOverAt = at;
     if (this.myOverAt != null) { this.decide(); return; }
     // 相手の盤面の再生が追いついてから（相手が置けなくなったのが見えてから）
-    this.mini.queue.then(() => { if (this.myOverAt == null) this.finish('win'); else this.decide(); });
+    this.view.queue.then(() => { if (this.myOverAt == null) this.finish('win'); else this.decide(); });
   }
   decide() {
     if (this.ended) return;
@@ -391,7 +391,7 @@ export class Versus {
     const g = this.cpu, now = this.clock.now();
     if (this.cpuBusy || g.gameOver || this.opp.over || !g.tray.some(Boolean)) return;
     // 対戦では連鎖の再生が終わるまで置けない（自分と同じルール）。終わってから少し考えて置く
-    if (this.mini.playLeft() > 0) { this.cpuNextAt = Math.max(this.cpuNextAt, now + this.thinkTime() * 0.4); return; }
+    if (this.view.playLeft() > 0) { this.cpuNextAt = Math.max(this.cpuNextAt, now + this.thinkTime() * 0.4); return; }
     if (now < this.cpuNextAt) return;
     this.cpuBusy = true;
     const L = CPU_LEVELS[this.level];
@@ -412,9 +412,9 @@ export class Versus {
       const turn = g.placePiece(m.slot, m.ox, m.oy);
       if (!turn) { this.cpuNextAt = this.clock.now() + 300; return; }   // そのあいだにおじゃまが落ちて置けなくなった
       turn.rest = rest;
-      const readyIn = this.mini.playLeft() + turnCost(turn) / this.mini.base;
+      const readyIn = this.view.playLeft() + turnCost(turn) / this.view.base;
       this.opp.placed(turn, readyIn);
-      this.mini.playTurn(turn);
+      this.view.playTurn(turn);
       this.cpuNextAt = this.clock.now() + this.thinkTime();
       const lost = () => { if (g === this.cpu && g.gameOver) this.opp.lose(); };
       if (turn.trayReady) turn.trayReady.then(lost); else lost();
@@ -465,7 +465,7 @@ export class Versus {
     g.tray = [new Piece(m.p), ...(m.rest || []).map((n) => new Piece(n))].concat([null, null]).slice(0, 3);
     let turn = null;
     try { turn = g.canPlace(0, m.ox, m.oy) ? g.placePiece(0, m.ox, m.oy) : null; } catch (e) { console.error(e); }
-    if (turn) this.mini.playTurn(turn);
+    if (turn) this.view.playTurn(turn);
     if (!turn || (m.b && !samePack(packBoard(g.board), m.b))) this.resync(m.b);
   }
   remoteDrop(m) {
@@ -478,7 +478,7 @@ export class Versus {
       g.board.set(l.x, l.r, block);
       landed.push({ block, x: l.x, r: l.r, n: l.n, path: l.path });
     }
-    this.mini.playDrop(landed);
+    this.view.playDrop(landed);
     if (m.b && !samePack(packBoard(g.board), m.b)) this.resync(m.b);
   }
   /** 相手の盤面と食い違ったら、届いた盤面に合わせる（再生が終わってから） */
@@ -486,7 +486,7 @@ export class Versus {
     if (!pack) return;
     this.mirror.board = unpackBoard(pack);
     const board = this.mirror.board;
-    this.mini.queue.then(() => { if (this.mirror?.board === board) this.mini.reset(board); });
+    this.view.queue.then(() => { if (this.mirror?.board === board) this.view.reset(board); });
   }
   onGone(reason) {
     if (!this.active) return;
@@ -588,7 +588,7 @@ export class Versus {
     this.clearTimers();
     if (this.cpu) this.cpuSeq = (this.cpuSeq ?? 0) + 1;
     this.cpu = null; this.opp = null; this.mirror = null;
-    this.mini.reset(null);
+    this.view.reset(null);
     const net = this.net;
     this.net = null;
     // レート戦の途中でやめたら負け（自分で「負け」と知らせる）

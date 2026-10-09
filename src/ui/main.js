@@ -1,28 +1,28 @@
-import { Game } from '../core/game.js?v=202610091147';
-import { Board, createBlock } from '../core/board.js?v=202610091147';
-import { Piece } from '../core/pieces.js?v=202610091147';
-import * as Sim from '../core/sim.js?v=202610091147';
-import { SIZE, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610091147';
-import { Renderer, delay, markJoins } from './renderer.js?v=202610091147';
-import { Sfx, kitForScore } from './sfx.js?v=202610091147';
-import { Scenes } from './scenes.js?v=202610091147';
-import { Ambient } from './ambient.js?v=202610091147';
-import { colorOf } from './palette.js?v=202610091147';
-import { TrayDealer } from './tray-dealer.js?v=202610091147';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091147';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091147';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091147';
-import { World, SEASON } from './world.js?v=202610091147';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091147';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610091147';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091147';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091147';
-import { softwareRendering } from './fx2d.js?v=202610091147';
-import { useSprites } from './shards.js?v=202610091147';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610091147';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091147';
-import { makeQr, drawQr } from './qr.js?v=202610091147';
-import { BattleNet } from './net.js?v=202610091147';
+import { Game } from '../core/game.js?v=202610091208';
+import { Board, createBlock } from '../core/board.js?v=202610091208';
+import { Piece } from '../core/pieces.js?v=202610091208';
+import * as Sim from '../core/sim.js?v=202610091208';
+import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610091208';
+import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091208';
+import { Sfx, kitForScore } from './sfx.js?v=202610091208';
+import { Scenes } from './scenes.js?v=202610091208';
+import { Ambient } from './ambient.js?v=202610091208';
+import { colorOf } from './palette.js?v=202610091208';
+import { TrayDealer } from './tray-dealer.js?v=202610091208';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091208';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091208';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091208';
+import { World, SEASON } from './world.js?v=202610091208';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091208';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610091208';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091208';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091208';
+import { softwareRendering } from './fx2d.js?v=202610091208';
+import { useSprites } from './shards.js?v=202610091208';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610091208';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091208';
+import { makeQr, drawQr } from './qr.js?v=202610091208';
+import { BattleNet } from './net.js?v=202610091208';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -131,8 +131,6 @@ function saveRecords() {
 }
 
 /* ---------- ゲーム ---------- */
-/** 連鎖数ごとの褒め言葉（段階が上がるほど派手な色） */
-const PRAISE = [[8, 'Unbelievable!', 5], [6, 'Amazing!', 4], [4, 'Excellent!', 3], [3, 'Great!', 2], [2, 'Good!', 1]];
 
 /**
  * 描画キュー。ルールは placePiece の時点で即確定しているので、ここでは記録を順番に再生するだけ。
@@ -155,17 +153,6 @@ const enqueue = (fn) => {
   return queue;
 };
 
-/**
- * 1ターンぶんの各連鎖の再生速度。連鎖が進むほど指数的に速くし、
- * それでも合計が TURN_PLAY_BUDGET を超えるなら全体をまとめて速めて収める。
- */
-function planSpeeds(steps) {
-  const base = steps.map((s) => Math.min(CHAIN_SPEED_MAX, Math.pow(CHAIN_SPEED_GROWTH, s.chain - 1)));
-  const cost = (s) => Renderer.stepCells(s) * ANIM.step + ANIM.betweenChains;
-  const total = steps.reduce((a, s, i) => a + cost(s) / base[i], 0);
-  const k = Math.max(1, total / TURN_PLAY_BUDGET);
-  return base.map((v) => v * k);
-}
 /** 連鎖の通り道に次のピースを置いたときだけ、音と動きを残して追いつく。 */
 const OVERLAP_SPEED = 8;
 const playingSpeed = () => (playingSeq && playingSeq < fastBefore ? OVERLAP_SPEED : 1);
@@ -213,10 +200,6 @@ function distToBoard(x, y) {
  * 再生の残り時間のおおよそ（再生の時間で ms）。置いたターンの分を足し、再生が進んだ分（速めた分も含む）を引く
  */
 let playLeft = 0, playRaf = 0, playLast = 0;
-function turnPlayCost(turn) {
-  const sp = planSpeeds(turn.steps);
-  return turn.steps.reduce((a, s, i) => a + (Renderer.stepCells(s) * ANIM.step + ANIM.betweenChains) / sp[i], turn.steps.length ? ANIM.charge : 0);
-}
 function playTick(now) {
   playRaf = 0;
   if (!pending) { playLeft = 0; return; }
@@ -233,7 +216,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091147', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091208', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -784,6 +767,8 @@ function applyBoardTheme(value) {
   if (boardTheme === '3d') enable3d(); else disable3d();
   renderer.layout();
   renderer.refreshGlass();
+  versus?.view.r.layout();                         // 対戦の相手の盤面も同じ見た目に
+  versus?.view.r.refreshGlass();
   renderTray();
   for (const radio of $('boardThemeList').querySelectorAll('input')) radio.checked = radio.value === boardTheme;
 }
@@ -795,7 +780,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610091147').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610091208').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -1535,7 +1520,7 @@ function exitBattle() {
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610091147', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610091208', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,
@@ -1545,6 +1530,7 @@ versus = new Versus({
   findRated: () => openLobby('rated'),
   celebrate() { ambient.celebrate('best'); scenes.newBest($('vsResBig').getBoundingClientRect()); },
 });
+ambient.bindBoard(versus.view.plateSets);          // 相手の盤面の土台も、背景と一緒に同じ色へ変わる
 
 /* ---------- ホーム（遊び方を選ぶ・ランキング・デザイン・遊び方・サウンド） ---------- */
 let homeTapAt = 0;

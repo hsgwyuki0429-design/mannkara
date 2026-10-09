@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   Ambient, ambientLook, comboLook, comboStyle, COMBO_STYLE, nextHue, nextTone, skipOlive, hexToOklch, oklchToHex, contrastWithWhite, wrapHue, hueDelta,
   ORIGIN, BASE_HUE, TONES, MIN_CONTRAST, BOARD, BOARD_VARS, boardLook, PLATE_SETS, CALM_EVERY, CALM_MS, COMBO_MS, SNAP_MS,
-} from '../src/ui/ambient.js?v=202610091147';
+} from '../src/ui/ambient.js?v=202610091208';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const hue = (hex) => hexToOklch(hex).h;
@@ -46,7 +46,7 @@ test('色相の計算: 一周にそろえ、近い方まわりの角度を返す
 test('最初の色は今の背景（styles.css の --bg / --bg-hi と同じ #3a6adf / #4479f2）そのもの。同じ明るさ・鮮やかさの青を作っても数値が合う', () => {
   const look = ambientLook(BASE_HUE, 'base');
   assert.equal(look.lo, ORIGIN.lo); assert.equal(look.hi, ORIGIN.hi);
-  const css = readFileSync(new URL('../src/ui/styles.css?v=202610091147', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/ui/styles.css?v=202610091208', import.meta.url), 'utf8');
   assert.ok(css.includes(`--bg:${ORIGIN.lo}; --bg-hi:${ORIGIN.hi};`), 'styles.css の背景と同じ（最初の 1 枚目は CSS のまま見える）');
   for (const f of ['../index.html', '../manifest.webmanifest']) assert.ok(readFileSync(new URL(f, import.meta.url), 'utf8').includes(ORIGIN.lo), `${f} の theme-color / background_color も同じ`);
   // 元の青から読み取った明るさ・鮮やかさで同じ色相の色を作り直すと、元の青（8bit の丸め 1〜2 以内）に戻る
@@ -344,7 +344,7 @@ test('色が落ち着いている間は全面の層を使わない: 変わり始
 
 /* ---------------- 盤面の土台（プレート）も背景と一緒に変わる ---------------- */
 
-const css = readFileSync(new URL('../src/ui/styles.css?v=202610091147', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../src/ui/styles.css?v=202610091208', import.meta.url), 'utf8');
 /** 'rgba(4, 12, 60, .7)' や '#1A3EAE' を比べられる形（数値の配列・小文字）にそろえる */
 const norm = (c) => (c.startsWith('#') ? c.toLowerCase() : c.match(/[\d.]+/g).map(Number));
 
@@ -397,47 +397,61 @@ const makeBoard = (opts) => {
 
 test('土台の層は背景の層と同じ瞬間・同じ長さ・同じ動き（opacity だけ）で重なり、覆い終わったら下の層を外す', () => {
   const { a, sets } = makeBoard();
-  assert.equal(a.plates.filter((p) => p.on).length, 1, '最初は 0 番だけが見えている');
+  assert.equal(a.plates[0].filter((p) => p.on).length, 1, '最初は 0 番だけが見えている');
   a.go(BASE_HUE + 30, 'base', 500);
   a.go(BASE_HUE + 60, 'base', 800);
-  const bg = a.layers.filter((l) => l.on && l.plate), pl = a.plates.filter((p) => p.on);
+  const bg = a.layers.filter((l) => l.on && l.plate?.length), pl = a.plates[0].filter((p) => p.on);
   assert.equal(bg.length, 2); assert.equal(pl.length, 3, '重ねた背景の 2 枚 + 最初の青');
   for (const l of bg) {
-    const p = l.plate;
+    const p = l.plate[0].p;
     assert.deepEqual(p.anim.frames, l.anim.frames); assert.deepEqual(p.anim.frames, [{ opacity: 0 }, { opacity: 1 }]);
     assert.equal(p.anim.opts.duration, l.anim.opts.duration); assert.equal(p.anim.opts.easing, l.anim.opts.easing);
     assert.equal(p.z, l.z, '重なる順番も同じ');
   }
   const look = ambientLook(BASE_HUE + 60, 'base');
-  for (const [name, v] of Object.entries(look.board)) assert.equal(bg[1].plate.el.style.props[name], v, name);
+  for (const [name, v] of Object.entries(look.board)) assert.equal(bg[1].plate[0].p.el.style.props[name], v, name);
   bg[1].anim.onfinish();                                     // 2 枚目が全面を覆った
-  assert.equal(a.plates.filter((p) => p.on).length, 1);
-  assert.equal(bg[1].plate.el.style.opacity, '1'); assert.equal(sets[0].style.display, 'none', '最初の青は外れる');
-  assert.equal(bg[1].plate.el.style.display, 'block');
+  assert.equal(a.plates[0].filter((p) => p.on).length, 1);
+  assert.equal(bg[1].plate[0].p.el.style.opacity, '1'); assert.equal(sets[0].style.display, 'none', '最初の青は外れる');
+  assert.equal(bg[1].plate[0].p.el.style.display, 'block');
   for (let i = 0; i < 14; i++) a.show(ambientLook(i * 25, 'soft'), 300);       // 層が足りなくなっても、一番古い層を使い回して壊れない
-  assert.ok(a.plates.every((p) => a.plates.filter((q) => q.z === p.z && q.on).length <= 1));
+  assert.ok(a.plates.every((p) => a.plates[0].filter((q) => q.z === p.z && q.on).length <= 1));
   stop(a);
 });
 
 test('土台の層をつなげていなくても（チュートリアル・テスト）、背景は今までどおり動く。動きを減らす設定でも背景と同じ 1 回の重ね', () => {
   const { a } = make();
   a.go(BASE_HUE + 30, 'base', 500);
-  assert.equal(a.layers.filter((l) => l.on).length, 2, '今の色の下敷き + 新しい色'); assert.ok(a.layers.every((l) => !l.plate));
+  assert.equal(a.layers.filter((l) => l.on).length, 2, '今の色の下敷き + 新しい色'); assert.ok(a.layers.every((l) => !l.plate?.length));
   stop(a);
   const q = makeBoard({ reduced: true });
   q.a.go(BASE_HUE + 160, 'base', 100);
-  assert.equal(q.a.plates.filter((p) => p.on).length, 2, '最初の青 + 新しい色の 1 枚');
-  assert.ok(q.a.layers.find((l) => l.on && l.plate).plate.anim.opts.duration >= 700);
+  assert.equal(q.a.plates[0].filter((p) => p.on).length, 2, '最初の青 + 新しい色の 1 枚');
+  assert.ok(q.a.layers.find((l) => l.on && l.plate?.length).plate[0].p.anim.opts.duration >= 700);
   stop(q.a);
+});
+
+test('盤面が 2 つ（対戦の相手の盤面）でも、どちらの土台も背景と同じ瞬間に同じ色へ変わる', () => {
+  const r = makeBoard();
+  const sets2 = Array.from({ length: PLATE_SETS }, () => r.doc.createElement());
+  r.a.bindBoard(sets2);
+  r.a.go(BASE_HUE + 30, 'base', 500);
+  const l = r.a.layers.find((x) => x.on && x.plate?.length);
+  assert.equal(l.plate.length, 2);
+  const look = ambientLook(BASE_HUE + 30, 'base');
+  for (const { p } of l.plate) assert.equal(p.el.style.props['--plate'], look.board['--plate']);
+  l.anim.onfinish();
+  assert.equal(r.sets[0].style.display, 'none'); assert.equal(sets2[0].style.display, 'none', '相手の盤面の最初の青も外れる');
+  stop(r.a);
 });
 
 test('土台の層の z-index（色が変わるたびに増える）は #wellLayer の中だけで効く。外へ漏れると、土台がブロック・プレビュー・ヒントより前に出て隠してしまう', () => {
   const rule = css.match(/#wellLayer\{([^}]*)\}/);
   assert.ok(rule, '#wellLayer の規則が要る');
   assert.match(rule[1], /isolation:\s*isolate/, '重ね合わせの文脈を閉じる（以前は filter が閉じていた）');
-  const renderer = readFileSync(new URL('../src/ui/renderer.js?v=202610091147', import.meta.url), 'utf8');
+  const renderer = readFileSync(new URL('../src/ui/renderer.js?v=202610091208', import.meta.url), 'utf8');
   assert.match(renderer, /className = 'well-set';[^}]*this\.wellLayer\.appendChild\(d\)/s, '土台の層は #wellLayer の中に作る');
-  const ambient = readFileSync(new URL('../src/ui/ambient.js?v=202610091147', import.meta.url), 'utf8');
+  const ambient = readFileSync(new URL('../src/ui/ambient.js?v=202610091208', import.meta.url), 'utf8');
   assert.match(ambient, /el\.style\.zIndex = String\(p\.z = z\)/, '層の前後は z-index で決める（だから外へ漏らさない）');
   // 土台の層に z-index を付けても、盤面の中の他の層（ブロック・プレビュー・ヒント）には付かない
   const { a, sets } = makeBoard();

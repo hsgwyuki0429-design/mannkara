@@ -28,8 +28,8 @@
 html[data-board-theme="glass"]{background-color:#5e4ac2 !important;}
 [data-board-theme="glass"] body{background:#5e4ac2 radial-gradient(ellipse 95% 72% at 50% 35%,#6953ca 0%,#604cc3 60%,#5e4ac2 100%) !important;}
 [data-board-theme="glass"] :is(#ambient,#sceneTint,#fever){display:none !important;}
-[data-board-theme="glass"] #wellLayer .well-set{display:none !important;}
-[data-board-theme="glass"] #wellLayer .glass-plate{display:block;}
+[data-board-theme="glass"] .well-layer .well-set{display:none !important;}
+[data-board-theme="glass"] .well-layer .glass-plate{display:block;}
 [data-board-theme="glass"] #app .stage{width:90%;margin:0;justify-self:center;}
 [data-board-theme="glass"] .playfield .glass-joined::before,
 [data-board-theme="glass"] .playfield .glass-joined::after{visibility:hidden;}
@@ -64,6 +64,8 @@ html[data-board-theme="glass"]{background-color:#5e4ac2 !important;}
 [data-board-theme="3d"]:not([data-gl="off"]) .playfield :is(.block,.ghost,.hi,.well-tint),
 [data-board-theme="3d"]:not([data-gl="off"]) .tray .tray-cell,
 [data-board-theme="3d"]:not([data-gl="off"]) #dragLayer .drag-cell{visibility:hidden;}
+/* 対戦の相手の盤面は 3D の canvas では描かない（canvas は自分の盤面 1 つだけ）。宝石の見た目（WebGL が使えないときと同じ）で見せる */
+[data-board-theme="3d"]:not([data-gl="off"]) .opp-stage .playfield :is(.block,.ghost,.hi,.well-tint){visibility:visible;}
 [data-board-theme="3d"] #pauseOverlay{background:rgba(22,24,80,.62);}
 /* おじゃまの数字は、ガラスの立方体（canvas）の上に 2D の文字をそのまま重ねる（立方体の高さのまん中の面が 2D の盤面と同じ位置に写る） */
 [data-board-theme="3d"]:not([data-gl="off"]) .playfield .block.garbage :is(.gnum,.gtick-wrap){visibility:visible;}
@@ -91,9 +93,9 @@ html[data-board-theme="white"]{background-color:#f4f6fb !important;}
 [data-board-theme="white"] :is(.pop,.combo-pop,.float-score){color:#1d2340;}
 /* 盤面: 背景より少しだけ色味の違う白一色（影・縁・くぼみなしの平面） */
 /* ambient.js が背景の色相に合わせて .well-set に色を直接書くので、!important で固定する */
-[data-board-theme="white"] #wellLayer .well-set{--plate:#e8ecf4 !important;--well:#e8ecf4 !important;--well-s1:transparent !important;--well-s2:transparent !important;
+[data-board-theme="white"] .well-layer .well-set{--plate:#e8ecf4 !important;--well:#e8ecf4 !important;--well-s1:transparent !important;--well-s2:transparent !important;
   --well-rim:transparent !important;--well-hi:transparent !important;--plate-edge:transparent !important;--plate-shade:transparent !important;filter:none !important;}
-[data-board-theme="white"] #wellLayer .well::after{box-shadow:none;}
+[data-board-theme="white"] .well-layer .well::after{box-shadow:none;}
 /* ブロック: その色一色のベタ塗り（影・つや・ふちなしの平面） */
 [data-board-theme="white"] :is(.block,.ghost,.hi,.tray-cell,.drag-cell)::before,.preview-white .block::before{
   inset:3%;border-radius:18%;background:var(--col);box-shadow:none;

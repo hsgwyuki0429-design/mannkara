@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { outlineLoops, glassGroups, glassPath, gridPath } from '../src/ui/glass.js?v=202610091147';
-import { readBoardTheme, saveBoardTheme, BOARD_THEME_KEY, BOARD_THEMES } from '../src/ui/board-themes.js?v=202610091147';
+import { outlineLoops, glassGroups, glassPath, gridPath } from '../src/ui/glass.js?v=202610091208';
+import { readBoardTheme, saveBoardTheme, BOARD_THEME_KEY, BOARD_THEMES } from '../src/ui/board-themes.js?v=202610091208';
 
 const area = (loop) => loop.reduce((sum, p, i) => {
   const q = loop[(i + 1) % loop.length];
