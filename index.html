@@ -38,8 +38,8 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202610091103" />
-<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091103" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202610091208" />
+<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610091208" />
 </head>
 <body>
 <div id="app">
@@ -110,7 +110,7 @@
   <div id="vsOpp" class="vs-opp hidden" aria-hidden="true">
     <div class="vs-opp-head"><span id="vsOppName" class="vs-name">CPU</span><span id="vsOppTag" class="vs-tag"></span></div>
     <div id="vsOppPend" class="vs-pend small"></div>
-    <div id="vsOppField" class="vs-opp-field"></div>
+    <div id="vsOppField" class="vs-opp-field opp-stage"></div>
   </div>
   <div id="vsCount" class="vs-count hidden" aria-live="polite"></div>
 
@@ -375,6 +375,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202610091103"></script>
+<script type="module" src="./src/ui/main.js?v=202610091208"></script>
 </body>
 </html>

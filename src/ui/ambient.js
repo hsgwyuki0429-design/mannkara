@@ -242,7 +242,7 @@ export class Ambient {
     this.currentLook = this.settled;
     this.moves = 0;
     this.holdUntil = 0;
-    this.plates = null;                                         // 盤面の土台の層（bindBoard）
+    this.plates = [];                                           // 盤面ごとの土台の層（bindBoard。対戦では相手の盤面も）
   }
 
   /** ふだんの色を次へ進める（向きと幅・濃さを毎回ばらす。決まった順では回らない） */
@@ -258,10 +258,10 @@ export class Ambient {
 
   /**
    * 盤面の土台の層（renderer.plateSets。中身は同じ土台の絵）を受け取る。背景の層と同じように、色を変えるたびに新しい色の層を一番上に重ねて
-   * opacity 0 → 1、覆い終わったら下の層を外す。0 番は最初から見えている（今の青）
+   * opacity 0 → 1、覆い終わったら下の層を外す。0 番は最初から見えている（今の青）。盤面が 2 つ（対戦の相手の盤面）なら 2 回呼ぶ
    */
   bindBoard(sets) {
-    this.plates = sets.map((el, i) => ({ el, anim: null, on: i === 0, z: 0 }));
+    this.plates.push(sets.map((el, i) => ({ el, anim: null, on: i === 0, z: 0 })));
   }
 
   /** 手を置くたびに呼ぶ。発動しない手が続くと、ふだんの色がゆっくり進む。コンボは色相を進めていく（5 の倍数は一気に） */
@@ -409,10 +409,11 @@ export class Ambient {
     for (const id of GLOW_IDS) this.doc.getElementById?.(id)?.style.setProperty('--amb-glow', look.glow);   // 同系色の重ね（コンボ・ピンチの縁・色の変化）もこの色相へ
   }
 
-  /** 盤面の土台の、新しい色の層を一番上に重ねて opacity 0 → 1（背景と同じ長さ・同じ動き）。使った層を返す（bindBoard していなければ null） */
+  /** 盤面の土台の、新しい色の層を一番上に重ねて opacity 0 → 1（背景と同じ長さ・同じ動き）。盤面ごとに使った層を返す（bindBoard していなければ空） */
   mountPlate(look, ms, z) {
-    const pool = this.plates;
-    if (!pool?.length) return null;
+    return this.plates.filter((pool) => pool.length).map((pool) => this.mountPlateIn(pool, look, ms, z));
+  }
+  mountPlateIn(pool, look, ms, z) {
     const p = pool.find((q) => !q.on) ?? pool.reduce((a, b) => (a.z <= b.z ? a : b));
     const { el } = p;
     p.anim?.cancel();
@@ -422,7 +423,7 @@ export class Ambient {
     el.style.display = 'block';
     p.on = true;
     p.anim = el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
-    return p;
+    return { p, pool };
   }
 
   /** layer が全面を覆い終わった: それより下の層は見えないので外す。ブラウザの上のバーの色も合わせる */
@@ -432,11 +433,10 @@ export class Ambient {
     layer.anim = null;
     for (const l of this.layers) if (l !== layer && l.z < layer.z) { l.anim?.cancel(); l.anim = null; l.on = false; l.el.style.display = 'none'; }
     if (this.layers.every((l) => l === layer || !l.on)) this.settleOn(look);       // ほかに重ねている途中の層が無ければ、ここで落ち着く
-    const p = layer.plate;                                        // 盤面の土台も、同じ瞬間に覆い終わる
-    if (p && this.plates) {
+    for (const { p, pool } of layer.plate ?? []) {               // 盤面の土台も、同じ瞬間に覆い終わる
       p.el.style.opacity = '1';
       p.anim?.cancel(); p.anim = null;
-      for (const q of this.plates) if (q !== p && q.z < p.z) { q.anim?.cancel(); q.anim = null; q.on = false; q.el.style.display = 'none'; }
+      for (const q of pool) if (q !== p && q.z < p.z) { q.anim?.cancel(); q.anim = null; q.on = false; q.el.style.display = 'none'; }
     }
     try { (this.meta ??= this.doc.querySelector('meta[name="theme-color"]'))?.setAttribute('content', look.lo); } catch {}
   }

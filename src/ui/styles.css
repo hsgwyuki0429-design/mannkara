@@ -92,6 +92,7 @@ button{font-family:inherit;cursor:pointer;}
 /* 土台の層の z-index（ambient.js が付ける。色が変わるたびに増える）を、この中だけで効かせる（重ね合わせの文脈を閉じる）。
    開いたままだと、増えた z-index が盤面の中（ブロック・プレビュー・ヒント・演出の層）より前へ出て、土台がそれらを隠してしまう */
 #wellLayer{isolation:isolate;}
+.well-layer{isolation:isolate;}                                      /* 対戦の相手の盤面も同じ */
 /* 盤面の土台（マスの下の土台 + くぼみ + まわりの光と影）。色は .well-set の変数で、ambient.js が背景の色相に合わせて書き換える
    （背景と同じ重ね方: 色の違う層を重ねて opacity だけで切り替える。0 番だけが最初から見えていて、今の青。動かすのは opacity だけ） */
 .well-set{position:absolute;inset:0;
@@ -243,6 +244,13 @@ button{font-family:inherit;cursor:pointer;}
 .block.garbage.wide .gnum{font-size:calc(var(--cell) * .42);letter-spacing:-.04em;}
 .block.garbage.low .gnum{color:var(--gold);}                          /* あと 1〜2 連鎖で消える */
 .block.garbage.fly .gnum{scale:0;}
+/* 連鎖の途中の「−1」「−2」…（このターンの終わりに、その数だけ減る）。立てた枠の中で、数字の上に赤いピル */
+.block.garbage.ticking{z-index:4;}
+.gtick-wrap{position:absolute;inset:0;z-index:2;rotate:-225deg;pointer-events:none;}
+.gtick{position:absolute;left:50%;bottom:72%;translate:-50% 0;padding:0 .3em;border-radius:99px;white-space:nowrap;
+  font-family:"Round One","Nunito",sans-serif;font-weight:900;font-size:max(9px,calc(var(--cell) * .4));line-height:1.25;color:#fff;
+  background:linear-gradient(180deg,#ff6f86,#e8364a);box-shadow:0 1px 2px rgba(60,0,20,.35);}
+.block.garbage.fly .gtick-wrap{display:none;}
 .block.falling{z-index:6;}
 
 /* ---- 中央テキスト ----
@@ -561,15 +569,34 @@ body.battle .stage{width:92%;margin:0 auto;}                        /* 相手の
 .vs-opp-head .vs-name{font-size:12px;}
 .vs-tag{flex-shrink:0;padding:0 6px;border-radius:99px;font-family:"M PLUS Rounded 1c",sans-serif;font-size:9px;font-weight:900;line-height:1.6;
   color:var(--gold);border:1px solid rgba(255,213,74,.6);}
-.vs-opp-field{position:relative;--mcell:12px;}
-.mini-field{position:absolute;transform-origin:50% 50%;--cell:var(--mcell);}
-.mini-wells,.mini-blocks{position:absolute;inset:0;}
-.mini-field .cell{will-change:auto;}
-.mini-field .well::after{inset:8%;box-shadow:inset -1px -1px 2px rgba(4,12,60,.6);}
-.mini-field .well::before{background:var(--plate,#2951c2);}
-.mini-field{--plate:#2951c2;--well:#2d4498;--well-s1:rgba(4,12,60,.7);--well-s2:rgba(4,12,60,.45);--well-rim:rgba(96,140,245,.8);--well-hi:rgba(150,186,255,.95);}
-.mini-field .block::before{box-shadow:inset -.5px 0 0 rgba(255,255,255,.5),-1px 0 1.5px rgba(4,14,64,.35);}
-.mini-field .block.garbage .gnum{font-size:calc(var(--mcell) * .6);text-shadow:none;}
+.vs-opp-field{position:relative;}
+/* 相手の盤面（opp-board.js）: 自分の盤面（.stage）と同じ作り・同じ見た目。大きさは versus.js の layout が決める */
+.opp-stage{display:flex;align-items:center;justify-content:center;overflow:visible;}
+/* スマホの縦向きなど（タブレットの横向き以外）: 相手の盤面を自分の盤面の上に、同じ大きさで並べる（半分ずつ）。
+   マスの大きさは versus.js の layout が、2 つの盤面がちょうど収まるように決める */
+@media not all and (min-width:900px) and (min-aspect-ratio:4/3){
+  /* 自分の名前・時計・予告は、自分の盤面の左上（通路の番号の外側の空いたところ）に重ねる（相手の盤面の下に並べ、下の余白を負にする） */
+  body.battle .vs-head{order:2;position:relative;z-index:2;pointer-events:none;flex-direction:row;align-items:center;gap:8px;padding:0 6px;
+    min-height:calc(30px * 1.45);margin:4px 0 calc(-30px * 1.45 - 4px);}
+  body.battle .vs-head .vs-pend{max-width:46%;}
+  body.battle .vs-opp{order:1;}
+  body.battle .stage{order:3;}
+  body.battle .tray{order:4;height:min(118px,15vh);}           /* 手駒は盤面のマスと同じ大きさなので、対戦では低くてよい */
+  body.battle .brand{order:5;}
+  body.battle .vs-head .vs-pend{flex:1;flex-wrap:nowrap;overflow:hidden;min-height:calc(30px * 1.45);}
+  body.battle .vs-opp{flex-shrink:0;width:calc(100% + 8px);margin:2px -4px 0;}
+  body.battle .stage{width:calc(100% + 16px);margin:0 -8px;}
+}
+/* タブレットの横向き: 自分の盤面の右に、相手の盤面を同じ大きさで並べる（半分ずつ） */
+@media (min-width:900px) and (min-aspect-ratio:4/3){
+  body.battle #app{grid-template-columns:clamp(240px,25vw,300px) minmax(0,1fr) minmax(0,1fr);}
+  body.battle #app .vs-opp{grid-column:3;grid-row:1 / -1;align-self:center;}
+}
+/* どちらでも: 相手の盤面は流れの中に置き、名前と予告は相手の盤面の左上（通路の番号の外側の空いたところ）に重ねる */
+body.battle .vs-opp{position:relative;top:auto;right:auto;padding:0;display:block;overflow:hidden;}   /* 相手の点数・かけらは枠の中だけ（上のボタンにかからないように） */
+body.battle .vs-opp-head{position:absolute;left:10px;top:7px;z-index:2;}
+body.battle .vs-opp .vs-pend.small{position:absolute;left:8px;top:30px;z-index:2;--pend:20px;min-height:0;justify-content:flex-start;max-width:42%;flex-wrap:nowrap;overflow:hidden;}
+body.battle .vs-opp-field{width:100%;}
 /* カウントダウン（盤面のまん中に大きく。光らせず、ベタ塗りの文字が弾む） */
 .vs-count{position:fixed;left:50%;top:47%;z-index:26;translate:-50% -50%;pointer-events:none;font-weight:900;font-size:min(130px,30vw);line-height:1;
   color:#fff;text-shadow:0 6px 6px rgba(0,0,0,.22);opacity:0;}
