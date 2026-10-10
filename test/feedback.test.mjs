@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610091551';
-import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610091551';
-import { Renderer } from '../src/ui/renderer.js?v=202610091551';
-import { RIM_MS } from '../src/ui/rims.js?v=202610091551';
+import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610100117';
+import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610100117';
+import { Renderer } from '../src/ui/renderer.js?v=202610100117';
+import { RIM_MS } from '../src/ui/rims.js?v=202610100117';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
