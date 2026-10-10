@@ -1,30 +1,32 @@
-import { Game } from '../core/game.js?v=202610100117';
-import { Board, createBlock } from '../core/board.js?v=202610100117';
-import { Piece } from '../core/pieces.js?v=202610100117';
-import * as Sim from '../core/sim.js?v=202610100117';
-import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610100117';
-import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610100117';
-import { Sfx, kitForScore } from './sfx.js?v=202610100117';
-import { Scenes } from './scenes.js?v=202610100117';
-import { Ambient } from './ambient.js?v=202610100117';
-import { colorOf } from './palette.js?v=202610100117';
-import { TrayDealer } from './tray-dealer.js?v=202610100117';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610100117';
-import { track } from './analytics.js?v=202610100117';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610100117';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610100117';
-import { World, SEASON } from './world.js?v=202610100117';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610100117';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610100117';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610100117';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610100117';
-import { softwareRendering } from './fx2d.js?v=202610100117';
-import { useSprites } from './shards.js?v=202610100117';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610100117';
-import { BATTLE_SPEED } from '../core/battle.js?v=202610100117';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610100117';
-import { makeQr, drawQr } from './qr.js?v=202610100117';
-import { BattleNet } from './net.js?v=202610100117';
+import { Game } from '../core/game.js?v=202610100522';
+import { Board, createBlock } from '../core/board.js?v=202610100522';
+import { Piece } from '../core/pieces.js?v=202610100522';
+import * as Sim from '../core/sim.js?v=202610100522';
+import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610100522';
+import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610100522';
+import { Sfx, kitForScore } from './sfx.js?v=202610100522';
+import { Scenes } from './scenes.js?v=202610100522';
+import { Ambient } from './ambient.js?v=202610100522';
+import { colorOf } from './palette.js?v=202610100522';
+import { TrayDealer } from './tray-dealer.js?v=202610100522';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610100522';
+import { studioState } from '../core/studio.js?v=202610100522';
+import { STUDIO_BOARDS } from '../core/studio-library.js?v=202610100522';
+import { track } from './analytics.js?v=202610100522';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610100522';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610100522';
+import { World, SEASON } from './world.js?v=202610100522';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610100522';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610100522';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610100522';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610100522';
+import { softwareRendering } from './fx2d.js?v=202610100522';
+import { useSprites } from './shards.js?v=202610100522';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610100522';
+import { BATTLE_SPEED } from '../core/battle.js?v=202610100522';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610100522';
+import { makeQr, drawQr } from './qr.js?v=202610100522';
+import { BattleNet } from './net.js?v=202610100522';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -91,12 +93,14 @@ function season1Local() {
 loadBest();
 /** チュートリアル中なら { i: ステップ, placed: 置いた（次のステップを待っている） }。チュートリアルの点数・盤面は残さない */
 let tutorial = null;
+/** 撮影モード中なら { i: 盤面の番号, placed: 置いた, target: 置く場所, chain, blocks }。点数・盤面は残さない */
+let studio = null;
 /** 対戦中か（対戦ではベストスコア・記録・ランキング・途中の保存・学習モードのおすすめを使わない） */
 const inBattle = () => !!versus?.active;
 function saveBest() {
   if (inBattle()) return false;
   saveRecords();
-  if (tutorial || game.score.score <= best) return false;
+  if (tutorial || studio || game.score.score <= best) return false;
   best = game.score.score;
   try { localStorage.setItem(bestKey(), String(best)); } catch {}
   return true;
@@ -107,7 +111,7 @@ let runRecorded = false;
 const world = new World();
 world.flush();                                     // 前に送れなかった記録があれば送る
 function recordRun() {
-  if (runRecorded || tutorial || inBattle() || game.score.score <= 0) return null;
+  if (runRecorded || tutorial || studio || inBattle() || game.score.score <= 0) return null;
   runRecorded = true;
   const run = { score: game.score.score, at: Date.now() };
   recent = [run.score, ...recent].slice(0, RECENT_GAMES);
@@ -124,7 +128,8 @@ function recordRun() {
 function saveRecords() {
   if (inBattle()) return { chain: false, combo: false };
   const { bestChain, bestStreak } = game.score;
-  const up = { chain: !tutorial && bestChain > records.chain, combo: !tutorial && bestStreak > records.combo };
+  const practice = tutorial || studio;
+  const up = { chain: !practice && bestChain > records.chain, combo: !practice && bestStreak > records.combo };
   if (!up.chain && !up.combo) return up;
   if (up.chain) records.chain = bestChain;
   if (up.combo) records.combo = bestStreak;
@@ -217,7 +222,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610100117', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610100522', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -266,6 +271,7 @@ const game = new Game({
         syncLock();
       });
       if (tutorial) tutorialPlaced();
+      if (studio) studioPlaced();
     },
   },
 });
@@ -586,14 +592,15 @@ const SNAP_RANGE = 1.6;
 /** 仮置きが見えていない間（連鎖の再生中）は、見えていない場所へ吸い付かないよう、ほぼ真下だけにする */
 const SNAP_RANGE_BLIND = 0.75;
 function nearestPlacement(slot, piece, fx, fy, range = SNAP_RANGE) {
+  if (studio?.placed) return null;                // 撮影モード: 置いたあとは、ダミーの手駒は置けない
   let best = null;
-  const target = tutorialTarget();
+  const target = tutorialTarget() ?? studioTarget();
   if (target) range = TUTORIAL_SNAP;
   for (let oy = Math.floor(fy) - 3; oy <= Math.ceil(fy) + 3; oy++) {
     for (let ox = Math.floor(fx) - 3; ox <= Math.ceil(fx) + 3; ox++) {
       const d = Math.hypot(ox - fx, oy - fy);
       if (d > range || (best && d >= best.d)) continue;
-      if (target && (ox !== target.ox || oy !== target.oy)) continue;     // チュートリアルでは決めた場所にだけ置ける
+      if (target && (slot !== target.slot || ox !== target.ox || oy !== target.oy)) continue;     // チュートリアル・撮影モードでは決めた手駒を決めた場所にだけ置ける
       if (game.canPlace(slot, ox, oy)) best = { ox, oy, d };
     }
   }
@@ -645,6 +652,7 @@ function endDrag() {
   renderer.view3d?.setTrayState({ dragging: -1 });
   drag = null;
   renderer.timeScale = desiredSpeed();
+  if (studio && !studio.placed) showStudioBar(true);   // 置かずに戻したら、操作の表示を戻す（置いたときは studioPlaced で消す）
 }
 /** 持っているピースを置かずに戻す（指が離れたのを取りこぼしたとき・一時停止・画面の切り替えなど） */
 function cancelDrag() {
@@ -677,6 +685,7 @@ $('tray').addEventListener('pointerdown', (e) => {
   drag = { slot, piece, lift, ox: null, oy: null, valid: false, chain: 0, pointerId: e.pointerId, x: e.clientX, y: e.clientY, t0: performance.now(),
     boardRect: renderer.pf.getBoundingClientRect(), approach: 0, movedAt: 0, lastD: null, lastT: 0 };
   dropHint();
+  if (studio) showStudioBar(false);                // 撮影モード: 持ち上げたら操作の表示を消す（録画に映らないように）
   slotEl.classList.add('dragging');
   renderer.view3d?.setTrayState({ dragging: slot });
   $('dragLayer').innerHTML = '';
@@ -715,6 +724,7 @@ let hintSeq = 0;
 function updateHint() {
   hintSeq++;
   if (tutorial) { showTutorialTarget(); return; }
+  if (studio) { showStudioTarget(); return; }
   setHintedSlot(-1);
   renderer.clearHint();
 }
@@ -722,10 +732,16 @@ function updateHint() {
 function dropHint() {
   hintSeq++;
   if (tutorial) { showTutorialTarget(); return; }     // チュートリアルでは置く場所を見せたまま、指の絵だけ消す
+  if (studio) { showStudioTarget(); return; }
   renderer.clearHint();
 }
 /** 左上のリセットボタン: 今のゲームを打ち切って最初からにする（ゲームオーバーの「もう一度」と同じ） */
-$('btnReset').addEventListener('click', () => { sfx.unlock(); if (inBattle()) return; saveBest(); recordRun(); restart(); });
+$('btnReset').addEventListener('click', () => {
+  sfx.unlock();
+  if (inBattle()) return;
+  if (studio) { startStudio(studio.i); return; }      // 撮影モード: 同じ盤面をもう一度（撮り直し）
+  saveBest(); recordRun(); restart();
+});
 /* ---------- サウンド ---------- */
 function updateSoundButton() {
   $('btnSound').classList.toggle('off', !sfx.enabled);
@@ -781,7 +797,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610100117').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610100522').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -1110,7 +1126,7 @@ $('btnRunChain').addEventListener('click', () => {
  */
 const saveKey = () => seasonKey('blockmancala-save');      // シーズン 1 の途中のゲーム（前のスコアの計算）は続けない
 function saveGame() {
-  if (tutorial || inBattle()) return;
+  if (tutorial || studio || inBattle()) return;
   try {
     if (game.gameOver) { localStorage.removeItem(saveKey()); return; }
     localStorage.setItem(saveKey(), JSON.stringify({ state: game.exportState() }));
@@ -1145,6 +1161,7 @@ function showState(st) {
 function restart() {
   // ベストスコアは呼ぶ側で残しておく（ここで残すと、モードを切り替えたときに前のモードの点数が新しいモードのベストになる）
   stopTutorial();
+  stopStudio();
   skillBest = best;
   generation++; queue = Promise.resolve(); pending = 0; fastBefore = 0; playingSeq = 0; playback.clear(); playLeft = 0;
   bestCelebrated = false;
@@ -1391,13 +1408,106 @@ function stopTutorial() {
 function endTutorial() { sfx.unlock(); stopTutorial(); startOrResume(); }
 $('tutStart').addEventListener('click', endTutorial);
 $('tutSkip').addEventListener('click', endTutorial);
+/* ---------- 撮影モード（1個置くだけで大連鎖して全消しになる、動画映えする盤面） ---------- */
+/**
+ * 盤面集（core/studio-library.js。scripts/build-studio.mjs で作る）から1つ出し、光っている場所へ決めた手駒を置かせる。
+ * ダミーの手駒は置けない（撮影の失敗を防ぐ）。補充・詰み・点数の記録・途中の保存は無し（チュートリアルと同じ）。
+ * 操作の表示（盤面の切り替え・ガイド）は、手駒を持ち上げると消え、全消しの演出が終わると戻る（録画に映さないため）。
+ * 左上のリセットボタンは「同じ盤面でもう一度」。URL は ?studio=番号 にして、同じ盤面をあとから開き直せるようにする
+ */
+const STUDIO_GUIDE_KEY = 'blockmancala-studio-guide';
+let studioGuide = true;
+try { studioGuide = localStorage.getItem(STUDIO_GUIDE_KEY) !== '0'; } catch {}
+function studioTarget() {
+  return studio && !studio.placed ? { ...studio.target, piece: game.tray[studio.target.slot] } : null;
+}
+function startStudio(i) {
+  const n = STUDIO_BOARDS.length;
+  i = ((i % n) + n) % n;
+  if (!studio) { saveBest(); if (!pending) saveGame(); }      // 遊んでいる途中のゲームは残しておき、終わったら続きから
+  stopTutorial();
+  track('studio_start', { board: i + 1 });
+  const s = studioState(STUDIO_BOARDS[i]);
+  studio = { i, placed: false, target: s.target, chain: s.chain, blocks: s.blocks };
+  showState(s.state);
+  game.scripted = true;
+  bestCelebrated = true;                         // 撮影モードの点数で新記録のお祝いはしない
+  setPaused(false);
+  showStudioBar(true);
+  setStudioUrl(i + 1);
+}
+function stopStudio() {
+  if (!studio) return;
+  studio = null;
+  showStudioBar(false);
+  setHintedSlot(-1);
+  renderer.clearHint();
+  setStudioUrl(null);
+}
+function setStudioUrl(no) {
+  try {
+    const url = new URL(location.href);
+    if (no) url.searchParams.set('studio', String(no)); else url.searchParams.delete('studio');
+    history.replaceState(history.state, '', url);
+  } catch {}
+}
+/** 置く場所の金色の枠（ガイドを消しているときは出さない。消していても、決めた場所にしか置けないのは同じ） */
+function showStudioTarget() {
+  setHintedSlot(-1);
+  const t = studioTarget();
+  if (!t || !t.piece || !studioGuide) { renderer.clearHint(); return; }
+  renderer.showHint(t.piece, t.ox, t.oy, true);
+  if (!drag) setHintedSlot(t.slot);
+}
+function studioPlaced() {
+  studio.placed = true;
+  showStudioBar(false);
+  showStudioTarget();
+  const i = studio.i;
+  enqueue(async () => {
+    await renderer.wait(1600);                   // 全消しの演出を見せきってから
+    if (studio && studio.i === i) showStudioBar(true);
+  });
+}
+function showStudioBar(on) {
+  const bar = $('studio');
+  bar.classList.toggle('hidden', !on);
+  document.body.classList.toggle('studio-on', !!studio);
+  if (!on || !studio) return;
+  $('studioInfo').textContent = `${studio.i + 1} / ${STUDIO_BOARDS.length}　${studio.chain}連鎖・${studio.blocks}個`;
+  $('studioText').innerHTML = studio.placed
+    ? `<b>${game.score.bestChain}連鎖 全消し！</b><br>撮り直しは「もう一度」（左上の リセットでも）`
+    : `${studioGuide ? '光っている 場所へ' : 'あの 場所へ'} 置くだけで <b>全消し</b>！<br>持ち上げると この表示は 消えます`;
+  $('studioAgain').classList.toggle('hidden', !studio.placed);
+  $('studioGuide').setAttribute('aria-pressed', String(studioGuide));
+  $('studioGuide').textContent = studioGuide ? 'ガイド ON' : 'ガイド OFF';
+  const top = document.querySelector('.top').getBoundingClientRect().bottom;
+  bar.style.top = Math.round(top + 6) + 'px';
+}
+$('studioPrev').addEventListener('click', () => { sfx.unlock(); startStudio(studio.i - 1); });
+$('studioNext').addEventListener('click', () => { sfx.unlock(); startStudio(studio.i + 1); });
+$('studioRandom').addEventListener('click', () => {
+  sfx.unlock();
+  const n = STUDIO_BOARDS.length;
+  startStudio(n > 1 ? (studio.i + 1 + Math.floor(Math.random() * (n - 1))) % n : 0);   // 今の盤面以外から
+});
+$('studioAgain').addEventListener('click', () => { sfx.unlock(); startStudio(studio.i); });
+$('studioGuide').addEventListener('click', () => {
+  studioGuide = !studioGuide;
+  try { localStorage.setItem(STUDIO_GUIDE_KEY, studioGuide ? '1' : '0'); } catch {}
+  showStudioTarget();
+  showStudioBar(true);
+});
+$('studioExit').addEventListener('click', () => { sfx.unlock(); stopStudio(); startOrResume(); });
+window.addEventListener('resize', () => { if (studio && !$('studio').classList.contains('hidden')) showStudioBar(true); });
+
 /* ---------- 説明書（「遊び方」。ホーム・一時停止・ゲームオーバーから開く。中身は manual-content.js を初めて開くときに読みこむ） ---------- */
 let manualReady = null;
 async function openManual() {
   track('manual_open');
   sfx.unlock();
   cancelDrag();
-  manualReady ??= import('./manual-content.js?v=202610100117').then(({ MANUAL_HTML }) => { $('manual').innerHTML = MANUAL_HTML; }).catch((e) => { manualReady = null; throw e; });
+  manualReady ??= import('./manual-content.js?v=202610100522').then(({ MANUAL_HTML }) => { $('manual').innerHTML = MANUAL_HTML; }).catch((e) => { manualReady = null; throw e; });
   try { await manualReady; } catch { $('manual').textContent = '説明書を読みこめませんでした。通信のよいところで、もう一度ためしてください'; }
   $('manualOverlay').classList.remove('hidden');
   $('manualOverlay').scrollTop = 0;
@@ -1547,7 +1657,7 @@ function exitBattle() {
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610100117', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610100522', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,
@@ -1610,7 +1720,7 @@ $('btnHome').addEventListener('click', () => {
 $('homeSolo').addEventListener('click', () => {
   sfx.unlock();
   hideHome();
-  if (tutorial) { stopTutorial(); startOrResume(); }
+  if (tutorial || studio) { stopTutorial(); stopStudio(); startOrResume(); }
   else if (gameOverShown) restart();
 });
 $('homeVs').addEventListener('click', () => { sfx.unlock(); homePanel('vs'); });
@@ -1787,8 +1897,11 @@ $('qrSave').addEventListener('click', async () => {
 });
 
 startOrResume();
-showHome();
-if (!world.named) nameGate(() => {});              // 途中の保存があっても、なまえが無ければ先に決めてもらう
+// ?studio（?studio=12 なら 12 番の盤面）で開くと、撮影モードから始める
+const studioParam = new URLSearchParams(location.search).get('studio');
+if (studioParam != null) startStudio(Math.max(1, parseInt(studioParam, 10) || 1) - 1);
+else showHome();
+if (!world.named && studioParam == null) nameGate(() => {});   // 途中の保存があっても、なまえが無ければ先に決めてもらう（撮影モードで開いたときは聞かない）
 // 宝石のかけら・星・ラインの光の枠の絵（色ごと）と虹色の絵は、最初に使う瞬間に作ると一瞬止まるので、起動後の空き時間に作っておく（見た目は同じ）。
 // まとめて作ると、それはそれで一瞬止まるので、1つずつ間をあけて
 {

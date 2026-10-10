@@ -239,6 +239,7 @@ localhost（開発中）と Do Not Track のブラウザでは、ID があって
 | `solo_start` / `solo_over` | ひとりで 開始 / ゲームオーバー | `score` `best_chain` `new_best` `ranked`（終了時） |
 | `battle_start` / `battle_end` | 対戦の開始 / 結果 | `kind`（cpu / online）`level` `rated` `result`（終了時） |
 | `manual_open` / `tutorial_start` | 説明書を開く / れんしゅう | — |
+| `studio_start` | 撮影モードで盤面を出す（前・次・もう一度のたびにも） | `board`（盤面の番号） |
 | `ranking_open` | ランキングを開く | `kind` |
 | `share` | 結果のシェア | `method` |
 
@@ -272,6 +273,21 @@ localhost（開発中）と Do Not Track のブラウザでは、ID があって
 - 「スキップ」か「はじめる」で終わる。遊んでいる途中に説明書から始めたときは、終わったらそのゲームの続きに戻る
 - LINE・Instagram・Facebook などのアプリ内ブラウザで開かれたら、Safari / Chrome で開き直す
   （LINE は `openExternalBrowser=1`、iOS は `x-safari-https://`、Android は Chrome の intent）
+
+## 撮影モード（1手で全消し。動画を撮る用）
+- **光っている場所へ1個置くだけで、大連鎖（14〜22連鎖）して全消し**になる盤面を出す。画面録画して、動画映えする1手を撮るためのモード
+- 入り方: **専用の URL からだけ**（ホームなど、ふつうの画面には入り口を出さない）。`studio.html`（`studio.html?12` なら 12 番の盤面）を開くと、
+  `index.html?studio=番号` へ移って撮影モードで始まる。撮影モードで開いたときは、なまえを聞かない。`studio.html` は検索に出さない（noindex）
+- 盤面集は `src/core/studio-library.js`（約 200 個）。`node scripts/build-studio.mjs [探す回数]` で作り直す
+  - 焼きなまし法で、盤面（どのマスが埋まっているか）を少しずつ変えながら「どれか1つの形をどこかに置くと全消し」かつ連鎖が長い・ブロックが多い盤面を探す
+    （連鎖が終わっていない＝満杯のラインが残っている盤面は使わない）
+  - 本物のゲーム（`Game.placePiece`）で置き直して全消しになるものだけ入れる（`node --test test/studio.test.mjs` でも全部確かめる）
+  - 並びは置く形の種類を1つずつ順に（「次へ」で似た盤面ばかり続かないように）
+- 画面: 置く手駒はトレイのまん中、左右は本物のゲームらしく見せるためのダミー（置けない）。決めた場所にしか置けない（近くで離せば吸い付く）
+  - ブロックの色は、となり合う 2〜4 個ずつのまとまりごとに塗る（置いてきたように見える。同じ盤面はいつも同じ色。`colorCells`）
+  - 上に操作の表示: 何番か・連鎖数・ブロック数、前 / おまかせ / 次、ガイド（置く場所の金色の枠）の ON / OFF、おわる。
+    **手駒を持ち上げると消え、全消しの演出が終わると戻る**（録画に映らないように）。終わったあとは「もう一度」（左上の ↻ でも同じ盤面をやり直す）
+  - 連鎖の演出・音・背景の色の変化はふつうのゲームと同じ。点数・ベストスコア・記録・ランキング・途中の保存には残さない。おわると、遊んでいたゲームの続きへ
 
 ## ホーム画面
 - 開くと最初にホーム画面（盤面とトレイをぼかした上に、ゲームの部品と同じ作りのカードを浮かべる。色は盤面の種類に合わせる）。
@@ -481,6 +497,7 @@ localhost（開発中）と Do Not Track のブラウザでは、ID があって
 - オンライン対戦のサーバーと通信（相手探し・あいことば・メッセージの順番・出ていった相手・中継だけでの通信）のテスト: `node --test test/battle-api.test.mjs`
 - シーズン・累計・レート（和が 0・1 回だけ反映・食い違いは数えない・シーズン1の表）のテスト: `node --test test/season-api.test.mjs`
 - 説明書（最新か・id・文章の数字が今のルールと合っている）のテスト: `node --test test/manual.test.mjs`
+- 撮影モードの盤面集（どれも本物のゲームで全消しになる・ダミーの手駒・色）のテスト: `node --test test/studio.test.mjs`
 - QR コード（Python の qrcode と同じ行列）のテスト: `node --test test/qr.test.mjs`（正解の行列 `test/qr-reference.json` は `pip install qrcode` で作った）
 - 対戦の数値の調整（CPU 同士のシミュレーション）: `node scripts/sim-battle.mjs n=8 think=2500`
 - ローカル: `python3 -m http.server` で `index.html` を開く。世界ランキング・オンライン対戦も試すときは `node scripts/dev-server.mjs`

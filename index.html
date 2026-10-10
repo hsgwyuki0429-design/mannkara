@@ -38,8 +38,8 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202610100117" />
-<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610100117" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202610100522" />
+<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610100522" />
 </head>
 <body>
 <div id="app">
@@ -157,6 +157,19 @@
   <button id="tutStart" class="primary tut-start hidden">はじめる</button>
 </div>
 <button id="tutSkip" class="link tut-skip hidden">スキップ</button>
+<!-- 撮影モード（1個置くだけで全消しになる盤面）の操作。手駒を持ち上げると消える -->
+<div id="studio" class="studio hidden">
+  <div class="studio-head"><b>撮影モード</b><span id="studioInfo"></span></div>
+  <p id="studioText" class="studio-text"></p>
+  <div class="studio-row">
+    <button id="studioPrev" class="studio-btn" aria-label="前の盤面"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M9 1.5 2 6l7 4.5z" /></svg></button>
+    <button id="studioRandom" class="studio-btn">おまかせ</button>
+    <button id="studioNext" class="studio-btn" aria-label="次の盤面"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5 10 6 3 10.5z" /></svg></button>
+    <button id="studioAgain" class="studio-btn gold hidden">もう一度</button>
+    <button id="studioGuide" class="studio-btn" aria-pressed="true">ガイド ON</button>
+    <button id="studioExit" class="studio-btn">おわる</button>
+  </div>
+</div>
 <div id="tutHand" class="tut-hand hidden" aria-hidden="true">
   <svg viewBox="0 0 48 58"><path d="M17 5.5a4.5 4.5 0 0 1 9 0v19.2a4.4 4.4 0 0 1 7.6 2.3 4.4 4.4 0 0 1 7.2 2.6 4.3 4.3 0 0 1 5.7 4.1V43c0 7.7-5.8 13.5-13.4 13.5h-6.2c-4.4 0-7.9-1.8-10.5-5.4L3.2 36.4a4.4 4.4 0 0 1 6.9-5.4L17 38.2z" /></svg>
 </div>
@@ -381,6 +394,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202610100117"></script>
+<script type="module" src="./src/ui/main.js?v=202610100522"></script>
 </body>
 </html>
