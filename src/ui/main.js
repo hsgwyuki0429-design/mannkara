@@ -1,29 +1,30 @@
-import { Game } from '../core/game.js?v=202610091551';
-import { Board, createBlock } from '../core/board.js?v=202610091551';
-import { Piece } from '../core/pieces.js?v=202610091551';
-import * as Sim from '../core/sim.js?v=202610091551';
-import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610091551';
-import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610091551';
-import { Sfx, kitForScore } from './sfx.js?v=202610091551';
-import { Scenes } from './scenes.js?v=202610091551';
-import { Ambient } from './ambient.js?v=202610091551';
-import { colorOf } from './palette.js?v=202610091551';
-import { TrayDealer } from './tray-dealer.js?v=202610091551';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610091551';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610091551';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610091551';
-import { World, SEASON } from './world.js?v=202610091551';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610091551';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610091551';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610091551';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610091551';
-import { softwareRendering } from './fx2d.js?v=202610091551';
-import { useSprites } from './shards.js?v=202610091551';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610091551';
-import { BATTLE_SPEED } from '../core/battle.js?v=202610091551';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610091551';
-import { makeQr, drawQr } from './qr.js?v=202610091551';
-import { BattleNet } from './net.js?v=202610091551';
+import { Game } from '../core/game.js?v=202610100117';
+import { Board, createBlock } from '../core/board.js?v=202610100117';
+import { Piece } from '../core/pieces.js?v=202610100117';
+import * as Sim from '../core/sim.js?v=202610100117';
+import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610100117';
+import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610100117';
+import { Sfx, kitForScore } from './sfx.js?v=202610100117';
+import { Scenes } from './scenes.js?v=202610100117';
+import { Ambient } from './ambient.js?v=202610100117';
+import { colorOf } from './palette.js?v=202610100117';
+import { TrayDealer } from './tray-dealer.js?v=202610100117';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610100117';
+import { track } from './analytics.js?v=202610100117';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610100117';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610100117';
+import { World, SEASON } from './world.js?v=202610100117';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610100117';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610100117';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610100117';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610100117';
+import { softwareRendering } from './fx2d.js?v=202610100117';
+import { useSprites } from './shards.js?v=202610100117';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610100117';
+import { BATTLE_SPEED } from '../core/battle.js?v=202610100117';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610100117';
+import { makeQr, drawQr } from './qr.js?v=202610100117';
+import { BattleNet } from './net.js?v=202610100117';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -216,7 +217,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610091551', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610100117', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -337,6 +338,7 @@ async function playTurn(turn) {
     const prev = { ...records };
     const isBest = saveBest();
     const rank = recordRun();
+    track('solo_over', { score: game.score.score, best_chain: game.score.bestChain, new_best: isBest, ranked: !!rank });
     $('btnOverRank').textContent = rank ? 'ランクイン！ ランキングを見る' : 'ランキングを見る';
     $('btnOverRank').classList.toggle('ranked', !!rank);
     $('finalScore').textContent = game.score.score.toLocaleString('en-US');
@@ -779,7 +781,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610091551').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610100117').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -1018,6 +1020,7 @@ $('rankSeasonBtn').addEventListener('click', () => { rankSeason = rankSeason ===
 $('rankList').addEventListener('scroll', () => { if (rankScope === 'world') moreWorld(); }, { passive: true });
 /** ゲーム中に開いたら、一時停止と同じように連鎖の再生を止める（とじたら戻す） */
 function openRanking(kind = null) {
+  track('ranking_open', { kind: kind || 'default' });
   pausedBeforeRank = paused;
   paused = true;
   cancelDrag();
@@ -1146,6 +1149,7 @@ function restart() {
   generation++; queue = Promise.resolve(); pending = 0; fastBefore = 0; playingSeq = 0; playback.clear(); playLeft = 0;
   bestCelebrated = false;
   runRecorded = false;
+  if (!inBattle()) track('solo_start');
   clearSave();
   kitScore = 0; sfx.setKit(0);
   document.querySelector('.best-pill')?.classList.remove('beat');
@@ -1187,6 +1191,7 @@ function tutorialTarget() {
   return st ? { slot: TUTORIAL_SLOT, ox: st.ox, oy: st.oy, piece: game.tray[TUTORIAL_SLOT] } : null;
 }
 function startTutorial() {
+  track('tutorial_start');
   saveBest();
   if (!pending) saveGame();                      // 遊んでいる途中のゲームは残しておき、終わったら続きから
   const first = TUTORIAL_STEPS[0];
@@ -1389,9 +1394,10 @@ $('tutSkip').addEventListener('click', endTutorial);
 /* ---------- 説明書（「遊び方」。ホーム・一時停止・ゲームオーバーから開く。中身は manual-content.js を初めて開くときに読みこむ） ---------- */
 let manualReady = null;
 async function openManual() {
+  track('manual_open');
   sfx.unlock();
   cancelDrag();
-  manualReady ??= import('./manual-content.js?v=202610091551').then(({ MANUAL_HTML }) => { $('manual').innerHTML = MANUAL_HTML; }).catch((e) => { manualReady = null; throw e; });
+  manualReady ??= import('./manual-content.js?v=202610100117').then(({ MANUAL_HTML }) => { $('manual').innerHTML = MANUAL_HTML; }).catch((e) => { manualReady = null; throw e; });
   try { await manualReady; } catch { $('manual').textContent = '説明書を読みこめませんでした。通信のよいところで、もう一度ためしてください'; }
   $('manualOverlay').classList.remove('hidden');
   $('manualOverlay').scrollTop = 0;
@@ -1449,6 +1455,7 @@ const shareText = (d) => `${GAME_NAME} で ${d.score.toLocaleString('en-US')}点
 $('btnShare').addEventListener('click', async () => {
   const s = share;
   if (!s) return;
+  track('share', { method: 'result' });
   $('btnShare').classList.add('wait');
   const file = await s.file;
   $('btnShare').classList.remove('wait');
@@ -1540,7 +1547,7 @@ function exitBattle() {
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610091551', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610100117', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,

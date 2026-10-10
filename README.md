@@ -230,6 +230,18 @@
   （説明などは出さない。置くたび・手駒が届いたとき・アプリを閉じる/隠れるときに残す。ゲームオーバー・もう一度で消える。モードごとに別）
 - 1手戻す機能は無い
 
+## アクセス解析（Google アナリティクス / GA4）
+`src/ui/analytics.js` の `GA_ID` に測定 ID（`G-XXXXXXXXXX`）を入れると有効になる。空のままなら gtag.js も読み込まず、何も送らない。
+localhost（開発中）と Do Not Track のブラウザでは、ID があっても送らない。ページビューは自動。送るイベントは次のとおりで、なまえ・ルームは送らない。
+
+| イベント | 送る場所 | パラメータ |
+|---|---|---|
+| `solo_start` / `solo_over` | ひとりで 開始 / ゲームオーバー | `score` `best_chain` `new_best` `ranked`（終了時） |
+| `battle_start` / `battle_end` | 対戦の開始 / 結果 | `kind`（cpu / online）`level` `rated` `result`（終了時） |
+| `manual_open` / `tutorial_start` | 説明書を開く / れんしゅう | — |
+| `ranking_open` | ランキングを開く | `kind` |
+| `share` | 結果のシェア | `method` |
+
 ## 説明書（「遊び方」）
 - ホーム・一時停止・ゲームオーバーの「遊び方」は、**説明書**（読み物のページ）をゲーム内の画面で開く（`#manualOverlay`。中身の HTML は `src/ui/manual-content.js` で、開くときに初めて読みこむ）。
   もくじ（10 の節）から飛べて、「とじる」で元の画面に戻る。上の「れんしゅうする」を押すと、下のチュートリアルが始まる

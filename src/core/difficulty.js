@@ -1,4 +1,4 @@
-import { TIGHT_RATE, ALL_CLEAR_RATE } from './constants.js?v=202610091551';
+import { TIGHT_RATE, ALL_CLEAR_RATE } from './constants.js?v=202610100117';
 
 /**
  * ひっかけ（置き方が1〜2通りしかない組み合わせ）の確率を、遊んでいる人の出来に合わせて変える。
