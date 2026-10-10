@@ -422,8 +422,6 @@ body.tutorial-on .score-wrap{visibility:hidden;}
 .studio-btn:active{translate:0 2px;}
 .studio-btn.gold{border-color:var(--gold);background:rgba(255,213,74,.18);color:var(--gold);}
 .studio-btn[aria-pressed="false"]{opacity:.6;}
-.home-btn.home-studio{flex-direction:row;}
-.home-btn.home-studio small{font-size:11px;font-weight:900;color:var(--dim);}
 .howto{display:block;margin:18px auto 0;font-size:14px;font-weight:700;}
 
 /* ---- ゲームオーバー・一時停止の記録 ---- */

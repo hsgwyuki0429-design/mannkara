@@ -1,0 +1,19 @@
+<!doctype html>
+<!-- Copyright (c) 2026 hsgwyuki0429-design. All rights reserved. See LICENSE. -->
+<!-- 撮影モード（1個置くだけで全消しになる盤面）の入り口。ふつうの画面には入り口を出さないので、この URL から開く。
+     studio.html?12 なら 12 番の盤面から（index.html?studio=12 へ移る） -->
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="robots" content="noindex" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>blockmancala</title>
+<script>
+  (function () {
+    var no = parseInt(location.search.replace(/^\?(studio=)?/, ''), 10);
+    location.replace('./?studio=' + (no > 0 ? no : 1));
+  })();
+</script>
+</head>
+<body style="background:#3a6adf"></body>
+</html>

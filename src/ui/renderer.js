@@ -1,13 +1,13 @@
 export const ROTATION = 225; // deg。左上の直角が真下に来る
-import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610100228';
-import { Shards } from './shards.js?v=202610100228';
-import { Sparkles } from './sparkles.js?v=202610100228';
-import { FxCanvas, softwareRendering } from './fx2d.js?v=202610100228';
-import { Rims } from './rims.js?v=202610100228';
-import { colorOf } from './palette.js?v=202610100228';
-import { PLATE_SETS } from './ambient.js?v=202610100228';
-import { DROP_WARN_MS, DROP_GAP_MS, DROP_SLAM_MS, DROP_HOLD_MS } from '../core/battle.js?v=202610100228';
-import { glassElement, glassGroups } from './glass.js?v=202610100228';
+import { SIZE, isInside, ANIM, lineCells, CHAIN_SPEED_GROWTH, CHAIN_SPEED_MAX, TURN_PLAY_BUDGET } from '../core/constants.js?v=202610100522';
+import { Shards } from './shards.js?v=202610100522';
+import { Sparkles } from './sparkles.js?v=202610100522';
+import { FxCanvas, softwareRendering } from './fx2d.js?v=202610100522';
+import { Rims } from './rims.js?v=202610100522';
+import { colorOf } from './palette.js?v=202610100522';
+import { PLATE_SETS } from './ambient.js?v=202610100522';
+import { DROP_WARN_MS, DROP_GAP_MS, DROP_SLAM_MS, DROP_HOLD_MS } from '../core/battle.js?v=202610100522';
+import { glassElement, glassGroups } from './glass.js?v=202610100522';
 
 /** 連鎖数ごとの褒め言葉（段階が上がるほど派手な色）。[この連鎖から, 言葉, 段階] */
 export const PRAISE = [[8, 'Unbelievable!', 5], [6, 'Amazing!', 4], [4, 'Excellent!', 3], [3, 'Great!', 2], [2, 'Good!', 1]];
