@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MANUAL_HTML as built, manualModule } from '../scripts/build-manual.mjs';
-import { MANUAL_HTML as shipped } from '../src/ui/manual-content.js?v=202610100117';
+import { MANUAL_HTML as shipped } from '../src/ui/manual-content.js?v=202610100228';
 import {
   chainMultiplier, streakMultiplier, SCORE_PER_GOAL, ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS,
   SCORE_PER_PERFECT_FIT_CELL, SCORE_PER_RECT_CELL, SIZE,
-} from '../src/core/constants.js?v=202610100117';
-import { ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK, MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, BATTLE_SPEED } from '../src/core/battle.js?v=202610100117';
+} from '../src/core/constants.js?v=202610100228';
+import { ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK, MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, BATTLE_SPEED } from '../src/core/battle.js?v=202610100228';
 
 const text = built.replace(/<svg[\s\S]*?<\/svg>/g, '').replace(/<[^>]+>/g, '');
 

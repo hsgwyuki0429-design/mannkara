@@ -1,7 +1,7 @@
 // Google アナリティクス: 測定 ID が空・不正・開発環境のときは何も読み込まず、何も送らないこと。有効なときは gtag.js を 1 回だけ読み込むこと
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAnalytics, GA_ID } from '../src/ui/analytics.js?v=202610100117';
+import { createAnalytics, GA_ID } from '../src/ui/analytics.js?v=202610100228';
 
 function env({ host = 'blockmancala.pages.dev', dnt = null } = {}) {
   const scripts = [];
