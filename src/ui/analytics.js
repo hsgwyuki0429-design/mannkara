@@ -2,7 +2,7 @@
 // 送るのは「どの画面・モードをどれくらい遊んだか」だけ。なまえ・ルーム番号などの個人を特定できる値は送らない。
 
 /** GA4 の測定 ID（例: 'G-XXXXXXXXXX'）。空なら無効 */
-export const GA_ID = '';
+export const GA_ID = 'G-X44MZCFB8Z';
 
 const ID_RE = /^G-[A-Z0-9]{6,12}$/;
 
