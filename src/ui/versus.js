@@ -1,13 +1,13 @@
-import { BattleSide, BATTLE_SPEED, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, marginStartOf, MARGIN_MS, MARGIN_MAX, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610100522';
-import { Game } from '../core/game.js?v=202610100522';
-import { Piece, seedOf } from '../core/pieces.js?v=202610100522';
-import { createGarbage } from '../core/board.js?v=202610100522';
-import { isInside } from '../core/constants.js?v=202610100522';
-import { OppBoard, turnCost } from './opp-board.js?v=202610100522';
-import { TrayDealer } from './tray-dealer.js?v=202610100522';
-import { Renderer } from './renderer.js?v=202610100522';
-import { PROTOCOL } from './net.js?v=202610100522';
-import { track } from './analytics.js?v=202610100522';
+import { BattleSide, BATTLE_SPEED, BATTLE_TIGHT_RATE, BATTLE_ALL_CLEAR_RATE, marginBlocks, marginStartOf, MARGIN_MS, MARGIN_MAX, packBoard, unpackBoard, samePack } from '../core/battle.js?v=202610120355';
+import { Game } from '../core/game.js?v=202610120355';
+import { Piece, seedOf } from '../core/pieces.js?v=202610120355';
+import { createGarbage } from '../core/board.js?v=202610120355';
+import { isInside } from '../core/constants.js?v=202610120355';
+import { OppBoard, turnCost } from './opp-board.js?v=202610120355';
+import { TrayDealer } from './tray-dealer.js?v=202610120355';
+import { Renderer } from './renderer.js?v=202610120355';
+import { PROTOCOL } from './net.js?v=202610120355';
+import { track } from './analytics.js?v=202610120355';
 
 /**
  * 対戦の画面側（ルールは core/battle.js）。相手は CPU か、オンラインのだれか（net.js）。

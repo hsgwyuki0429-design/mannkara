@@ -110,10 +110,11 @@ export const chainMultiplier = (chain) => {
   return chain <= last ? CHAIN_MULTIPLIERS[Math.max(0, chain)] : CHAIN_MULTIPLIERS[last] + (chain - last) * CHAIN_MULTIPLIER_STEP;
 };
 /**
- * 連続発動ターン(COMBO)倍率: 1コンボごとに ×STREAK_RATE を掛けていく、上限なし（COMBO 1 = ×1, 2 = ×1.1, 3 = ×1.21 …）。
- * シーズン1は ×1.3 を掛けていく倍率で、長いコンボで点数が何千倍にもふくらんだ（ランキングがインフレした）ので、シーズン2で ×1.1 に下げた
+ * 連続発動ターン(COMBO)倍率: 1コンボごとに ×STREAK_RATE を掛けていく、上限なし（COMBO 1 = ×1, 2 = ×1.3, 3 = ×1.69 …）。
+ * シーズン1は ×1.3、シーズン2の途中までは ×1.1（長いコンボで点数が何千倍にもふくらみ、ランキングがインフレしたので下げた）。
+ * コンボを狙う遊びを強くするため、また ×1.3 に戻した
  */
-export const STREAK_RATE = 1.1;
+export const STREAK_RATE = 1.3;
 export const streakMultiplier = (streak) => Math.pow(STREAK_RATE, Math.max(0, streak - 1));
 /** 全消し（ALL CLEAR）のボーナス。そのターンの COMBO 倍率も掛ける */
 export const ALL_CLEAR_BONUS = 5000;

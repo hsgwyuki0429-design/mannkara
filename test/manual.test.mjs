@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MANUAL_HTML as built, manualModule } from '../scripts/build-manual.mjs';
-import { MANUAL_HTML as shipped } from '../src/ui/manual-content.js?v=202610100522';
+import { MANUAL_HTML as shipped } from '../src/ui/manual-content.js?v=202610120355';
 import {
   chainMultiplier, streakMultiplier, SCORE_PER_GOAL, ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS,
   SCORE_PER_PERFECT_FIT_CELL, SCORE_PER_RECT_CELL, SIZE,
-} from '../src/core/constants.js?v=202610100522';
-import { ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK, MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, BATTLE_SPEED } from '../src/core/battle.js?v=202610100522';
+} from '../src/core/constants.js?v=202610120355';
+import { ATTACK_MIN_CHAIN, ALL_CLEAR_ATTACK, MARGIN_MS, MARGIN_STEP_MS, MARGIN_MAX, BATTLE_SPEED } from '../src/core/battle.js?v=202610120355';
 
 const text = built.replace(/<svg[\s\S]*?<\/svg>/g, '').replace(/<[^>]+>/g, '');
 
@@ -29,7 +29,7 @@ test('説明書の作り: 10 の節・もくじ・図 7 つ。ゲームの画面
 test('説明書の数字は、ゲームの今のルールと合っている（スコア・連鎖・コンボ・ボーナス）', () => {
   assert.ok(text.includes(`1個につき ${SCORE_PER_GOAL}点`));
   for (let n = 1; n <= 12; n++) assert.ok(text.includes(`${n}連鎖×${chainMultiplier(n)}`), `${n} 連鎖`);
-  for (const [n, v] of [[1, '1'], [2, '1.1'], [3, '1.21'], [5, '1.46'], [10, '2.36'], [12, '2.85']]) {
+  for (const [n, v] of [[1, '1'], [2, '1.3'], [3, '1.69'], [5, '2.86'], [10, '10.6'], [12, '17.92']]) {
     assert.ok(text.includes(`COMBO ${n}×${v}`), `COMBO ${n}`);
     assert.equal(streakMultiplier(n).toFixed(2).replace(/\.?0+$/, ''), v, `COMBO ${n} の倍率`);
   }
