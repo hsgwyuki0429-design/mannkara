@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as rk from '../functions/api/ranking.js?v=202610141304';
-import * as bt from '../functions/api/battle.js?v=202610141304';
-import * as admin from '../functions/api/admin.js?v=202610141304';
+import * as rk from '../functions/api/ranking.js?v=202610142217';
+import * as bt from '../functions/api/battle.js?v=202610142217';
+import * as admin from '../functions/api/admin.js?v=202610142217';
 
 let sqlite = null;
 try { sqlite = await import('node:sqlite'); } catch {}
@@ -46,6 +46,44 @@ test('シーズン 2: ベスト・累計（送り直しで 2 回足さない）�
   const total = await rk.ranking(db, A, { kind: 'total' });
   assert.deepEqual(total.top.map((x) => [x.name, x.score, x.games]), [['あ', 1100, 3], ['び', 900, 1]]);
   assert.deepEqual(total.me, { rank: 1, score: 1100, games: 3 });
+});
+
+test('100億点などの大きな点数も入る。正確に扱える最大の数を超えた点数は、はねずにそこで止める', { skip }, async () => {
+  const db = d1();
+  const big = 10_000_000_000, huge = 2 ** 60;
+  const post = async (body) => (await rk.onRequestPost({ request: new Request('https://x.test/api/ranking', { method: 'POST', body: JSON.stringify(body) }), env: { DB: db } })).status;
+  assert.equal(await post({ season: S, id: A, name: 'あ', score: big, add: big, games: 1, seq: 1 }), 200);
+  assert.equal(await post({ season: S, id: B, name: 'び', score: huge, add: huge, games: 1, seq: 1 }), 200);
+  assert.equal(await post({ season: S, id: B, name: 'び', score: 5, add: huge, games: 1, seq: 2 }), 200);
+  const best = await rk.ranking(db, A, { kind: 'best' });
+  assert.deepEqual(best.top.map((x) => [x.name, x.score]), [['び', rk.SCORE_MAX], ['あ', big]]);
+  const total = await rk.ranking(db, B, { kind: 'total' });
+  assert.deepEqual(total.top.map((x) => [x.name, x.score]), [['び', rk.SCORE_MAX], ['あ', big]], '累計も最大の数で止まる');
+  assert.equal(await post({ season: S, id: A, name: 'あ', score: -1 }), 400);
+  assert.equal(await post({ season: S, id: A, name: 'あ', score: 1.5 }), 400);
+});
+
+test('端末: 遊んでいる途中の点数も自己ベストとして送る。最大の数を超えた点数は止めて送る', async () => {
+  const store = new Map(), sent = [];
+  globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  globalThis.location ??= { hostname: 'localhost', origin: 'http://localhost' };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opt) => { sent.push(JSON.parse(opt.body)); return new Response('{}', { status: 200 }); };
+  try {
+    const { World, SCORE_MAX } = await import('../src/ui/world.js?v=202610142217');
+    const w = new World();
+    w.setName('あ');
+    assert.equal(w.addProgress(10_000_000_000), true);
+    await w.flush();
+    assert.deepEqual([sent.at(-1).score, sent.at(-1).add, sent.at(-1).games], [10_000_000_000, 0, 0], '途中の点数はベストだけ（累計には足さない）');
+    assert.equal(w.addProgress(10_000_000_000), false, '送った点数から上がっていなければ送らない');
+    w.addRun(2 ** 60);
+    await w.flush();
+    assert.deepEqual([sent.at(-1).score, sent.at(-1).add, sent.at(-1).games], [SCORE_MAX, SCORE_MAX, 1]);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.localStorage;
+  }
 });
 
 test('前のシーズンの古い画面から送られた記録（season なし）は、どこにも書かない', { skip }, async () => {
