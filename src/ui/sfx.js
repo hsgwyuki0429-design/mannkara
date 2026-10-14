@@ -1,4 +1,4 @@
-import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610141127';
+import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610141155';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -67,10 +67,6 @@ const WAVE_KEYS = Object.keys(WAVES);
 const GLASS_KEYS = GLASS_PITCH.map((_, v) => `glass:${v}`);
 for (const [v, key] of GLASS_KEYS.entries()) WAVES[key] = (sr) => glassBuffer(sr, v);
 const kitOf = (key) => Number(key.split(':')[1]);
-/** iPhone / iPad（iPadOS はデスクトップの Mac と同じ名乗りなので、タッチできるかで見分ける） */
-const onIOS = () => {
-  try { return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); } catch { return false; }
-};
 
 export class Sfx {
   constructor() {
@@ -183,41 +179,6 @@ export class Sfx {
     this.air.type = 'lowpass'; this.air.frequency.value = 6500; this.air.Q.value = 0.5;
     this.bright.connect(this.air); this.air.connect(comp);
     this.output = comp;
-    this.route();
-  }
-  /**
-   * iPhone / iPad の画面収録には、WebAudio の出口（ctx.destination）から出した音が入らない（ホーム画面のアプリで、聞こえているのに録画は無音）。
-   * 音を MediaStream にして <audio> 要素で鳴らすと、動画・音楽と同じ経路で出るので録画に入る。<audio> が鳴り始めるまでは
-   * （鳴らせないときも）今まで通り destination から出す。<audio> が止まったら（着信・裏に回ったなど）destination に戻す
-   */
-  route() {
-    this.tap = null; this.tapped = false;
-    if (!onIOS() || typeof this.ctx.createMediaStreamDestination !== 'function' || typeof document === 'undefined') return;
-    try {
-      const el = this.el ??= document.createElement('audio');
-      el.setAttribute('playsinline', '');
-      if (!el.isConnected) { el.hidden = true; document.body?.append(el); }
-      el.onpause = () => this.toSpeaker();
-      this.tap = this.ctx.createMediaStreamDestination();
-      el.srcObject = this.tap.stream;
-    } catch { this.tap = null; }
-  }
-  /** <audio> を鳴らし、鳴り始めたら音の出口をそちらへ移す（iOS は指の操作の中でしか鳴らせないので kick から呼ぶ） */
-  playTap() {
-    const { el, tap, ctx } = this;
-    if (!tap || !el || this.tapped) return;
-    try {
-      el.play()?.then(() => {
-        if (this.tap !== tap || this.ctx !== ctx || el.paused || this.tapped) return;
-        this.output.disconnect(); this.output.connect(tap); this.tapped = true;
-      }).catch(() => {});
-    } catch {}
-  }
-  /** <audio> が止まったら、音の出口を destination に戻す（無音にしない） */
-  toSpeaker() {
-    if (!this.tapped || !this.ctx || !this.el?.paused) return;
-    this.tapped = false;
-    try { this.output.disconnect(); this.output.connect(this.ctx.destination); } catch {}
   }
   /** 無音を一瞬だけ鳴らす（iOS の音の許可を確実にするため。操作の中で呼ぶ） */
   kick() {
@@ -228,7 +189,6 @@ export class Sfx {
       src.onended = () => src.disconnect();
       src.start(0);
     } catch {}
-    this.playTap();
   }
   /** running になるまで resume() を繰り返す（中断が解けるまで少し間が要ることがあるため） */
   resumeUntilRunning(triesLeft = 10, ctx = this.ctx) {
