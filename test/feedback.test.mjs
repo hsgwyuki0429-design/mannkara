@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610141127';
-import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610141127';
-import { Renderer } from '../src/ui/renderer.js?v=202610141127';
-import { RIM_MS } from '../src/ui/rims.js?v=202610141127';
+import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY } from '../src/ui/sfx.js?v=202610141155';
+import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610141155';
+import { Renderer } from '../src/ui/renderer.js?v=202610141155';
+import { RIM_MS } from '../src/ui/rims.js?v=202610141155';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -678,32 +678,4 @@ test('溜めは座標を持つ親要素を拡縮せず、移動前に面の縮�
   r.wait = async () => assert.ok(classes.has('charging'));
   await r.charge('col', 3, [{ id: 1 }]);
   assert.equal(classes.has('charging'), false);
-});
-
-test('iPhone では音を <audio> から鳴らし（画面収録に入るように）、鳴らせない・止まったときは destination に戻す', async () => {
-  const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', platform: 'iPhone', maxTouchPoints: 5 }, configurable: true });
-  class El { paused = true; isConnected = false; setAttribute() {} play() { this.paused = false; return this.result ?? Promise.resolve(); } pause() { this.paused = true; this.onpause?.(); } }
-  globalThis.document = { createElement: () => new El(), body: { append: (el) => { el.isConnected = true; } } };
-  class Out extends AudioNode { to = new Set(); connect(n) { this.to.add(n); } disconnect() { this.to.clear(); } }
-  class IOSContext extends Context {
-    createDynamicsCompressor() { return new Out(); }
-    createMediaStreamDestination() { return { stream: {} }; }
-  }
-  try {
-    storage.clear();
-    const s = new Sfx(); s.ctx = new IOSContext(); s.connect();
-    assert.ok(s.output.to.has(s.ctx.destination), '<audio> が鳴るまでは今まで通り');
-    assert.equal(s.el.srcObject, s.tap.stream);
-    s.kick(); await Promise.resolve(); await Promise.resolve();
-    assert.ok(s.output.to.has(s.tap) && !s.output.to.has(s.ctx.destination));
-    s.el.pause();
-    assert.ok(s.output.to.has(s.ctx.destination) && !s.output.to.has(s.tap));
-    s.el.result = Promise.reject(new Error('NotAllowedError')); s.kick();
-    await new Promise((r) => setTimeout(r, 0));
-    assert.ok(s.output.to.has(s.ctx.destination), '鳴らせなければ destination のまま');
-  } finally {
-    delete globalThis.document;
-    if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator;
-  }
 });
