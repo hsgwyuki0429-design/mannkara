@@ -1,0 +1,159 @@
+<!doctype html>
+<!-- 画面収録に効果音がきれいに入る鳴らし方を、iPhone の実機で比べるためのページ（ゲームからはリンクしない） -->
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="robots" content="noindex" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>録画の音テスト</title>
+<style>
+/* 1 カラム。上から説明、A/B の大きなボタン、いま鳴らした方の大きな表示、結果の記録 */
+:root {
+  --bg: #f3f1f7; --fg: #1d1a26; --muted: #625c72; --line: #d9d4e4;
+  --a: #2f6fd6; --b: #c2410c; --c: #7c3aed; --ok: #15803d; --ng: #b91c1c; --card: #ffffff;
+  --sans: "M PLUS 1p", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15131b; --fg: #ece9f3; --muted: #a39cb5; --line: #332f3f;
+  --a: #6ea2ff; --b: #ff8a4c; --c: #b48cff; --ok: #4ade80; --ng: #f87171; --card: #1e1b27; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15131b; --fg: #ece9f3; --muted: #a39cb5; --line: #332f3f;
+  --a: #6ea2ff; --b: #ff8a4c; --c: #b48cff; --ok: #4ade80; --ng: #f87171; --card: #1e1b27; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 32rem; margin: 0 auto; padding-block: 20px 40px; display: grid; gap: 18px; }
+h1 { font-size: 1.35rem; margin: 0; text-wrap: balance; }
+ol { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+p { margin: 0; color: var(--muted); }
+.pads { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+button { font: inherit; font-weight: 700; border: 0; border-radius: 14px; padding: 22px 10px; color: #fff; cursor: pointer;
+  display: grid; gap: 2px; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+button small { font-weight: 400; font-size: .8rem; opacity: .9; }
+button:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+#a { background: var(--a); } #b { background: var(--b); } #c { background: var(--c); }
+#big { height: 7rem; border: 1px solid var(--line); border-radius: 14px; background: var(--card);
+  display: grid; place-items: center; font-size: 4.5rem; font-weight: 800; font-family: var(--mono); }
+#big.a { color: var(--a); } #big.b { color: var(--b); } #big.c { color: var(--c); }
+#log { font-family: var(--mono); font-size: .8rem; margin: 0; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--card); min-height: 5em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ok { color: var(--ok); } .ng { color: var(--ng); }
+</style>
+</head>
+<body>
+
+<main>
+  <h1>録画の音テスト</h1>
+  <ol>
+    <li>Safari でこのページを開く（ほかのボタンを押したあとなら、開き直す）</li>
+    <li>画面収録を始める</li>
+    <li><b>C だけ</b>を 3 回押す（2 秒くらいあけて）。最初の 1 回でマイクの許可を聞かれたら「許可」</li>
+    <li>3 秒ほど待ってから画面収録を止めて、動画を送る</li>
+  </ol>
+  <p>A は今のゲームと同じ鳴らし方（Web Audio）、B は前もって作った音を動画と同じ方法で鳴らします。C は B と同じ鳴らし方で、マイクを開いておきます（マイクを開いている間だけ、Safari は音を画面収録と同じ区切りで出すため）。マイクの音は録音も送信もしません。</p>
+  <div class="pads">
+    <button id="a" type="button">A<small>Web Audio</small></button>
+    <button id="b" type="button">B<small>&lt;audio&gt;</small></button>
+    <button id="c" type="button">C<small>&lt;audio&gt; + マイク</small></button>
+  </div>
+  <div id="big" aria-live="polite">–</div>
+  <pre id="log"></pre>
+</main>
+
+<script>
+const SR = 48000;
+const log = (msg, cls) => {
+  const el = document.getElementById('log');
+  const line = document.createElement('span');
+  if (cls) line.className = cls;
+  line.textContent = msg + '\n';
+  el.prepend(line);
+};
+const show = (k) => { const big = document.getElementById('big'); big.textContent = k.toUpperCase(); big.className = k; };
+try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+
+// 鈴の音（部分音を足し合わせ、指数で減衰）。A と B で同じ波形を使う
+function bell(freq, dur = 0.9) {
+  const n = Math.round(dur * SR), out = new Float32Array(n);
+  const parts = [[1, 1, 3.2], [2.76, 0.45, 5.5], [5.4, 0.25, 8], [8.93, 0.12, 11]];
+  for (let i = 0; i < n; i++) {
+    const t = i / SR, att = Math.min(1, t / 0.003);
+    let v = 0;
+    for (const [r, g, d] of parts) v += g * Math.sin(2 * Math.PI * freq * r * t) * Math.exp(-d * t);
+    out[i] = v * att * 0.28;
+  }
+  return out;
+}
+const ARP = [784, 988, 1175].map((f) => bell(f));
+const PON = bell(523, 0.7);
+function mix(list) {   // [[波形, 開始秒]]
+  const len = Math.max(...list.map(([w, at]) => w.length + Math.round(at * SR)));
+  const out = new Float32Array(len);
+  for (const [w, at] of list) { const o = Math.round(at * SR); for (let i = 0; i < w.length; i++) out[o + i] += w[i]; }
+  return out;
+}
+const ARP_MIX = mix(ARP.map((w, i) => [w, i * 0.12]));
+
+// A: Web Audio（今のゲームと同じ）
+let ctx = null;
+function playA() {
+  show('a');
+  try {
+    if (!ctx || ctx.state === 'closed') { const AC = window.AudioContext || window.webkitAudioContext; ctx = new AC(); }
+    ctx.resume?.();
+    const play = (wave, at) => {
+      const buf = ctx.createBuffer(1, wave.length, SR); buf.getChannelData(0).set(wave);
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination); src.start(ctx.currentTime + at);
+    };
+    play(ARP_MIX, 0); play(PON, 0.7);
+    log(`A: Web Audio で鳴らした（${ctx.sampleRate}Hz, baseLatency ${ctx.baseLatency ? (ctx.baseLatency * 1000).toFixed(1) + 'ms' : '不明'}）`);
+  } catch (e) { log('A: 鳴らせなかった ' + e.message, 'ng'); }
+}
+
+// B: <audio>（WAV を作って再生）。Web Audio は閉じておく（動いていると音の区切りが小さいままになる）
+function wav(data) {
+  const buf = new ArrayBuffer(44 + data.length * 2), v = new DataView(buf);
+  const s = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  s(0, 'RIFF'); v.setUint32(4, 36 + data.length * 2, true); s(8, 'WAVE'); s(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, SR, true);
+  v.setUint32(28, SR * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, data.length * 2, true);
+  for (let i = 0; i < data.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, data[i])) * 0x7fff, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+const ARP_URL = wav(ARP_MIX), PON_URL = wav(PON), SILENT_URL = wav(new Float32Array(480));
+const pool = Array.from({ length: 4 }, () => { const el = new Audio(); el.preload = 'auto'; el.setAttribute('playsinline', ''); return el; });
+let unlocked = false, next = 0;
+function el() { const e = pool[next]; next = (next + 1) % pool.length; return e; }
+function playB(k = 'b') {
+  show(k); const K = k.toUpperCase();
+  if (ctx && ctx.state !== 'closed') { ctx.close().catch(() => {}); ctx = null; log(K + ': Web Audio を閉じた'); }
+  if (!unlocked) {   // 最初の操作で全部の <audio> を鳴らせるようにする（あとで操作の外から鳴らすため）
+    unlocked = true;
+    for (const e of pool.slice(1)) { e.src = SILENT_URL; e.play().then(() => e.pause()).catch(() => {}); }
+  }
+  const t0 = performance.now(), a = el();
+  a.src = ARP_URL;
+  a.play().then(() => log(`${K}: <audio> で鳴らした（再生まで ${Math.round(performance.now() - t0)}ms）`, 'ok'))
+    .catch((e) => log(K + ': 鳴らせなかった ' + e.name, 'ng'));
+  setTimeout(() => {   // 連鎖の音のように、指の操作の外から鳴らせるか
+    const p = el(); p.src = PON_URL;
+    p.play().then(() => log(K + ': 操作の外から鳴らせた', 'ok')).catch((e) => log(K + ': 操作の外からは鳴らせなかった ' + e.name, 'ng'));
+  }, 700);
+}
+document.getElementById('a').addEventListener('click', playA);
+document.getElementById('b').addEventListener('click', () => playB('b'));
+// C: マイクを開いたまま（使わない）にして、B と同じ方法で鳴らす
+let mic = null;
+document.getElementById('c').addEventListener('click', () => {
+  playB('c');
+  if (mic) return;
+  mic = 'pending';
+  navigator.mediaDevices?.getUserMedia({ audio: true })
+    .then((s) => { mic = s; log('C: マイクを開いた（音は使わない）', 'ok'); })
+    .catch((e) => { mic = null; log('C: マイクを開けなかった ' + e.name, 'ng'); });
+});
+log('A と B を押してください');
+</script>
+
+</body>
+</html>
