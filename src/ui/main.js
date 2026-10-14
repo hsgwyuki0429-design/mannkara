@@ -1,32 +1,32 @@
-import { Game } from '../core/game.js?v=202610141251';
-import { Board, createBlock } from '../core/board.js?v=202610141251';
-import { Piece } from '../core/pieces.js?v=202610141251';
-import * as Sim from '../core/sim.js?v=202610141251';
-import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610141251';
-import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610141251';
-import { Sfx, kitForScore, recordingAvailable } from './sfx.js?v=202610141251';
-import { Scenes } from './scenes.js?v=202610141251';
-import { Ambient } from './ambient.js?v=202610141251';
-import { colorOf } from './palette.js?v=202610141251';
-import { TrayDealer } from './tray-dealer.js?v=202610141251';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610141251';
-import { studioState } from '../core/studio.js?v=202610141251';
-import { STUDIO_BOARDS } from '../core/studio-library.js?v=202610141251';
-import { track } from './analytics.js?v=202610141251';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610141251';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610141251';
-import { World, SEASON } from './world.js?v=202610141251';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610141251';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610141251';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610141251';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610141251';
-import { softwareRendering } from './fx2d.js?v=202610141251';
-import { useSprites } from './shards.js?v=202610141251';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610141251';
-import { BATTLE_SPEED } from '../core/battle.js?v=202610141251';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610141251';
-import { makeQr, drawQr } from './qr.js?v=202610141251';
-import { BattleNet } from './net.js?v=202610141251';
+import { Game } from '../core/game.js?v=202610141304';
+import { Board, createBlock } from '../core/board.js?v=202610141304';
+import { Piece } from '../core/pieces.js?v=202610141304';
+import * as Sim from '../core/sim.js?v=202610141304';
+import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610141304';
+import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610141304';
+import { Sfx, kitForScore, recordingAvailable } from './sfx.js?v=202610141304';
+import { Scenes } from './scenes.js?v=202610141304';
+import { Ambient } from './ambient.js?v=202610141304';
+import { colorOf } from './palette.js?v=202610141304';
+import { TrayDealer } from './tray-dealer.js?v=202610141304';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610141304';
+import { studioState } from '../core/studio.js?v=202610141304';
+import { STUDIO_BOARDS } from '../core/studio-library.js?v=202610141304';
+import { track } from './analytics.js?v=202610141304';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610141304';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610141304';
+import { World, SEASON } from './world.js?v=202610141304';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610141304';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610141304';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610141304';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610141304';
+import { softwareRendering } from './fx2d.js?v=202610141304';
+import { useSprites } from './shards.js?v=202610141304';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610141304';
+import { BATTLE_SPEED } from '../core/battle.js?v=202610141304';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610141304';
+import { makeQr, drawQr } from './qr.js?v=202610141304';
+import { BattleNet } from './net.js?v=202610141304';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -222,7 +222,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610141251', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610141304', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -803,7 +803,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610141251').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610141304').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -1513,7 +1513,7 @@ async function openManual() {
   track('manual_open');
   sfx.unlock();
   cancelDrag();
-  manualReady ??= import('./manual-content.js?v=202610141251').then(({ MANUAL_HTML }) => { $('manual').innerHTML = MANUAL_HTML; }).catch((e) => { manualReady = null; throw e; });
+  manualReady ??= import('./manual-content.js?v=202610141304').then(({ MANUAL_HTML }) => { $('manual').innerHTML = MANUAL_HTML; }).catch((e) => { manualReady = null; throw e; });
   try { await manualReady; } catch { $('manual').textContent = '説明書を読みこめませんでした。通信のよいところで、もう一度ためしてください'; }
   $('manualOverlay').classList.remove('hidden');
   $('manualOverlay').scrollTop = 0;
@@ -1663,7 +1663,7 @@ function exitBattle() {
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610141251', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610141304', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,
