@@ -2,12 +2,12 @@
 // 使い方: node --test test/studio.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game } from '../src/core/game.js?v=202610141251';
-import { Board, createBlock } from '../src/core/board.js?v=202610141251';
-import { Piece } from '../src/core/pieces.js?v=202610141251';
-import { isInside } from '../src/core/constants.js?v=202610141251';
-import { STUDIO_BOARDS } from '../src/core/studio-library.js?v=202610141251';
-import { studioState, parseStudio, encodeCells, decodeCells, colorCells, STUDIO_SLOT } from '../src/core/studio.js?v=202610141251';
+import { Game } from '../src/core/game.js?v=202610141317';
+import { Board, createBlock } from '../src/core/board.js?v=202610141317';
+import { Piece } from '../src/core/pieces.js?v=202610141317';
+import { isInside } from '../src/core/constants.js?v=202610141317';
+import { STUDIO_BOARDS } from '../src/core/studio-library.js?v=202610141317';
+import { studioState, parseStudio, encodeCells, decodeCells, colorCells, STUDIO_SLOT } from '../src/core/studio.js?v=202610141317';
 
 test('盤面の書き方: 書いて読むと同じマス', () => {
   const cells = [[0, 0], [7, 0], [0, 7], [3, 4], [2, 2]];

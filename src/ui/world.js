@@ -3,9 +3,10 @@
  * 端末ごとに id（32 桁の 16 進）と名前を持つ。送るのは、今のシーズンの自己ベストと、累計（まだ送っていないゲームのスコアの合計とゲーム数）。
  * 送れなかった分は端末に残し、次に送る。累計は送るたびに通し番号（seq）を付け、送り直しても 2 回足されないようにする
  * （送ったのに返事が届かなかった分は、同じ seq のまま送り直す）。
+ * 遊んでいる途中のゲームも、自己ベストだけは途中の点数で送る（addProgress。1 ゲームを長く続けても、ランキングに出るように）。
  * 名前はかならず本人に決めてもらう（自動では付けない）。決めるまでは named が false で、送信もしない
  */
-import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610141251';
+import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610141317';
 
 /** 今のシーズン（サーバーの CURRENT_SEASON と同じ） */
 export const SEASON = 2;
@@ -28,6 +29,9 @@ const set = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 const del = (k) => { try { localStorage.removeItem(k); } catch {} };
 const readJson = (k) => { try { const v = JSON.parse(get(k) || 'null'); return v && typeof v === 'object' ? v : null; } catch { return null; } };
 const nat = (v) => (Number.isSafeInteger(v) && v > 0 ? v : 0);
+/** 点数を送れる形にする（コンボの倍率に上限が無いので、正確に扱える最大の数 SCORE_MAX を超えたら SCORE_MAX に止める）。正でなければ 0 */
+export const SCORE_MAX = Number.MAX_SAFE_INTEGER;
+export const clampScore = (v) => (Number.isFinite(v) && v > 0 ? Math.min(SCORE_MAX, Math.floor(v)) : v === Infinity ? SCORE_MAX : 0);
 
 export class World {
   constructor() {
@@ -50,9 +54,18 @@ export class World {
   }
   /** 1 ゲーム終わった: 自己ベスト（大きい方を残す）と累計に足す */
   addRun(score) {
-    if (!Number.isSafeInteger(score) || score <= 0) return;
+    score = clampScore(score);
+    if (!score) return;
     const p = this.pending;
-    set(PENDING_KEY, JSON.stringify({ best: Math.max(p.best, score), add: p.add + score, games: p.games + 1 }));
+    set(PENDING_KEY, JSON.stringify({ best: Math.max(p.best, score), add: Math.min(SCORE_MAX, p.add + score), games: p.games + 1 }));
+  }
+  /** 遊んでいる途中のゲームの点数を自己ベストにだけ入れる（累計・ゲーム数は終わったときの addRun で足す）。上がったら true */
+  addProgress(score) {
+    score = clampScore(score);
+    const p = this.pending;
+    if (score <= p.best || score <= (this.sentBest || 0)) return false;
+    set(PENDING_KEY, JSON.stringify({ ...p, best: score }));
+    return true;
   }
   /** 名前を変える（サーバーにもすぐ送る）。空なら変えない */
   setName(name) {
@@ -81,6 +94,7 @@ export class World {
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         del(INFLIGHT_KEY);
+        this.sentBest = Math.max(this.sentBest || 0, batch.best);
         return true;
       });
     let ok = false;

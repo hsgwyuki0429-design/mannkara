@@ -47,13 +47,15 @@ export function cleanName(name) {
 /** id: 端末で作った 32 桁の 16 進 */
 export const validId = (id) => typeof id === 'string' && /^[0-9a-f]{32}$/.test(id);
 const count = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : null);
+/** 点数: 0 以上の整数。コンボの倍率に上限が無く SCORE_MAX を超えることがあるので、はねずに SCORE_MAX に止める */
+const points = (v) => (Number.isInteger(v) && v >= 0 ? Math.min(SCORE_MAX, v) : null);
 /** 送られた記録を確かめる。おかしければ null。{ id, name, score, add, games, seq, season } */
 export function cleanRun(body) {
   if (!body || typeof body !== 'object' || !validId(body.id)) return null;
   const name = cleanName(body.name);
-  const { score } = body;
-  if (!name || !Number.isSafeInteger(score) || score < 0 || score > SCORE_MAX) return null;
-  const add = body.add == null ? 0 : count(body.add), games = body.games == null ? 0 : count(body.games), seq = body.seq == null ? 0 : count(body.seq);
+  const score = points(body.score);
+  if (!name || score == null) return null;
+  const add = body.add == null ? 0 : points(body.add), games = body.games == null ? 0 : count(body.games), seq = body.seq == null ? 0 : count(body.seq);
   if (add == null || games == null || seq == null || games > ADD_MAX_GAMES) return null;
   return { id: body.id, name, score, add, games, seq, season: Number.isSafeInteger(body.season) ? body.season : 1 };
 }
@@ -106,7 +108,7 @@ export async function submit(db, run, now = Date.now()) {
       name = excluded.name,
       best_at = CASE WHEN excluded.best > season_players.best THEN excluded.best_at ELSE season_players.best_at END,
       best = MAX(season_players.best, excluded.best),
-      total = season_players.total + CASE WHEN ?7 > season_players.last_seq THEN ?5 ELSE 0 END,
+      total = MIN(${SCORE_MAX}, season_players.total + CASE WHEN ?7 > season_players.last_seq THEN ?5 ELSE 0 END),
       total_at = CASE WHEN ?7 > season_players.last_seq AND ?5 > 0 THEN ?8 ELSE season_players.total_at END,
       games = season_players.games + CASE WHEN ?7 > season_players.last_seq THEN ?6 ELSE 0 END,
       last_seq = MAX(season_players.last_seq, ?7),

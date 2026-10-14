@@ -1,18 +1,18 @@
-import { Board, createBlock } from '../src/core/board.js?v=202610141251';
-import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610141251';
-import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610141251';
-import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610141251';
-import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610141251';
-import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610141251';
-import * as Sim from '../src/core/sim.js?v=202610141251';
-import { DealerCore } from '../src/core/dealer.js?v=202610141251';
-import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610141251';
-import { ScoreManager } from '../src/core/score.js?v=202610141251';
-import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610141251';
-import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610141251';
-import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610141251';
+import { Board, createBlock } from '../src/core/board.js?v=202610141317';
+import { resolveChains, resolveLine, nextActivation, decide } from '../src/core/mancala.js?v=202610141317';
+import { Piece, PieceGenerator, SHAPES, TYPE_WEIGHTS } from '../src/core/pieces.js?v=202610141317';
+import { Game, isSolvable, decodePlan } from '../src/core/game.js?v=202610141317';
+import { ALL_CLEAR_PLANS } from '../src/core/allclear-library.js?v=202610141317';
+import { planAllClear, countWays, spots, solvable as solvableNames } from '../src/core/planner.js?v=202610141317';
+import * as Sim from '../src/core/sim.js?v=202610141317';
+import { DealerCore } from '../src/core/dealer.js?v=202610141317';
+import { resolveLine as boardResolveLine, chainLength as boardChainLength } from '../src/core/mancala.js?v=202610141317';
+import { ScoreManager } from '../src/core/score.js?v=202610141317';
+import { RANK_SIZE, topRuns, addRun, parseRanking, legacyRuns } from '../src/core/ranking.js?v=202610141317';
+import { TUTORIAL_STEPS } from '../src/ui/tutorial-steps.js?v=202610141317';
+import { gameUrl, displayUrl, migrateStorage, CANONICAL_URL } from '../src/ui/brand.js?v=202610141317';
 import { isInside, lineCells, SIZE, MAX_BLOCKS, targetWays, TIGHT_MIN_SPOTS,
-  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610141251';
+  ALL_CLEAR_BONUS, ALL_CLEAR_BOOST, ALL_CLEAR_BOOST_TURNS, SCORE_PER_GOAL, chainMultiplier, streakMultiplier } from '../src/core/constants.js?v=202610141317';
 
 let pass = 0, fail = 0;
 function eq(actual, expected, name) {
@@ -1016,15 +1016,17 @@ console.log('この端末のランキング（スコア）');
 
 console.log('世界ランキングの API（functions/api/ranking.js）');
 {
-  const api = await import('../functions/api/ranking.js?v=202610141251');
+  const api = await import('../functions/api/ranking.js?v=202610141317');
   eq(api.cleanName('  あい\u0000う  え‮ '), 'あいう え', '名前: 制御文字を取り、空白をまとめる');
   eq(api.cleanName('🍣'.repeat(20)), '🍣'.repeat(12), '名前: 12文字まで（絵文字も1文字）');
   eq(api.cleanName('   '), null, '名前: 空は不可');
   const id = 'a'.repeat(32);
   eq(api.cleanRun({ id, name: 'x', score: 10, chain: 2, season: 2 }), { id, name: 'x', score: 10, add: 0, games: 0, seq: 0, season: 2 }, '記録: スコア・累計・名前だけ受け取る');
   eq([api.cleanRun({ id: 'zz', name: 'x', score: 1 }), api.cleanRun({ id, name: 'x', score: 1.5 }),
-    api.cleanRun({ id, name: 'x', score: -1 }), api.cleanRun({ id, name: 'x', score: Number.MAX_SAFE_INTEGER + 2 }), api.cleanRun({ id, name: '', score: 1 })],
-    [null, null, null, null, null], '記録: おかしな id・小数・負・ありえない点・名前なしははねる');
+    api.cleanRun({ id, name: 'x', score: -1 }), api.cleanRun({ id, name: 'x', score: '1' }), api.cleanRun({ id, name: '', score: 1 })],
+    [null, null, null, null, null], '記録: おかしな id・小数・負・数でない点・名前なしははねる');
+  eq([api.cleanRun({ id, name: 'x', score: Number.MAX_SAFE_INTEGER + 2, add: 2 ** 60 })].map((r) => [r.score, r.add]),
+    [[api.SCORE_MAX, api.SCORE_MAX]], '記録: 正確に扱える最大の数を超えた点（長いコンボ）は、はねずにそこで止める');
   // D1 の代わりに node:sqlite（使えない Node では飛ばす）
   let sqlite = null;
   try { sqlite = await import('node:sqlite'); } catch {}
@@ -1057,7 +1059,7 @@ console.log('世界ランキングの API（functions/api/ranking.js）');
     eq((await api.ranking(d1, C, { limit: 9999 })).top.length, api.PAGE_MAX, '1回に読めるのは PAGE_MAX 人まで');
     eq([...p1.top, ...p2.top].map((x) => x.rank), Array.from({ length: 100 }, (_, i) => i + 1), 'ページをつなげても順位が飛ばない');
     // 不適切な名前を隠す（作成者だけ。書き換えはできない）
-    const admin = await import('../functions/api/admin.js?v=202610141251');
+    const admin = await import('../functions/api/admin.js?v=202610141317');
     const P = '5'.repeat(32), Q = '6'.repeat(32);
     await api.submit(d1, { season: 2, id: P, name: 'わるい名前', score: 700 }, 1000);
     await api.submit(d1, { season: 2, id: Q, name: 'ふつう', score: 650 }, 1001);

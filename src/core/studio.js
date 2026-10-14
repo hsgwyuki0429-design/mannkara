@@ -1,7 +1,7 @@
-import { isInside, SIZE } from './constants.js?v=202610141251';
-import { Board, createBlock } from './board.js?v=202610141251';
-import { Piece, COLORS, seededRandom, seedOf } from './pieces.js?v=202610141251';
-import * as Sim from './sim.js?v=202610141251';
+import { isInside, SIZE } from './constants.js?v=202610141317';
+import { Board, createBlock } from './board.js?v=202610141317';
+import { Piece, COLORS, seededRandom, seedOf } from './pieces.js?v=202610141317';
+import * as Sim from './sim.js?v=202610141317';
 
 /**
  * 撮影モード: 「光っている場所に1個置くだけで、大連鎖して全消し」になる盤面（動画映えする盤面）。

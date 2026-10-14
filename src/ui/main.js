@@ -1,32 +1,32 @@
-import { Game } from '../core/game.js?v=202610141251';
-import { Board, createBlock } from '../core/board.js?v=202610141251';
-import { Piece } from '../core/pieces.js?v=202610141251';
-import * as Sim from '../core/sim.js?v=202610141251';
-import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610141251';
-import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610141251';
-import { Sfx, kitForScore, recordingAvailable } from './sfx.js?v=202610141251';
-import { Scenes } from './scenes.js?v=202610141251';
-import { Ambient } from './ambient.js?v=202610141251';
-import { colorOf } from './palette.js?v=202610141251';
-import { TrayDealer } from './tray-dealer.js?v=202610141251';
-import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610141251';
-import { studioState } from '../core/studio.js?v=202610141251';
-import { STUDIO_BOARDS } from '../core/studio-library.js?v=202610141251';
-import { track } from './analytics.js?v=202610141251';
-import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610141251';
-import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610141251';
-import { World, SEASON } from './world.js?v=202610141251';
-import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610141251';
-import { RECENT_GAMES } from '../core/difficulty.js?v=202610141251';
-import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610141251';
-import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610141251';
-import { softwareRendering } from './fx2d.js?v=202610141251';
-import { useSprites } from './shards.js?v=202610141251';
-import { chainTouchesPlacement } from './chain-overlap.js?v=202610141251';
-import { BATTLE_SPEED } from '../core/battle.js?v=202610141251';
-import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610141251';
-import { makeQr, drawQr } from './qr.js?v=202610141251';
-import { BattleNet } from './net.js?v=202610141251';
+import { Game } from '../core/game.js?v=202610141317';
+import { Board, createBlock } from '../core/board.js?v=202610141317';
+import { Piece } from '../core/pieces.js?v=202610141317';
+import * as Sim from '../core/sim.js?v=202610141317';
+import { SIZE, ANIM, lineCells } from '../core/constants.js?v=202610141317';
+import { Renderer, delay, markJoins, planSpeeds, turnPlayCost, PRAISE } from './renderer.js?v=202610141317';
+import { Sfx, kitForScore, recordingAvailable } from './sfx.js?v=202610141317';
+import { Scenes } from './scenes.js?v=202610141317';
+import { Ambient } from './ambient.js?v=202610141317';
+import { colorOf } from './palette.js?v=202610141317';
+import { TrayDealer } from './tray-dealer.js?v=202610141317';
+import { TUTORIAL_STEPS, TUTORIAL_END } from './tutorial-steps.js?v=202610141317';
+import { studioState } from '../core/studio.js?v=202610141317';
+import { STUDIO_BOARDS } from '../core/studio-library.js?v=202610141317';
+import { track } from './analytics.js?v=202610141317';
+import { GAME_NAME, gameUrl, displayUrl, migrateStorage, LOGO_PATH, LOGO_BG, LOGO_FG } from './brand.js?v=202610141317';
+import { drawResultCard, cardBlob, CARD_W, CARD_H, CARD_BOARD } from './share-card.js?v=202610141317';
+import { World, SEASON } from './world.js?v=202610141317';
+import { topRuns, addRun, parseRanking, legacyRuns } from '../core/ranking.js?v=202610141317';
+import { RECENT_GAMES } from '../core/difficulty.js?v=202610141317';
+import { BOARD_THEMES, CUBE_BACKGROUND, WHITE_BACKGROUND, readBoardTheme, saveBoardTheme } from './board-themes.js?v=202610141317';
+import { glassElement, GLASS_BACKGROUND } from './glass.js?v=202610141317';
+import { softwareRendering } from './fx2d.js?v=202610141317';
+import { useSprites } from './shards.js?v=202610141317';
+import { chainTouchesPlacement } from './chain-overlap.js?v=202610141317';
+import { BATTLE_SPEED } from '../core/battle.js?v=202610141317';
+import { Versus, BATTLE_RATES, CPU_LEVELS, readRecords } from './versus.js?v=202610141317';
+import { makeQr, drawQr } from './qr.js?v=202610141317';
+import { BattleNet } from './net.js?v=202610141317';
 
 const $ = (id) => document.getElementById(id);
 /** 対戦（versus.js。下の「対戦」で作る）と、手駒を触れなくするとき（対戦のカウントダウン・結果） */
@@ -122,6 +122,11 @@ function recordRun() {
   try { localStorage.setItem(rankingKey(), JSON.stringify(ranking)); } catch {}
   world.addRun(run.score); world.flush();          // 世界ランキング（今のシーズンのベスト・累計）
   return res.rank;
+}
+/** 遊んでいる途中のゲームの点数を、世界ランキングの自己ベストに入れる（終わるまで待たない）。flush で送る */
+function recordProgress(flush = true) {
+  if (runRecorded || tutorial || studio || inBattle() || game.gameOver) return;
+  if (world.addProgress(game.score.score) && flush) world.flush();
 }
 
 /** このゲームの最大連鎖・最大コンボを記録に残す。更新した方を返す（チュートリアルでは残さない） */
@@ -222,7 +227,7 @@ const playback = new Map();   // 再生待ち・再生中の各ターンと次�
 let kitScore = 0;             // 前のターンが終わったときのスコア。音のセット（ガラス → 木琴 → オルゴール）は、ターンの始まりのスコアで決める
 
 /** 手駒の決め方は別スレッド（Web Worker）で動かす（ui/tray-dealer.js。置いた瞬間に画面が止まらないように） */
-const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610141251', import.meta.url));
+const dealer = new TrayDealer(new URL('../core/dealer-worker.js?v=202610141317', import.meta.url));
 const game = new Game({
   dealer,
   hooks: {
@@ -711,13 +716,13 @@ window.addEventListener('pointercancel', (e) => { if (mine(e)) cancelDrag(); });
 window.addEventListener('blur', cancelDrag);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    cancelDrag(); saveBest(); saveGame(); sfx.markStale();   // 途中でアプリを閉じてもベストスコアと盤面が残るように
+    cancelDrag(); saveBest(); saveGame(); recordProgress(); sfx.markStale();   // 途中でアプリを閉じてもベストスコアと盤面が残るように
     // CPU との対戦は、裏にいる間も CPU だけ進んでしまうので一時停止にする（オンラインは止められない）
     if (inBattle() && versus.kind === 'cpu' && !versus.ended && !paused && !gameOverShown) setPaused(true);
   }
   else sfx.unlock();   // 画面に戻ってきたとき: まず再開を試す（iOS はこの後の最初の操作で音を作り直す）
 });
-window.addEventListener('pagehide', () => { saveBest(); saveGame(); });
+window.addEventListener('pagehide', () => { saveBest(); saveGame(); recordProgress(); });
 
 /* ---------- チュートリアルの置く場所の印 ---------- */
 let hintSeq = 0;
@@ -803,7 +808,7 @@ function applyBoardTheme(value) {
  */
 let cube3dLoad = null;
 function load3d() {
-  cube3dLoad ??= import('./cube3d.js?v=202610141251').then((m) => {
+  cube3dLoad ??= import('./cube3d.js?v=202610141317').then((m) => {
     if (!m.supported()) throw Object.assign(new Error('WebGL2 is not available'), { unsupported: true });
     const view = new m.Cube3D(renderer, { software: softwareRendering() });
     // 描けなくなったら（WebGL を取り上げられた・シェーダーが動かない）、2D の見た目（宝石）でそのまま遊べるようにする。戻ってきたら 3D に戻す
@@ -1000,6 +1005,7 @@ async function renderWorld() {
   const token = ++rankToken, season = rankSeason, kind = rankKind;
   worldPage = null;
   rankMessage('読み込み中…');
+  recordProgress(false);                           // 遊んでいる途中の点数も入れてから読む（fetchTop が先に送る）
   let data;
   try { data = await world.fetchTop(0, { season, kind }); } catch { data = null; }
   if (token !== rankToken || rankScope !== 'world') return;
@@ -1513,7 +1519,7 @@ async function openManual() {
   track('manual_open');
   sfx.unlock();
   cancelDrag();
-  manualReady ??= import('./manual-content.js?v=202610141251').then(({ MANUAL_HTML }) => { $('manual').innerHTML = MANUAL_HTML; }).catch((e) => { manualReady = null; throw e; });
+  manualReady ??= import('./manual-content.js?v=202610141317').then(({ MANUAL_HTML }) => { $('manual').innerHTML = MANUAL_HTML; }).catch((e) => { manualReady = null; throw e; });
   try { await manualReady; } catch { $('manual').textContent = '説明書を読みこめませんでした。通信のよいところで、もう一度ためしてください'; }
   $('manualOverlay').classList.remove('hidden');
   $('manualOverlay').scrollTop = 0;
@@ -1663,7 +1669,7 @@ function exitBattle() {
 }
 versus = new Versus({
   game, renderer, sfx, $,
-  workerUrl: new URL('../core/dealer-worker.js?v=202610141251', import.meta.url),
+  workerUrl: new URL('../core/dealer-worker.js?v=202610141317', import.meta.url),
   myName: () => world.name || 'YOU',
   enter: enterBattle,
   exit: exitBattle,
