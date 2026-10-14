@@ -34,7 +34,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
 #a { background: var(--a); } #b { background: var(--b); } #c { background: var(--c); }
 #big { height: 7rem; border: 1px solid var(--line); border-radius: 14px; background: var(--card);
   display: grid; place-items: center; font-size: 4.5rem; font-weight: 800; font-family: var(--mono); }
-#big.a { color: var(--a); } #big.b { color: var(--b); } #big.c { color: var(--c); }
+#big.a { color: var(--a); } #big.b { color: var(--b); } #big.d { color: var(--c); }
 #log { font-family: var(--mono); font-size: .8rem; margin: 0; padding: 10px 12px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--card); min-height: 5em; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ok { color: var(--ok); } .ng { color: var(--ng); }
@@ -47,17 +47,17 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
   <ol>
     <li>Safari でこのページを開く（ほかのボタンを押したあとなら、開き直す）</li>
     <li>画面収録を始める</li>
-    <li><b>C だけ</b>を 3 回押す（2 秒くらいあけて）。最初の 1 回でマイクの許可を聞かれたら「許可」</li>
+    <li><b>D だけ</b>を 3 回押す（2 秒くらいあけて）</li>
     <li>3 秒ほど待ってから画面収録を止めて、動画を送る</li>
   </ol>
-  <p>A は今のゲームと同じ鳴らし方（Web Audio）、B は前もって作った音を動画と同じ方法で鳴らします。C は B と同じ鳴らし方で、マイクを開いておきます（マイクを開いている間だけ、Safari は音を画面収録と同じ区切りで出すため）。マイクの音は録音も送信もしません。</p>
+  <p>A は今のゲームと同じ鳴らし方（Web Audio）、B は前もって作った音を動画と同じ方法で鳴らします。D は B と同じ鳴らし方で、最初に押したときから無音の音をずっと流し続けます（YouTube のように音が途切れず流れていると、録画がきれいになるかを確かめるため）。</p>
   <div class="pads">
     <button id="a" type="button">A<small>Web Audio</small></button>
     <button id="b" type="button">B<small>&lt;audio&gt;</small></button>
-    <button id="c" type="button">C<small>&lt;audio&gt; + マイク</small></button>
+    <button id="c" type="button">D<small>&lt;audio&gt; + 無音を流す</small></button>
   </div>
-  <div id="big" aria-live="polite">–</div>
   <pre id="log"></pre>
+  <div id="big" aria-live="polite">–</div>
 </main>
 
 <script>
@@ -142,17 +142,13 @@ function playB(k = 'b') {
 }
 document.getElementById('a').addEventListener('click', playA);
 document.getElementById('b').addEventListener('click', () => playB('b'));
-// C: マイクを開いたまま（使わない）にして、B と同じ方法で鳴らす
-let mic = null;
+// D: 無音をずっと流し続けたまま（ループ）、B と同じ方法で鳴らす
+const carrier = new Audio(wav(new Float32Array(SR * 2))); carrier.loop = true; carrier.setAttribute('playsinline', '');
 document.getElementById('c').addEventListener('click', () => {
-  playB('c');
-  if (mic) return;
-  mic = 'pending';
-  navigator.mediaDevices?.getUserMedia({ audio: true })
-    .then((s) => { mic = s; log('C: マイクを開いた（音は使わない）', 'ok'); })
-    .catch((e) => { mic = null; log('C: マイクを開けなかった ' + e.name, 'ng'); });
+  if (carrier.paused) carrier.play().then(() => log('D: 無音を流し始めた', 'ok')).catch((e) => log('D: 無音を流せなかった ' + e.name, 'ng'));
+  playB('d');
 });
-log('A と B を押してください');
+log('ボタンを押してください');
 </script>
 
 </body>
