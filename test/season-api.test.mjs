@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as rk from '../functions/api/ranking.js?v=202610141317';
-import * as bt from '../functions/api/battle.js?v=202610141317';
-import * as admin from '../functions/api/admin.js?v=202610141317';
+import * as rk from '../functions/api/ranking.js?v=202610142217';
+import * as bt from '../functions/api/battle.js?v=202610142217';
+import * as admin from '../functions/api/admin.js?v=202610142217';
 
 let sqlite = null;
 try { sqlite = await import('node:sqlite'); } catch {}
@@ -70,7 +70,7 @@ test('端末: 遊んでいる途中の点数も自己ベストとして送る。
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opt) => { sent.push(JSON.parse(opt.body)); return new Response('{}', { status: 200 }); };
   try {
-    const { World, SCORE_MAX } = await import('../src/ui/world.js?v=202610141317');
+    const { World, SCORE_MAX } = await import('../src/ui/world.js?v=202610142217');
     const w = new World();
     w.setName('あ');
     assert.equal(w.addProgress(10_000_000_000), true);

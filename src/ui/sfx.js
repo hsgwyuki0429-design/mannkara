@@ -1,4 +1,4 @@
-import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610141317';
+import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610142217';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -72,11 +72,17 @@ const kitOf = (key) => Number(key.split(':')[1]);
  * <audio> だけのときは 4096 サンプルずつ出すが、画面収録は 1024 サンプルずつしか受け取らないので、WebAudio の音は 1/8 だけ（「ガー」）、
  * 短い <audio> を鳴らしては止めると 1/4 に縮んで録れる（実機の録画で確かめた）。無音の <audio> を流し続けたまま <audio> で鳴らすと、
  * 動画の音と同じように、そのまま録れる。そこで録画モードでは本物の AudioContext を使わず、同じ回路を OfflineAudioContext で
- * WAV にして、<audio> から鳴らす。同じ操作で同時に呼ばれた音（同じタスクの中）は 1 つの WAV にまとめる
+ * WAV にして、<audio> から鳴らす。同じ操作で同時に呼ばれた音（同じタスクの中）は 1 つの WAV にまとめる。
+ * なぞる音のように 1 秒に十数回鳴る音もあるので、WAV は鳴る長さだけ作り、同じ音の WAV は覚えておいて使い回す
+ * （同じ <audio> を頭から鳴らし直せば、読み込み直しもいらない。iPhone で、毎回作り直すとゲームが重くなった）
  */
 const REC_SR = 48000;
 const REC_MAX = 2.2;                                   // 1 つの WAV の長さの上限（秒）。いちばん長い音（全消しの 2 回目のシャラン）は約 1.8 秒
-const REC_POOL = 6;                                    // 同時に鳴らせる WAV の数（足りないときは、いちばん古いものを止めて使う）
+const REC_POOL = 8;                                    // 同時に鳴らせる WAV の数（足りないときは、いちばん古いものを止めて使う）
+const REC_CACHE = 64;                                  // 覚えておく WAV の数
+/** 同じ音かどうかの見分け（波形そのものは名前で。置く音の高さのゆらぎは 1% 刻みにそろえる） */
+const clipKey = (ops) => JSON.stringify(ops, (k, v) => (k === 'buf' ? undefined
+  : typeof v === 'number' ? (k === 'rate' ? Math.round(v * 100) / 100 : Math.round(v * 1e4) / 1e4) : v));
 export const recordingAvailable = () => {
   try { return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); } catch { return false; }
 };
@@ -98,6 +104,7 @@ export class Sfx {
     this.voices = new Set(); this.last = new Map(); this.placement = 0; this.waves = new Map(); this.kit = 0;
     this.requestedKit = 0; this.glassTheme = false;
     this._recording = false; this.clip = null; this.pool = []; this.carrier = null; this.factory = null;
+    this.clips = new Map(); this.clipGen = 0;
     try { this._enabled = localStorage.getItem('blockmancala-sound') !== 'off'; } catch {}
     try { this._recording = recordingAvailable() && localStorage.getItem('blockmancala-rec') === 'on'; } catch {}
   }
@@ -111,7 +118,12 @@ export class Sfx {
     this.closeCtx(); this.ctx = null;
     this._recording = on;
     this.waves.clear(); this.noiseBuf = null; this.factory = null;
+    this.forgetClips();
     if (!on) { this.carrier?.pause(); for (const p of this.pool) p.el.pause(); }
+  }
+  forgetClips() {
+    for (const url of this.clips.values()) if (!this.pool.some((p) => p.url === url)) URL.revokeObjectURL(url);
+    this.clips.clear();
   }
   /** 今の時刻（秒）。録画モードでは WAV ごとに時計が 0 から始まるので、間引きには実際の時刻を使う */
   now() { return this._recording ? performance.now() / 1000 : this.ctx.currentTime; }
@@ -121,35 +133,93 @@ export class Sfx {
     if (!this.factory) try { this.factory = new OfflineAudioContext(1, 1, REC_SR); } catch { return null; }
     return this.factory;
   }
-  /** 録画モード: この音を入れる WAV（無ければ作り、同じタスクの終わりに WAV にして鳴らす）。作れなければ false */
+  /** 録画モード: この音を入れる WAV（無ければ用意し、同じタスクの終わりに WAV にして鳴らす） */
   openClip() {
-    if (this.clip) return true;
-    try { this.ctx = new OfflineAudioContext(1, Math.round(REC_MAX * REC_SR), REC_SR); } catch { this.ctx = null; return false; }
-    this.clip = { ctx: this.ctx, end: 0 };
-    this.connectGraph();
-    setTimeout(() => this.flush(), 0);
+    if (!this.clip) { this.clip = { ops: [], end: 0, gen: this.clipGen }; setTimeout(() => this.flush(), 0); }
     return true;
   }
-  /** 鳴らし終わる時刻（WAV の長さを決める） */
-  reach(t) { if (this.clip) this.clip.end = Math.max(this.clip.end, t); }
-  /** 録画モード: まとめた音を WAV にして <audio> から鳴らす */
+  /**
+   * 1 つの音（tone / playBuffer / noise で決めた鳴らし方 op）を鳴らす。録画モードでは WAV にまとめるまで覚えておき、
+   * ふだんは、その場で回路にして鳴らす
+   */
+  emit(op, priority) {
+    if (this.clip) { this.clip.ops.push(op); this.clip.end = Math.max(this.clip.end, op.t + op.len); return; }
+    const [src, nodes] = this.realize(this.ctx, op);
+    if (!this.track(src, nodes, priority)) return;
+    src.start(op.t); src.stop(op.t + op.len);
+  }
+  /** op を ctx の回路にする（まだ鳴らさない）。[音源, 間のノード] */
+  realize(ctx, op) {
+    const t = op.t, g = ctx.createGain();
+    if (op.k === 'tone') {
+      const o = ctx.createOscillator();
+      o.type = op.type;
+      o.frequency.setValueAtTime(op.freq, t);
+      if (op.slide) o.frequency.exponentialRampToValueAtTime(voicedFrequency(op.freq * op.slide), t + op.dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(op.gain, t + Math.min(op.attack, op.dur * 0.4));
+      g.gain.exponentialRampToValueAtTime(0.0001, t + op.dur);
+      o.connect(g); g.connect(this.master);
+      return [o, [g]];
+    }
+    const src = ctx.createBufferSource();
+    if (op.k === 'buf') {
+      src.buffer = op.buf;
+      src.playbackRate.value = op.rate;
+      g.gain.value = op.gain;
+      if (op.ring) { g.gain.setValueAtTime(op.gain, t); g.gain.exponentialRampToValueAtTime(op.gain * 0.001, t + op.ring); }     // 波形の自然な減衰に、さらに ring 秒で 60dB 消える減衰を重ねる（ボイスは聞こえなくなるころに止める）
+      src.connect(g); g.connect(this.bright);
+      return [src, [g]];
+    }
+    const f = ctx.createBiquadFilter();
+    src.buffer = this.noiseBuf;
+    f.type = 'bandpass'; f.Q.value = op.q;
+    f.frequency.setValueAtTime(op.from, t); f.frequency.exponentialRampToValueAtTime(op.to, t + op.dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(op.gain, t + op.attack); g.gain.exponentialRampToValueAtTime(0.0001, t + op.dur);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    return [src, [f, g]];
+  }
+  /** 録画モード: まとめた音を WAV にして <audio> から鳴らす。同じ音の WAV は作り直さない */
   async flush() {
     const clip = this.clip;
     if (!clip) return;
-    this.clip = null; this.ctx = null; this.voices = new Set();       // 鳴らす音はもう WAV に入っている（止めるときは <audio> を止める）
-    if (!clip.end) return;
-    let data;
-    try { data = (await clip.ctx.startRendering()).getChannelData(0).subarray(0, Math.min(Math.ceil(clip.end * REC_SR), Math.round(REC_MAX * REC_SR))); } catch { return; }
-    if (clip.dropped || !this._recording || !this.enabled || this.paused) return;
-    this.playClip(URL.createObjectURL(wavBlob(data, REC_SR)));
+    this.clip = null;
+    if (!clip.ops.length) return;
+    const key = clipKey(clip.ops);
+    let url = this.clips.get(key);
+    if (url) this.clips.delete(key);
+    else {
+      let data;
+      try {
+        const ctx = new OfflineAudioContext(1, Math.max(1, Math.min(Math.ceil(clip.end * REC_SR), Math.round(REC_MAX * REC_SR))), REC_SR);
+        this.connectGraph(ctx);
+        for (const op of clip.ops) { const [src] = this.realize(ctx, op); src.start(op.t); src.stop(op.t + op.len); }
+        data = (await ctx.startRendering()).getChannelData(0);
+      } catch { return; }
+      url = URL.createObjectURL(wavBlob(data, REC_SR));
+    }
+    this.clips.set(key, url);                                          // 最近使った順（いちばん古いものから忘れる）
+    for (const [k, old] of this.clips) {
+      if (this.clips.size <= REC_CACHE) break;
+      this.clips.delete(k);
+      if (!this.pool.some((p) => p.url === old)) URL.revokeObjectURL(old);
+    }
+    if (clip.gen !== this.clipGen || !this._recording || !this.enabled || this.paused || this.stale) return;
+    this.playClip(url);
   }
+  /** WAV を鳴らす。同じ WAV を入れた <audio> が空いていれば、それを頭から鳴らし直す（読み込み直さない） */
   playClip(url) {
-    const free = this.pool.find((p) => p.el.paused || p.el.ended) ?? this.pool.reduce((a, b) => (a.at <= b.at ? a : b), this.pool[0]);
-    if (!free) { URL.revokeObjectURL(url); return; }
-    if (free.url) URL.revokeObjectURL(free.url);
-    free.url = url; free.at = performance.now();
-    free.el.src = url;
-    free.el.play()?.catch?.(() => {});
+    const free = this.pool.filter((p) => p.el.paused || p.el.ended);
+    let p = free.find((q) => q.url === url);
+    if (p) { try { p.el.currentTime = 0; } catch {} }
+    else {
+      p = (free.length ? free : this.pool).reduce((a, b) => (a.at <= b.at ? a : b), (free.length ? free : this.pool)[0]);
+      if (!p) return;
+      if (p.url && ![...this.clips.values()].includes(p.url)) URL.revokeObjectURL(p.url);
+      p.url = url; p.el.src = url;
+    }
+    p.at = performance.now();
+    p.el.play()?.catch?.(() => {});
   }
   /**
    * 録画モード: 指の操作の中で、<audio> を鳴らせるようにする（iOS は操作の中で一度鳴らした <audio> だけ、あとから鳴らせる）。
@@ -179,7 +249,7 @@ export class Sfx {
   stop() {
     for (const v of [...this.voices]) v.end();
     this.last.clear();
-    if (this.clip) { this.clip.dropped = true; this.clip = null; this.ctx = null; }
+    this.clip = null; this.clipGen++;                                  // まとめかけ・作りかけの WAV も鳴らさない
     for (const p of this.pool) if (!p.el.paused) p.el.pause();
     try { navigator.vibrate?.(0); } catch {}
   }
@@ -262,19 +332,19 @@ export class Sfx {
     this.connectGraph();
   }
   /** 出口までの回路（録画モードでは WAV ごとに作る。波形は使い回す） */
-  connectGraph() {
-    this.master = this.ctx.createGain();
+  connectGraph(ctx = this.ctx) {
+    this.master = ctx.createGain();
     this.master.gain.value = this.enabled ? LEVEL : 0;
     // 耳心地のため、高い倍音を少し丸め、音が重なって大きくなったときも割れないよう軽く抑える
-    this.soft = this.ctx.createBiquadFilter();
+    this.soft = ctx.createBiquadFilter();
     this.soft.type = 'lowpass'; this.soft.frequency.value = 3800; this.soft.Q.value = 0.5;
-    const comp = this.ctx.createDynamicsCompressor();
+    const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
-    this.master.connect(this.soft); this.soft.connect(comp); comp.connect(this.ctx.destination);
+    this.master.connect(this.soft); this.soft.connect(comp); comp.connect(ctx.destination);
     // 明るい出口: ガラスやバーチャイムの高い響き（〜9kHz）は、上の 3.8kHz のローパスで丸めずに通す。音量・ミュートは master と同じ
-    this.bright = this.ctx.createGain();
+    this.bright = ctx.createGain();
     this.bright.gain.value = this.enabled ? LEVEL : 0;
-    this.air = this.ctx.createBiquadFilter();
+    this.air = ctx.createBiquadFilter();
     this.air.type = 'lowpass'; this.air.frequency.value = 6500; this.air.Q.value = 0.5;
     this.bright.connect(this.air); this.air.connect(comp);
     this.output = comp;
@@ -314,19 +384,8 @@ export class Sfx {
   tone(freq, { dur = 0.1, type = 'sine', gain = 0.6, at = 0, slide = 0, attack = 0.004, priority = 1 } = {}) {
     if (!this.ready()) return;
     if (this.glassTheme) return this.glassNote(freq, { gain, at, priority, ring: Math.max(.18, dur * 3) });
-    const t = this.ctx.currentTime + at;
-    freq = voicedFrequency(freq * LOWER);
-    const o = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    o.type = type;
-    o.frequency.setValueAtTime(freq, t);
-    if (slide) o.frequency.exponentialRampToValueAtTime(voicedFrequency(freq * slide), t + dur);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + Math.min(attack, dur * 0.4));
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(this.master);
-    if (!this.track(o, [g], priority)) return;
-    o.start(t); o.stop(t + dur + 0.03); this.reach(t + dur + 0.03);
+    const t = (this.clip ? 0 : this.ctx.currentTime) + at;
+    this.emit({ k: 'tone', t, freq: voicedFrequency(freq * LOWER), slide, type, gain, attack, dur, len: dur + 0.03 }, priority);
   }
   /**
    * 作っておいた波形（synth.js の WAVES）を明るい出口から鳴らす。rate = 再生の速さ（1 = そのまま。高さと長さが変わる）、
@@ -337,15 +396,8 @@ export class Sfx {
     if (!this.ready()) return;
     const wave = this.waveOf(key);
     if (!wave) return;
-    const t = this.ctx.currentTime + at, dur = ring ? Math.min(ring * 0.45 + 0.05, wave.dur / rate) : wave.dur / rate;
-    const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
-    src.buffer = wave.buf;
-    src.playbackRate.value = rate;
-    g.gain.value = gain;
-    if (ring) { g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(gain * 0.001, t + ring); }     // 波形の自然な減衰に、さらに ring 秒で 60dB 消える減衰を重ねる（ボイスは聞こえなくなるころに止める）
-    src.connect(g); g.connect(this.bright);
-    if (!this.track(src, [g], priority)) return;
-    src.start(t); src.stop(t + dur + 0.02); this.reach(t + dur + 0.02);
+    const t = (this.clip ? 0 : this.ctx.currentTime) + at, dur = ring ? Math.min(ring * 0.45 + 0.05, wave.dur / rate) : wave.dur / rate;
+    this.emit({ k: 'buf', t, key, buf: wave.buf, rate, gain, ring, len: dur + 0.02 }, priority);
   }
   /** 波形 key の AudioBuffer（無ければ作る。この AudioContext の sampleRate で）。作れなければ null */
   waveOf(key) {
@@ -530,21 +582,14 @@ export class Sfx {
   noise({ dur = 0.6, gain = 0.3, from = 400, to = 1400, q = 0.8, at = 0, attack = dur * 0.3, priority = 1 } = {}) {
     if (this.glassTheme) return this.glassNote(from, { gain: gain * .5, at, priority, ring: Math.max(.18, dur * 2) }); // 風・割れ音もコップの接触音へ置き換える
     if (!this.ready()) return;                                  // tone() と同じ
-    const ctx = this.ctx, t = ctx.currentTime + at;
+    const t = (this.clip ? 0 : this.ctx.currentTime) + at;
     if (!this.noiseBuf) {
       const c = this.bufferCtx();
       this.noiseBuf = c.createBuffer(1, c.sampleRate * 1.5, c.sampleRate);
       const d = this.noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     }
-    const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-    src.buffer = this.noiseBuf;
-    f.type = 'bandpass'; f.Q.value = q;
-    f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(to, t + dur);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f); f.connect(g); g.connect(this.master);
-    if (!this.track(src, [f, g], priority)) return;
-    src.start(t); src.stop(t + dur + 0.05); this.reach(t + dur + 0.05);
+    this.emit({ k: 'noise', t, from, to, q, gain, attack, dur, len: dur + 0.05 }, priority);
   }
   // 全消し: ザザーッと波がせり上がる音＋明るい和音
   wave()        { this.noise({ dur: 1.1, gain: 0.5, from: 300, to: 1800, q: 0.6 });

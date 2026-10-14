@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY, wavBlob } from '../src/ui/sfx.js?v=202610141317';
-import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610141317';
-import { Renderer } from '../src/ui/renderer.js?v=202610141317';
-import { RIM_MS } from '../src/ui/rims.js?v=202610141317';
+import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY, wavBlob } from '../src/ui/sfx.js?v=202610142217';
+import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610142217';
+import { Renderer } from '../src/ui/renderer.js?v=202610142217';
+import { RIM_MS } from '../src/ui/rims.js?v=202610142217';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -680,7 +680,7 @@ test('溜めは座標を持つ親要素を拡縮せず、移動前に面の縮�
   assert.equal(classes.has('charging'), false);
 });
 
-test('録画モード: 本物の AudioContext を使わず、同じタスクの音を 1 つの WAV にして <audio> から鳴らす。無音を流し続け、止める・一時停止で <audio> も止める', async () => {
+test('録画モード: 本物の AudioContext を使わず、同じタスクの音を 1 つの WAV にして <audio> から鳴らす。同じ音の WAV は作り直さず、同じ <audio> で鳴らし直す', async () => {
   const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', platform: 'iPhone', maxTouchPoints: 5 }, configurable: true });
   const made = [];
@@ -688,37 +688,53 @@ test('録画モード: 本物の AudioContext を使わず、同じタスクの�
     constructor(ch, length, sampleRate) { super(); this.length = length; this.sampleRate = sampleRate; this.state = 'suspended'; made.push(this); }
     startRendering() { this.rendered = true; const d = new Float32Array(this.length).fill(0.1); return Promise.resolve({ getChannelData: () => d }); }
   }
-  class El { paused = true; loop = false; src = ''; setAttribute() {} play() { this.paused = false; this.played = this.src; return Promise.resolve(); } pause() { this.paused = true; } }
+  let loads = 0;
+  class El { paused = true; loop = false; currentTime = 0; _src = ''; get src() { return this._src; } set src(v) { this._src = v; loads++; }
+    setAttribute() {} play() { this.paused = false; return Promise.resolve(); } pause() { this.paused = true; } }
   globalThis.OfflineAudioContext = Offline; globalThis.Audio = class extends El { constructor(src) { super(); if (src) this.src = src; } };
   globalThis.window = { AudioContext: class { constructor() { throw new Error('録画モードでは作らない'); } } };
+  const settle = () => new Promise((r) => setTimeout(r, 5));
   try {
     storage.clear(); storage.set('blockmancala-rec', 'on');
     const s = new Sfx();
     assert.equal(s.recording, true);
     s.unlock(true);
     assert.equal(s.carrier.loop, true); assert.equal(s.carrier.paused, false, '無音を流し続ける');
-    assert.equal(s.pool.length, 6);
+    assert.equal(s.pool.length, 8);
+    for (const p of s.pool) p.el.pause();
     const before = made.length;
     s.place(4); s.goal(3); s.allClear();
+    await settle();
     assert.equal(made.length - before, 1, '同じタスクの音は 1 つの WAV にまとめる');
     const clip = made.at(-1);
-    await new Promise((r) => setTimeout(r, 5));
-    assert.ok(clip.rendered);
+    assert.ok(clip.rendered && clip.length > 0.5 * 48000 && clip.length <= 2.2 * 48000);
     const playing = s.pool.filter((p) => !p.el.paused && p.url);
     assert.equal(playing.length, 1); assert.match(playing[0].el.src, /^blob:/);
     assert.equal(s.ctx, null);
+    // なぞる音: 鳴る長さだけ作り、2 回目からは作り直さず、同じ <audio> を頭から鳴らし直す
+    s.hover(); await settle();
+    const hoverClip = made.at(-1);
+    assert.ok(hoverClip.length < 0.1 * 48000, '短い音は短い WAV');
+    const hoverEl = s.pool.find((p) => !p.el.paused && p.url && p !== playing[0]);
+    hoverEl.el.pause(); hoverEl.el.currentTime = 0.05;
+    const madeBefore = made.length, loadsBefore = loads;
+    s.last.clear(); s.hover(); await settle();
+    assert.equal(made.length, madeBefore, '同じ音は作り直さない');
+    assert.equal(loads, loadsBefore, '読み込み直さない');
+    assert.equal(hoverEl.el.paused, false); assert.equal(hoverEl.el.currentTime, 0);
     // 間引きは実際の時刻で（WAV ごとの時計は 0 から始まる）
     s.hover(); s.hover();
-    assert.equal(made.at(-1).sources.length, 1);
     s.setPaused(true);
     assert.ok(s.pool.every((p) => p.el.paused), '一時停止で鳴っている WAV も止める');
+    await settle();
+    assert.ok(s.pool.every((p) => p.el.paused), 'まとめかけの音も鳴らさない');
     s.setPaused(false);
     s.place(); s.enabled = false;
-    await new Promise((r) => setTimeout(r, 5));
+    await settle();
     assert.ok(s.pool.every((p) => p.el.paused), 'ミュートしたら、まとめかけの音も鳴らさない');
     s.enabled = true;
     s.recording = false;
-    assert.equal(storage.get('blockmancala-rec'), 'off'); assert.equal(s.carrier.paused, true);
+    assert.equal(storage.get('blockmancala-rec'), 'off'); assert.equal(s.carrier.paused, true); assert.equal(s.clips.size, 0);
   } finally {
     delete globalThis.OfflineAudioContext; delete globalThis.Audio;
     if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator;
