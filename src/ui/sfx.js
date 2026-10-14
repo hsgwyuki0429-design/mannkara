@@ -1,4 +1,4 @@
-import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610141155';
+import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610141251';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -67,6 +67,29 @@ const WAVE_KEYS = Object.keys(WAVES);
 const GLASS_KEYS = GLASS_PITCH.map((_, v) => `glass:${v}`);
 for (const [v, key] of GLASS_KEYS.entries()) WAVES[key] = (sr) => glassBuffer(sr, v);
 const kitOf = (key) => Number(key.split(':')[1]);
+/**
+ * 録画モード（iPhone / iPad の画面収録に効果音をきれいに入れる）。iOS の Safari は、WebAudio が動いている間は音を 128 サンプルずつ、
+ * <audio> だけのときは 4096 サンプルずつ出すが、画面収録は 1024 サンプルずつしか受け取らないので、WebAudio の音は 1/8 だけ（「ガー」）、
+ * 短い <audio> を鳴らしては止めると 1/4 に縮んで録れる（実機の録画で確かめた）。無音の <audio> を流し続けたまま <audio> で鳴らすと、
+ * 動画の音と同じように、そのまま録れる。そこで録画モードでは本物の AudioContext を使わず、同じ回路を OfflineAudioContext で
+ * WAV にして、<audio> から鳴らす。同じ操作で同時に呼ばれた音（同じタスクの中）は 1 つの WAV にまとめる
+ */
+const REC_SR = 48000;
+const REC_MAX = 2.2;                                   // 1 つの WAV の長さの上限（秒）。いちばん長い音（全消しの 2 回目のシャラン）は約 1.8 秒
+const REC_POOL = 6;                                    // 同時に鳴らせる WAV の数（足りないときは、いちばん古いものを止めて使う）
+export const recordingAvailable = () => {
+  try { return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); } catch { return false; }
+};
+/** 16 ビットのモノラル WAV（Blob） */
+export function wavBlob(data, sr) {
+  const buf = new ArrayBuffer(44 + data.length * 2), v = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + data.length * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, data.length * 2, true);
+  for (let i = 0; i < data.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, data[i])) * 0x7fff, true);
+  return new Blob([buf], { type: 'audio/wav' });
+}
 
 export class Sfx {
   constructor() {
@@ -74,7 +97,76 @@ export class Sfx {
     this.gestureAt = 0; this.stuckSince = 0; this.stale = false;
     this.voices = new Set(); this.last = new Map(); this.placement = 0; this.waves = new Map(); this.kit = 0;
     this.requestedKit = 0; this.glassTheme = false;
+    this._recording = false; this.clip = null; this.pool = []; this.carrier = null; this.factory = null;
     try { this._enabled = localStorage.getItem('blockmancala-sound') !== 'off'; } catch {}
+    try { this._recording = recordingAvailable() && localStorage.getItem('blockmancala-rec') === 'on'; } catch {}
+  }
+  /** 録画モード（上の REC_SR の説明）。切り替えると、鳴っている音を止め、次の指の操作から新しい鳴らし方になる */
+  get recording() { return this._recording; }
+  set recording(on) {
+    on = !!on;
+    try { localStorage.setItem('blockmancala-rec', on ? 'on' : 'off'); } catch {}
+    if (on === this._recording) return;
+    this.stop();
+    this.closeCtx(); this.ctx = null;
+    this._recording = on;
+    this.waves.clear(); this.noiseBuf = null; this.factory = null;
+    if (!on) { this.carrier?.pause(); for (const p of this.pool) p.el.pause(); }
+  }
+  /** 今の時刻（秒）。録画モードでは WAV ごとに時計が 0 から始まるので、間引きには実際の時刻を使う */
+  now() { return this._recording ? performance.now() / 1000 : this.ctx.currentTime; }
+  /** 波形（AudioBuffer）を作る相手。録画モードでは、どの WAV にも使い回せるように、別の OfflineAudioContext で作る */
+  bufferCtx() {
+    if (!this._recording) return this.ctx;
+    if (!this.factory) try { this.factory = new OfflineAudioContext(1, 1, REC_SR); } catch { return null; }
+    return this.factory;
+  }
+  /** 録画モード: この音を入れる WAV（無ければ作り、同じタスクの終わりに WAV にして鳴らす）。作れなければ false */
+  openClip() {
+    if (this.clip) return true;
+    try { this.ctx = new OfflineAudioContext(1, Math.round(REC_MAX * REC_SR), REC_SR); } catch { this.ctx = null; return false; }
+    this.clip = { ctx: this.ctx, end: 0 };
+    this.connectGraph();
+    setTimeout(() => this.flush(), 0);
+    return true;
+  }
+  /** 鳴らし終わる時刻（WAV の長さを決める） */
+  reach(t) { if (this.clip) this.clip.end = Math.max(this.clip.end, t); }
+  /** 録画モード: まとめた音を WAV にして <audio> から鳴らす */
+  async flush() {
+    const clip = this.clip;
+    if (!clip) return;
+    this.clip = null; this.ctx = null; this.voices = new Set();       // 鳴らす音はもう WAV に入っている（止めるときは <audio> を止める）
+    if (!clip.end) return;
+    let data;
+    try { data = (await clip.ctx.startRendering()).getChannelData(0).subarray(0, Math.min(Math.ceil(clip.end * REC_SR), Math.round(REC_MAX * REC_SR))); } catch { return; }
+    if (clip.dropped || !this._recording || !this.enabled || this.paused) return;
+    this.playClip(URL.createObjectURL(wavBlob(data, REC_SR)));
+  }
+  playClip(url) {
+    const free = this.pool.find((p) => p.el.paused || p.el.ended) ?? this.pool.reduce((a, b) => (a.at <= b.at ? a : b), this.pool[0]);
+    if (!free) { URL.revokeObjectURL(url); return; }
+    if (free.url) URL.revokeObjectURL(free.url);
+    free.url = url; free.at = performance.now();
+    free.el.src = url;
+    free.el.play()?.catch?.(() => {});
+  }
+  /**
+   * 録画モード: 指の操作の中で、<audio> を鳴らせるようにする（iOS は操作の中で一度鳴らした <audio> だけ、あとから鳴らせる）。
+   * 無音をずっと流し続ける（止まっていると、画面収録が音を縮めて録ってしまう）
+   */
+  unlockClips() {
+    if (typeof Audio !== 'function') return;
+    if (!this.silentUrl) this.silentUrl = URL.createObjectURL(wavBlob(new Float32Array(REC_SR * 2), REC_SR));
+    if (!this.carrier) { this.carrier = new Audio(this.silentUrl); this.carrier.loop = true; this.carrier.setAttribute?.('playsinline', ''); }
+    if (this.carrier.paused) this.carrier.play()?.catch?.(() => {});
+    if (!this.factory && this.bufferCtx()) this.warmSoon();
+    while (this.pool.length < REC_POOL) {
+      const el = new Audio(); el.setAttribute?.('playsinline', '');
+      el.src = this.silentUrl;
+      el.play()?.then?.(() => { if (el.src === this.silentUrl) el.pause(); })?.catch?.(() => {});
+      this.pool.push({ el, url: null, at: 0 });
+    }
   }
   get enabled() { return this._enabled; }
   set enabled(on) {
@@ -87,6 +179,8 @@ export class Sfx {
   stop() {
     for (const v of [...this.voices]) v.end();
     this.last.clear();
+    if (this.clip) { this.clip.dropped = true; this.clip = null; this.ctx = null; }
+    for (const p of this.pool) if (!p.el.paused) p.el.pause();
     try { navigator.vibrate?.(0); } catch {}
   }
   setPaused(on) { this.paused = !!on; if (on) this.stop(); }
@@ -108,7 +202,7 @@ export class Sfx {
   /** 高速ドラッグ・同時着地では細かい音を束ねる。止まった AudioContext に時刻を残さない。 */
   allow(key, interval) {
     if (!this.ready()) return false;
-    const now = this.ctx.currentTime, prev = this.last.get(key) ?? -Infinity;
+    const now = this.now(), prev = this.last.get(key) ?? -Infinity;
     if (now - prev < interval) return false;
     this.last.set(key, now);
     return true;
@@ -121,6 +215,7 @@ export class Sfx {
    */
   unlock(gesture = false) {
     if (gesture) this.gestureAt = performance.now();
+    if (this._recording) { if (gesture) { this.stale = false; this.unlockClips(); } return; }
     if (this.ctx && this.ctx.state === 'closed') this.ctx = null;
     // 裏に回って戻ってきた後は、iOS で「running なのに無音」のままになることがあるので、最初の操作で作り直す
     if (this.ctx && gesture && this.stale) { this.closeCtx(); this.ctx = null; }
@@ -141,7 +236,7 @@ export class Sfx {
   }
   closeCtx() { this.stop(); const c = this.ctx; if (!c) return; c.onstatechange = null; try { c.close().catch(() => {}); } catch {} }
   /** 画面が裏に回った（アプリの切り替え・通知・画面収録の開始など）。次の操作で作り直す */
-  markStale() { this.stop(); if (this.ctx) this.stale = true; }
+  markStale() { this.stop(); if (this.ctx || this._recording) this.stale = true; }
   /** AudioContext と出力までの経路を作る */
   build() {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -164,6 +259,10 @@ export class Sfx {
     this.noiseBuf = null; this._tickAt = 0;                  // 前の AudioContext のバッファ・時刻は使えない
     this.waves.clear();
     this.last.clear();
+    this.connectGraph();
+  }
+  /** 出口までの回路（録画モードでは WAV ごとに作る。波形は使い回す） */
+  connectGraph() {
     this.master = this.ctx.createGain();
     this.master.gain.value = this.enabled ? LEVEL : 0;
     // 耳心地のため、高い倍音を少し丸め、音が重なって大きくなったときも割れないよう軽く抑える
@@ -201,6 +300,7 @@ export class Sfx {
    * ただし操作の直後（再開を頼んだばかりで、まだ running に変わっていないだけ）は予約する（すぐ再開して鳴る）
    */
   ready() {
+    if (this._recording) return this.enabled && !this.paused && !this.stale && this.openClip();
     if (!this.enabled || this.paused || this.stale || !this.ctx || this.ctx.state === 'closed') return false;
     if (this.ctx.state === 'running') return true;
     this.resumeUntilRunning();
@@ -226,7 +326,7 @@ export class Sfx {
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(this.master);
     if (!this.track(o, [g], priority)) return;
-    o.start(t); o.stop(t + dur + 0.03);
+    o.start(t); o.stop(t + dur + 0.03); this.reach(t + dur + 0.03);
   }
   /**
    * 作っておいた波形（synth.js の WAVES）を明るい出口から鳴らす。rate = 再生の速さ（1 = そのまま。高さと長さが変わる）、
@@ -245,14 +345,14 @@ export class Sfx {
     if (ring) { g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(gain * 0.001, t + ring); }     // 波形の自然な減衰に、さらに ring 秒で 60dB 消える減衰を重ねる（ボイスは聞こえなくなるころに止める）
     src.connect(g); g.connect(this.bright);
     if (!this.track(src, [g], priority)) return;
-    src.start(t); src.stop(t + dur + 0.02);
+    src.start(t); src.stop(t + dur + 0.02); this.reach(t + dur + 0.02);
   }
   /** 波形 key の AudioBuffer（無ければ作る。この AudioContext の sampleRate で）。作れなければ null */
   waveOf(key) {
     let w = this.waves.get(key);
     if (w || !WAVES[key]) return w ?? null;
     try {
-      const sr = this.ctx.sampleRate, data = WAVES[key](sr), buf = this.ctx.createBuffer(1, data.length, sr);
+      const c = this.bufferCtx(), sr = c.sampleRate, data = WAVES[key](sr), buf = c.createBuffer(1, data.length, sr);
       buf.getChannelData(0).set(data);
       w = { buf, dur: data.length / sr };
     } catch { return null; }
@@ -284,11 +384,12 @@ export class Sfx {
   refreshWaves() {
     const want = this.wantedWaveKeys();
     for (const key of [...this.waves.keys()]) if (!want.includes(key)) this.waves.delete(key);
-    if (this.ctx) this.warmSoon();
+    if (this.ctx || this.factory) this.warmSoon();
   }
   /** 波形を 1 つ作っておく（まだ作っていないものがあれば true）。最初に鳴らす瞬間に、作る計算で引っかからないように。いまのセット → 次のセットの順 */
   warm() {
-    if (!this.ctx || this.ctx.state === 'closed') return false;
+    const c = this.bufferCtx();
+    if (!c || c.state === 'closed') return false;
     const wanted = this.wantedWaveKeys();
     const todo = this.glassTheme ? wanted.filter((k) => !this.waves.has(k))
       : this.wantedKits().flatMap((kit) => wanted.filter((k) => kitOf(k) === kit && !this.waves.has(k)));
@@ -303,9 +404,9 @@ export class Sfx {
    * 次のセットは、遅れてもよいので、ほんとうに空いたときだけ（忙しい間は 8 秒まで待ち、ゲーム中に割り込ませない）
    */
   warmSoon() {
-    const ctx = this.ctx;
+    const ctx = this.bufferCtx();
     const idle = (f, timeout = 1500) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout }) : setTimeout(f, 150));
-    const next = () => { if (this.ctx === ctx && this.warm()) idle(next, this.kitReady() ? 8000 : 1500); };
+    const next = () => { if (this.bufferCtx() === ctx && this.warm()) idle(next, this.kitReady() ? 8000 : 1500); };
     idle(next);
   }
   vibe(p) { if (this.enabled && !this.paused && !this.stale) try { navigator.vibrate?.(p); } catch {} }
@@ -431,7 +532,8 @@ export class Sfx {
     if (!this.ready()) return;                                  // tone() と同じ
     const ctx = this.ctx, t = ctx.currentTime + at;
     if (!this.noiseBuf) {
-      this.noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
+      const c = this.bufferCtx();
+      this.noiseBuf = c.createBuffer(1, c.sampleRate * 1.5, c.sampleRate);
       const d = this.noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     }
@@ -442,7 +544,7 @@ export class Sfx {
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(f); f.connect(g); g.connect(this.master);
     if (!this.track(src, [f, g], priority)) return;
-    src.start(t); src.stop(t + dur + 0.05);
+    src.start(t); src.stop(t + dur + 0.05); this.reach(t + dur + 0.05);
   }
   // 全消し: ザザーッと波がせり上がる音＋明るい和音
   wave()        { this.noise({ dur: 1.1, gain: 0.5, from: 300, to: 1800, q: 0.6 });
@@ -459,8 +561,9 @@ export class Sfx {
   blip()        { this.tone(1400 + Math.random() * 500, { dur: 0.04, gain: 0.06, slide: 1.4 }); }
   // ガムボール: ころころと降ってくる音
   rattle()      { for (let k = 0; k < 10; k++) this.tone(note(k % 6, 523.25), { dur: 0.05, gain: 0.08, type: 'triangle', at: 0.15 + k * 0.07 }); }
-  tick(n = 1)   { if (this._tickAt && this.ctx && this.ctx.currentTime - this._tickAt < 0.05) return;
-                  this._tickAt = this.ctx?.currentTime; this.tone(900 + Math.random() * 400, { dur: 0.03, gain: 0.05 * Math.min(3, n), type: 'triangle' }); }
+  tick(n = 1)   { if (!this.ctx && !this._recording) return;
+                  if (this._tickAt && this.now() - this._tickAt < 0.05) return;
+                  this._tickAt = this.now(); this.tone(900 + Math.random() * 400, { dur: 0.03, gain: 0.05 * Math.min(3, n), type: 'triangle' }); }
   // まんまる: ふわっと広がる（close なら閉じる）音
   swoosh(close = false) { this.noise({ dur: 0.55, gain: 0.35, from: close ? 1800 : 300, to: close ? 300 : 1800, q: 0.8 });
                   if (!close) [0, 4, 7, 12].forEach((k, i) => this.tone(523.25 * Math.pow(2, k / 12), { dur: 0.5, gain: 0.1, type: 'triangle', at: 0.15 + i * 0.06 })); }

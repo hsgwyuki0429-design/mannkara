@@ -38,8 +38,8 @@
     if (document.readyState === 'complete') open(); else window.addEventListener('load', open);
   })();
 </script>
-<link rel="stylesheet" href="./src/ui/styles.css?v=202610141155" />
-<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610141155" />
+<link rel="stylesheet" href="./src/ui/styles.css?v=202610141251" />
+<link rel="stylesheet" href="./src/ui/board-themes.css?v=202610141251" />
 </head>
 <body>
 <div id="app">
@@ -367,6 +367,8 @@
   <div class="overlay-box pause-box">
     <p class="over-title">一時停止中</p>
     <p id="pauseRecords" class="pause-rec"></p>
+    <!-- iPhone / iPad だけ出す（ほかの端末は、ふだんの鳴らし方のまま画面収録に入る） -->
+    <label id="recRow" class="rec-row hidden"><input id="recMode" type="checkbox" /><span><b>録画モード</b><small>画面収録に効果音が入るようにする（音が少し遅れます）</small></span></label>
     <fieldset class="board-themes">
       <legend>盤面の種類</legend>
       <div id="boardThemeList" class="board-theme-list"></div>
@@ -394,6 +396,6 @@
     el.classList.remove('hidden');
   });
 </script>
-<script type="module" src="./src/ui/main.js?v=202610141155"></script>
+<script type="module" src="./src/ui/main.js?v=202610141251"></script>
 </body>
 </html>
