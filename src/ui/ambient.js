@@ -76,7 +76,7 @@ export const hueDelta = (from, to) => ((((to - from) % 360) + 540) % 360) - 180;
  * 以前は #2451c4 / #2e60d6（L 0.478）。暗くて動画映りが悪かったので、色相と鮮やかさはそのまま、明るさだけを 0.08 上げた（見比べて決めた。
  * 0.06 は変化が小さく、0.10 は白い小さな文字の対比が 3.6 まで下がる）
  */
-export const ORIGIN = { lo: '#3a6adf', hi: '#4479f2' };
+export const ORIGIN = { lo: '#487af0', hi: '#558aff' };
 const O = hexToOklch(ORIGIN.lo), OH = hexToOklch(ORIGIN.hi);
 export const BASE_HUE = O.h;
 /** 3段の濃さ。base = 今の青と同じ明るさ / soft = 少し淡い / deep = 濃い。up = 中央の明るい所の明るさの差 */
@@ -86,9 +86,9 @@ export const TONES = {
   deep: { L: O.L - 0.05, C: O.C * 0.9, up: 0.04 },       // 以前は -0.083（暗すぎた）。今の deep は、以前のふだんの青と同じくらいの明るさ
 };
 /** 同系色の重ね（--amb-glow。コンボ・ピンチ・色の変化）の明るさ。背景より明るく見えるよう、背景を明るくしたぶん（0.08）上げた（以前は 0.68） */
-const GLOW_L = 0.76;
+const GLOW_L = 0.8;
 /** 中央の明るい所でも、白い小さな文字（ラインの番号など。太字・文字の影つき）が読める下限（以前は 4.3。明るくしたぶん下げた。縁は中央より 0.6 ほど高い） */
-export const MIN_CONTRAST = 3.6;
+export const MIN_CONTRAST = 3.2;
 
 /**
  * 盤面の土台の、今の青（styles.css の .well-set と同じ値。以前は plate #1a3eae / well #1f3285。背景を明るくしたのに合わせて、明るさを 0.06 上げた。
@@ -96,7 +96,7 @@ export const MIN_CONTRAST = 3.6;
  * shade1・shade2 = くぼみの内側の影 / rim・hi = くぼみの縁（上下の線）/ edge・edgeShade = 盤面全体のまわりの光と影。[r, g, b, 透明度]
  */
 export const BOARD = {
-  plate: '#2951c2', well: '#2d4498',
+  plate: '#335ed0', well: '#3750a5',
   shade1: [4, 12, 60, 0.7], shade2: [4, 12, 60, 0.45], rim: [96, 140, 245, 0.8], hi: [150, 186, 255, 0.95],
   edge: [80, 130, 255, 0.9], edgeShade: [0, 8, 50, 0.35],
 };
