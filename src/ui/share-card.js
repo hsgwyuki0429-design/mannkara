@@ -1,7 +1,7 @@
-import { SIZE, isInside } from '../core/constants.js?v=202610142217';
-import { gemSprite } from './shards.js?v=202610142217';
-import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610142217';
-import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './glass.js?v=202610142217';
+import { SIZE, isInside } from '../core/constants.js?v=202610160219';
+import { gemSprite } from './shards.js?v=202610160219';
+import { GAME_NAME, LOGO_PATH, LOGO_BG, LOGO_FG, displayUrl } from './brand.js?v=202610160219';
+import { glassElement, glassGroups, GLASS_BACKGROUND, GLASS_HIGHLIGHT } from './glass.js?v=202610160219';
 
 /**
  * 結果カード（シェア用の1枚の画像）: ロゴ・スコア・最大連鎖・最大コンボ・最後の盤面・遊べる URL。
@@ -36,10 +36,10 @@ export async function drawResultCard(data) {
     g.drawImage(data.image3d, 0, 0, CARD_W, CARD_H);
   } else {
     // 背景: ゲームと同じ青（まん中が少し明るい）
-    g.fillStyle = glass ? GLASS_BACKGROUND : '#3a6adf';
+    g.fillStyle = glass ? GLASS_BACKGROUND : '#487af0';
     g.fillRect(0, 0, CARD_W, CARD_H);
     const bg = g.createRadialGradient(CARD_W / 2, CARD_H * 0.36, 0, CARD_W / 2, CARD_H * 0.36, CARD_H * 0.62);
-    bg.addColorStop(0, glass ? GLASS_HIGHLIGHT : '#4479f2'); bg.addColorStop(1, glass ? 'rgba(94,74,194,0)' : 'rgba(58,106,223,0)');
+    bg.addColorStop(0, glass ? GLASS_HIGHLIGHT : '#558aff'); bg.addColorStop(1, glass ? 'rgba(94,74,194,0)' : 'rgba(72,122,240,0)');
     g.fillStyle = bg;
     g.fillRect(0, 0, CARD_W, CARD_H);
   }
@@ -146,9 +146,9 @@ function drawBoard(g, board, cx, top, c) {
   // 土台: ふちの線を先に描いてから面で覆う（外周の線だけが残る）
   g.strokeStyle = '#6f93ea'; g.lineWidth = 5; g.lineJoin = 'round';
   for (const p of cells) { diamond(p, 1.04); g.stroke(); }
-  g.fillStyle = '#2951c2';
+  g.fillStyle = '#335ed0';
   for (const p of cells) { diamond(p, 1.04); g.fill(); }
-  g.fillStyle = '#243a82';
+  g.fillStyle = '#2e458f';
   for (const p of cells) { diamond(p, 0.84); g.fill(); }
   // ブロック（奥から手前の順に: 上の方のマスから）
   const blocks = board.map(([x, r, color]) => ({ ...at(x, r), color })).sort((a, b) => a.y - b.y);
