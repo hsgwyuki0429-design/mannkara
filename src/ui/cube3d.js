@@ -16,9 +16,9 @@
  * 描く順: 光の落ち方（コースティクスの地図）→ 背景と盤面 → 立方体（盤面・手駒・仮置き）→ 持っているピース → 光のにじみ（ブルーム）→ 画面
  * 何も動いていない間は描かない（最後に描いた絵がそのまま残る）。重い端末では、描く細かさ・反射の回数・にじみを自動で減らす。
  */
-import * as THREE from './vendor/three.js?v=202610160219';
-import { SIZE } from '../core/constants.js?v=202610160219';
-import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon, plateFieldData, toHalf } from './cube3d-math.js?v=202610160219';
+import * as THREE from './vendor/three.js?v=202610160221';
+import { SIZE } from '../core/constants.js?v=202610160221';
+import { CUBE, BEVEL, STRETCH_Y, VIEW_ANGLE, localToB, eyeFor, projection, unprojectClient, keyframes, cubicBezier, EASE, platePolygon, plateFieldData, toHalf } from './cube3d-math.js?v=202610160221';
 
 /* ---------- 見た目の調整 ---------- */
 const IOR = 1.52;                 // クラウンガラス
@@ -48,7 +48,7 @@ const glassOf = (name) => GLASS[name] || GLASS.purple;
 const LONE = GLASS.garbage.map(Math.fround);
 const lone = (r, g, b) => Math.fround(r) === LONE[0] && Math.fround(g) === LONE[1] && Math.fround(b) === LONE[2];
 /** 背景・盤面・照明（線形 RGB） */
-export const BACKDROP = { top: '#3a6adf', mid: '#4479f2', bottom: '#3a6adf', glow: '#4479f2' };
+export const BACKDROP = { top: '#487af0', mid: '#558aff', bottom: '#487af0', glow: '#558aff' };
 const LOOK = {
   backTop: srgb(BACKDROP.top), backMid: srgb(BACKDROP.mid), backBottom: srgb(BACKDROP.bottom), backGlow: srgb(BACKDROP.glow, 0.25),
   plate: srgb('#c4c8ef'), plateEdge: srgb('#d4d8ff', 0.9), plateGlow: srgb('#7c84e8', 0.1),
