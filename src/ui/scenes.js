@@ -1,4 +1,4 @@
-import { gemSprite } from './shards.js?v=202610160219';
+import { gemSprite } from './shards.js?v=202610160221';
 
 /**
  * 画面全体の演出（シーン）。盤面の外側まで使う、大きな色の変化のための層。

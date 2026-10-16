@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chainTouchesPlacement } from '../src/ui/chain-overlap.js?v=202610160219';
+import { chainTouchesPlacement } from '../src/ui/chain-overlap.js?v=202610160221';
 
 const pos = (pairs) => new Map(pairs.map(([id, x, r]) => [id, { x, r }]));
 
