@@ -1,5 +1,5 @@
-import { SIZE, ANIM, isInside } from './constants.js?v=202610160221';
-import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610160221';
+import { SIZE, ANIM, isInside } from './constants.js?v=202610201017';
+import { Board, createBlock, createGarbage, isGarbage } from './board.js?v=202610201017';
 
 /**
  * 対戦（ぷよぷよのような、連鎖で相手におじゃまを送り合う遊び方）のルール。DOM 非依存。

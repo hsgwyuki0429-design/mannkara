@@ -6,7 +6,7 @@
  * 遊んでいる途中のゲームも、自己ベストだけは途中の点数で送る（addProgress。1 ゲームを長く続けても、ランキングに出るように）。
  * 名前はかならず本人に決めてもらう（自動では付けない）。決めるまでは named が false で、送信もしない
  */
-import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610160221';
+import { CANONICAL_URL, STORE_PREFIX } from './brand.js?v=202610201017';
 
 /** 今のシーズン（サーバーの CURRENT_SEASON と同じ） */
 export const SEASON = 2;
