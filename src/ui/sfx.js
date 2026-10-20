@@ -1,4 +1,4 @@
-import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610160221';
+import { glassBuffer, GLASS_PITCH, placeBuffer, chimeBuffer, noteBuffer, PLACE_VARIANTS, KITS } from './synth.js?v=202610201017';
 
 /** 効果音と振動。WebAudio のみ（アセット不要）。初回タップで有効化。 */
 const PENTA = [0, 2, 4, 7, 9];
@@ -97,8 +97,19 @@ export function wavBlob(data, sr) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+/**
+ * ほかのアプリの音（音楽・動画・ポッドキャストのバックグラウンド再生）を止めずに、重ねて鳴らす（iOS Safari 16.4+ の Audio Session API）。
+ * 以前は 'playback'（マナーモードでも鳴る代わりに、ほかのアプリの再生を止めてしまう）にしていて、ゲームの音が鳴るとバックグラウンド再生が止まった。
+ * 'ambient' は効果音向けの種類で、ほかの音と混ぜて鳴らす（そのかわり、消音スイッチがオンのときは鳴らない）
+ */
+export const AUDIO_SESSION = 'ambient';
+function mixWithOthers() {
+  try { if (typeof navigator !== 'undefined' && navigator.audioSession && navigator.audioSession.type !== AUDIO_SESSION) navigator.audioSession.type = AUDIO_SESSION; } catch {}
+}
+
 export class Sfx {
   constructor() {
+    mixWithOthers();                                   // 最初の音を鳴らす前に（録画モードの <audio> も同じ）
     this.ctx = null; this._enabled = true; this.paused = false;
     this.gestureAt = 0; this.stuckSince = 0; this.stale = false;
     this.voices = new Set(); this.last = new Map(); this.placement = 0; this.waves = new Map(); this.kit = 0;
@@ -227,6 +238,7 @@ export class Sfx {
    */
   unlockClips() {
     if (typeof Audio !== 'function') return;
+    mixWithOthers();
     if (!this.silentUrl) this.silentUrl = URL.createObjectURL(wavBlob(new Float32Array(REC_SR * 2), REC_SR));
     if (!this.carrier) { this.carrier = new Audio(this.silentUrl); this.carrier.loop = true; this.carrier.setAttribute?.('playsinline', ''); }
     if (this.carrier.paused) this.carrier.play()?.catch?.(() => {});
@@ -311,9 +323,7 @@ export class Sfx {
   build() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    // iOS Safari 16.4+: 既定では消音（サイレント）スイッチがオンだと鳴らない。ゲームの効果音として
-    // 消音スイッチを無視して鳴らす（マナーモードでも音が出るようになる）
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+    mixWithOthers();
     try { this.ctx = new AC({ latencyHint: 'interactive' }); } catch { this.ctx = null; return; }
     this.connect();
     // 中断（コントロールセンター・画面収録・着信など）から戻ったら、すぐ再開を試みる

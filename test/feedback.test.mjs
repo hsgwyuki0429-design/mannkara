@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sfx, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY, wavBlob } from '../src/ui/sfx.js?v=202610160221';
-import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610160221';
-import { Renderer } from '../src/ui/renderer.js?v=202610160221';
-import { RIM_MS } from '../src/ui/rims.js?v=202610160221';
+import { Sfx, AUDIO_SESSION, note, voicedFrequency, shalanTop, bellPitch, kitForScore, KIT_EVERY, wavBlob } from '../src/ui/sfx.js?v=202610201017';
+import { KITS, glassBuffer } from '../src/ui/synth.js?v=202610201017';
+import { Renderer } from '../src/ui/renderer.js?v=202610201017';
+import { RIM_MS } from '../src/ui/rims.js?v=202610201017';
 
 const storage = new Map();
 globalThis.localStorage = { getItem: (k) => storage.get(k), setItem: (k, v) => storage.set(k, v) };
@@ -751,4 +751,21 @@ test('wavBlob: 16 ビットのモノラル WAV', async () => {
   const v = new DataView(await b.arrayBuffer());
   assert.equal(b.type, 'audio/wav'); assert.equal(v.byteLength, 50);
   assert.equal(v.getUint32(24, true), 48000); assert.equal(v.getInt16(46, true), 0x7fff); assert.equal(v.getInt16(48, true), -0x7fff);
+});
+
+test('ほかのアプリの再生（バックグラウンドの音楽など）を止めない: 音の種類は ambient（ほかの音と混ぜる）。以前の playback は止めてしまった', () => {
+  const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const audioSession = { type: 'auto' };
+  Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'test', audioSession }, configurable: true });
+  try {
+    assert.equal(AUDIO_SESSION, 'ambient');
+    new Sfx();
+    assert.equal(audioSession.type, 'ambient', '作った時点で、最初の音より前に');
+    audioSession.type = 'playback';
+    const s = new Sfx(); globalThis.window ??= {};
+    s.build?.();
+    assert.equal(audioSession.type, 'ambient', '音の出口を作り直しても ambient のまま');
+  } finally {
+    if (nav) Object.defineProperty(globalThis, 'navigator', nav); else delete globalThis.navigator;
+  }
 });

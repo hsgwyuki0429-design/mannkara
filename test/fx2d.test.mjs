@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FxCanvas, bezier, easeOut, softwareRendering } from '../src/ui/fx2d.js?v=202610160221';
-import { Sparkles, sparkPose } from '../src/ui/sparkles.js?v=202610160221';
-import { Shards, shardPose } from '../src/ui/shards.js?v=202610160221';
-import { Rims, rimPose, rimSprite, RIM_MS } from '../src/ui/rims.js?v=202610160221';
+import { FxCanvas, bezier, easeOut, softwareRendering } from '../src/ui/fx2d.js?v=202610201017';
+import { Sparkles, sparkPose } from '../src/ui/sparkles.js?v=202610201017';
+import { Shards, shardPose } from '../src/ui/shards.js?v=202610201017';
+import { Rims, rimPose, rimSprite, RIM_MS } from '../src/ui/rims.js?v=202610201017';
 
 /* ---- 最小限の偽物: canvas の 2D コンテキスト（呼び出しを記録）と requestAnimationFrame（手でコマを進める） ---- */
 function fakeCtx() {
